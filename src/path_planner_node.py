@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import rospy
+import message_filters
 from path_optimizer import PathOptimizer
 
 from space_msgs.msg import SatelitePose
@@ -13,16 +14,21 @@ optimizer = PathOptimizer()
 def callback(satelitepose):
     # Implement something
     bla = 0
+    print bla
+    print "I'm in the callback"
 
 
 if __name__=='__main__':
     rospy.init_node('path_planner', anonymous=True)
 
     # Subscribe to target orbital elements
-    rospy.Subscriber('target_oe', SatelitePose, callback)
+    target_oe_sub = message_filters.Subscriber('target_oe', SatelitePose)
 
     # Subscribe to chaser orbital elements
-    rospy.Subscriber('chaser_oe', SatelitePose, callback)
+    chaser_oe_sub = message_filters.Subscriber('chaser_oe', SatelitePose)
 
-    while not rospy.is_shutdown():
-        optimizer.find_optimal_path()
+    # optimizer.find_optimal_path(target_oe,chaser_oe)
+    r = rospy.Rate(1)
+
+    #while not rospy.is_shutdown():
+    #    print target_oe.callback
