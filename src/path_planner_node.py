@@ -10,9 +10,6 @@ from path_optimizer import PathOptimizer
 from space_msgs.msg import SatelitePose
 import numpy as np
 
-
-bag = rosbag.Bag('/home/dfrey/polybox/test.bag', 'w')
-
 if __name__=='__main__':
     rospy.init_node('path_planner', anonymous=True)
 
@@ -63,10 +60,5 @@ if __name__=='__main__':
             rospy.sleep(200)
             optimizer.sleep_flag = False
             print deltaV
-        #print msg
-        bag.write('deltaV', deltaV, rospy_now)
-        # bag.write('target_oe')
-        bag.write('chaser_oe', msg, rospy_now)
-        rate.sleep()
 
-    bag.close()
+        rate.sleep()
