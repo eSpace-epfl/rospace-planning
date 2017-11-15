@@ -10,7 +10,6 @@ from path_optimizer import PathOptimizer
 from space_msgs.msg import SatelitePose
 import numpy as np
 import epoch_clock
-
 if __name__=='__main__':
     rospy.init_node('path_planner', anonymous=True)
 
@@ -61,4 +60,3 @@ if __name__=='__main__':
             pub_deltaV.publish(deltaV)
             rospy.sleep(200)
             optimizer.sleep_flag = False
-        rate.sleep()
