@@ -10,11 +10,15 @@ from path_optimizer import PathOptimizer
 from space_msgs.msg import SatelitePose
 import numpy as np
 import epoch_clock
+
 if __name__=='__main__':
     rospy.init_node('path_planner', anonymous=True)
 
     optimizer = PathOptimizer()
-    optimizer.maneouvre_start = 2
+
+    # Set when the manoeuvre can start. Afterwards the optimization is evaluated considering the state after 60 seconds.
+    # In those 60 seconds (theoretically) from ground you can decide which of the available path you want to follow.
+    optimizer.set_manoeuvre_start(2017, 9, 15, 12, 40, 00)
 
     pub_deltaV = rospy.Publisher('deltaV', Vector3, queue_size=10)
 
