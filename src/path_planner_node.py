@@ -5,6 +5,7 @@ import rosbag
 import message_filters
 import space_msgs
 from geometry_msgs.msg import Vector3
+from std_msgs.msg import Float64
 from path_optimizer import PathOptimizer
 
 from space_msgs.msg import SatelitePose
@@ -21,6 +22,7 @@ if __name__=='__main__':
     optimizer.set_manoeuvre_start(2017, 9, 15, 12, 40, 00)
 
     pub_deltaV = rospy.Publisher('deltaV', Vector3, queue_size=10)
+    pub_distance = rospy.Publisher('distance_t_c', Float64, queue_size=10)
 
     # Subscribe to target orbital elements
     target_oe_sub = message_filters.Subscriber('target_oe', SatelitePose)
@@ -43,22 +45,11 @@ if __name__=='__main__':
         deltaV.x = optimizer.deltaV[0]
         deltaV.y = optimizer.deltaV[1]
         deltaV.z = optimizer.deltaV[2]
-        msg = SatelitePose()
 
-        msg.header.stamp = rospy_now
-        msg.header.frame_id = "teme"
+        distance = Float64()
+        distance.data = optimizer.estimated_distance
 
-        msg.position.semimajoraxis = oe.a
-        msg.position.eccentricity = oe.e
-        msg.position.inclination = np.rad2deg(oe.i)
-        msg.position.arg_perigee = np.rad2deg(oe.w)
-        msg.position.raan = np.rad2deg(oe.O)
-        msg.position.true_anomaly = np.rad2deg(0.2)
-
-        msg.orientation.x = 0
-        msg.orientation.y = 0
-        msg.orientation.z = 0
-        msg.orientation.w = 0
+        pub_distance.publish(distance)
 
         if optimizer.sleep_flag:
             pub_deltaV.publish(deltaV)

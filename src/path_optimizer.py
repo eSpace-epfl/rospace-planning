@@ -20,6 +20,7 @@ class PathOptimizer:
         self.cart_chaser = Cartesian()
 
         self.deltaV = np.array([0, 0, 0])
+        self.estimated_distance = 0
         self.impulse_start_time = rospy.Time.now()
 
         # Timing variables
@@ -36,17 +37,19 @@ class PathOptimizer:
         print "Searching for optimal path"
 
     def callback(self, target_oe, chaser_oe):
+        # Update orbital elements value
+        self.kep_target.from_message(target_oe.position)
+        self.cart_target.from_keporb(self.kep_target)
+
+        self.kep_chaser.from_message(chaser_oe.position)
+        self.cart_chaser.from_keporb(self.kep_chaser)
+
+        self.evaluate_estimated_distance(self.cart_target.R, self.cart_chaser.R)
+
         if self.manoeuvre_start <= epoch.now() and not self.sleep_flag:
             print "Solving the optimization problem. Thrusters will start at: " + \
                   str(dt.timedelta(0, 3600*self.manoeuvre_start.time().hour + 60*self.manoeuvre_start.time().minute +
                   self.manoeuvre_start.time().second) + dt.timedelta(0, self._manoeuvre_idle_seconds))
-
-            # Update orbital elements value
-            self.kep_target.from_message(target_oe.position)
-            self.cart_target.from_keporb(self.kep_target)
-
-            self.kep_chaser.from_message(chaser_oe.position)
-            self.cart_chaser.from_keporb(self.kep_chaser)
 
             sol = self.simple_pykep_solution(self.cart_target.R, self.cart_target.V,
                                              self.cart_chaser.R, self.cart_chaser.V,
@@ -92,4 +95,8 @@ class PathOptimizer:
 
         r_c_start, v_c_start = pk.propagate_lagrangian(r_c1, v_c1, t_start, mu)
 
+    def evaluate_estimated_distance(self, r_target, r_chaser):
+        self.estimated_distance = np.linalg.norm(r_target - r_chaser)
 
+    def propagate_estimated_distance(self, r_target, r_chaser, propagation_time):
+        pass
