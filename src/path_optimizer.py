@@ -1,11 +1,12 @@
-from math import sqrt,pi,atan,tan,sin,cos
-from space_tf import *
 import PyKEP as pk
 import numpy as np
 import rospy
-# from optimization_problem import OptimizationProblem
 import datetime as dt
 import epoch_clock
+
+from scenario import Scenario
+from space_tf import *
+from space_tf.Constants import Constants as const
 
 epoch = epoch_clock.Epoch()
 
@@ -29,6 +30,10 @@ class PathOptimizer:
         self.manoeuvre_start = dt.datetime(2017, 9, 15, 12, 20, 0)
         self._manoeuvre_idle_seconds = 120
 
+        # Scenario variable
+        self.scenario = None
+        self.scenario_flag = False
+
     def set_manoeuvre_start(self, year, month, day, hour, minute, seconds):
         self.manoeuvre_start = dt.datetime(year,month,day,hour,minute,seconds)
 
@@ -46,26 +51,40 @@ class PathOptimizer:
 
         self.evaluate_estimated_distance(self.cart_target.R, self.cart_chaser.R)
 
-        if self.manoeuvre_start <= epoch.now() and not self.sleep_flag:
-            print "Solving the optimization problem. Thrusters will start at: " + \
-                  str(dt.timedelta(0, 3600*self.manoeuvre_start.time().hour + 60*self.manoeuvre_start.time().minute +
-                  self.manoeuvre_start.time().second) + dt.timedelta(0, self._manoeuvre_idle_seconds))
+        # If scenario has not been set up yet
+        if not self.scenario_flag:
+            self.scenario = Scenario()
+            self.scenario.start_simple_scenario(self.manoeuvre_start)
+            self.scenario_flag = True
 
-            sol = self.simple_pykep_solution(self.cart_target.R, self.cart_target.V,
-                                             self.cart_chaser.R, self.cart_chaser.V,
-                                             self._manoeuvre_idle_seconds, 100000)
+            # Solve right now lambert problem for this scenario
+        else:
+            if self.manoeuvre_start <= epoch.now() and not self.sleep_flag:
+                pass
 
-            self.print_possible_solutions(sol)
 
-            self.deltaV = sol.get_v1()[0]
-            self.sleep_flag = True
 
-            print "Setting next manoeuvre start..."
-            # Theoritically set the next maneuvre to the time the previous one is completed + idle time
-            self.set_manoeuvre_start(2017, 9, 15, 13, 40, 00)
 
+        # if self.manoeuvre_start <= epoch.now() and not self.sleep_flag:
+        #     print "Solving the optimization problem. Thrusters will start at: " + \
+        #           str(dt.timedelta(0, 3600*self.manoeuvre_start.time().hour + 60*self.manoeuvre_start.time().minute +
+        #           self.manoeuvre_start.time().second) + dt.timedelta(0, self._manoeuvre_idle_seconds))
+        #
+        #     sol = self.simple_pykep_solution(self.cart_target.R, self.cart_target.V,
+        #                                      self.cart_chaser.R, self.cart_chaser.V,
+        #                                      self._manoeuvre_idle_seconds, 100000)
+        #
+        #     self.print_possible_solutions(sol)
+        #
+        #     self.deltaV = sol.get_v1()[0]
+        #     self.sleep_flag = True
+        #
+        #     print "Setting next manoeuvre start..."
+        #     # Theoritically set the next maneuvre to the time the previous one is completed + idle time
+        #     self.set_manoeuvre_start(2017, 9, 15, 13, 40, 00)
 
     def print_possible_solutions(self, sol, N=5):
+        print sol
         for i in xrange(0, N+1):
             print "Solution allowing " + str(i) + " waiting orbits."
             dV_tot = np.array(sol.get_v1()[i]) + np.array(sol.get_v2()[i])
@@ -79,7 +98,7 @@ class PathOptimizer:
         # t_rdv is the actual maximum allowed rendezvous duration (should compute the maximum possible for the minimum
         # consumption)
 
-        mu = Constants.mu_earth
+        mu = const.mu_earth
 
         r_c_start, v_c_start = pk.propagate_lagrangian(r_c1, v_c1, t_start, mu)
         r_t2, v_t2 = pk.propagate_lagrangian(r_t1, v_t1, t_rdv + t_start, mu)
@@ -100,3 +119,39 @@ class PathOptimizer:
 
     def propagate_estimated_distance(self, r_target, r_chaser, propagation_time):
         pass
+
+    def multi_lambert_for_scenario(self):
+        # Solve the Lamber Problem between points of a scenario
+        # Extract scenario
+        s = self.scenario
+
+        # Extract needed constants
+        mu = const.mu_earth
+
+        # TODO: Eventually update again the position of the chaser exactly before performing the propagation
+
+        # Define the first point when the manoeuvre start
+        t_epoch = epoch.now()       # Epoch clock
+
+        # Propagation time is the difference between epoch clock and manoeuvre start time
+        t_prop = self.manoeuvre_start - t_epoch
+        t_prop = t_prop.total_seconds()
+
+        # TODO: Review time integration to reduce as more as possible uncertainty due to calculation time
+
+        r_c_start, v_c_start = pk.propagate_lagrangian(self.cart_chaser.R, self.cart_chaser.V, t_prop, mu)
+        s.hold_points[-1].R_abs = r_c_start
+        s.hold_points[-1].V_abs = v_c_start
+
+        # Extract first hold point, a (possible) future point that will be reached when the manoeuvre is set to start
+        actual_HP = s.hold_points.pop()
+        while len(s.hold_points) > 0:
+            # Calculate R & V for the next hold point
+
+
+            sol = pk.lambert_problem()
+
+
+
+            actual_HP = s.hold_points.pop()
+            pass
