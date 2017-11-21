@@ -1,6 +1,8 @@
-from scenario import Scenario
-from path_optimizer import PathOptimizer
+from solver import Solver
+import numpy as np
 
-p = PathOptimizer()
+s = Solver()
 
-p.multi_lambert_for_scenario()
+s.clohessy_wiltshire_solver(7063, np.array([2, -5, 0]), np.array([0,0,0]), 30000)
+
+print s.cw_sol
