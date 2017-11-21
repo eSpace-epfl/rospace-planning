@@ -14,9 +14,11 @@ class PathOptimizer:
 
     def __init__(self):
         # Initialize the optimizer
+        # Create keplerian elements for target and chaser
         self.kep_target = KepOrbElem()
         self.kep_chaser = KepOrbElem()
 
+        # Create cartesian element for target and chaser
         self.cart_target = Cartesian()
         self.cart_chaser = Cartesian()
 
@@ -30,7 +32,7 @@ class PathOptimizer:
         self.manoeuvre_start = dt.datetime(2017, 9, 15, 12, 20, 0)
         self._manoeuvre_idle_seconds = 120
 
-        # Scenario variable
+        # Scenario variables
         self.scenario = None
         self.scenario_flag = False
 
