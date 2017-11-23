@@ -19,8 +19,14 @@ class Solver:
 
         self.cw_sol = None
 
+
+
+
     def clohessy_wiltshire_solver(self, a_c, r_rel_c_0, v_rel_c_0, max_time,
                                   r_rel_t_f=np.array([0.0, 0.0, 0.0]), v_rel_t_f=np.array([0.0, 0.0, 0.0])):
+
+        # TODO: Try to implement a version for continuous thrusting, maybe putting v_0_A dependant on time
+
         mu = const.mu_earth
         n = np.sqrt(mu/a_c**3.0)
 
@@ -67,7 +73,7 @@ class Solver:
 
         self.cw_sol = {'best_dV': best_deltaV, 'best_dV_1': best_deltaV_1, 'best_dV_2': best_deltaV_2}
 
-    def tschauner_hemperl_solver(self):
+    def tschauner_hempel_solver(self):
         """
         T-H-equations solver implemented according to [2].
         :return:
