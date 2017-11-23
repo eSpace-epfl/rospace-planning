@@ -23,10 +23,9 @@ if __name__=='__main__':
 
     # Set when the manoeuvre can start. Afterwards the optimization is evaluated considering the state after 60 seconds.
     # In those 60 seconds (theoretically) from ground you can decide which of the available path you want to follow.
-    optimizer.set_manoeuvre_start(2017, 9, 15, 12, 40, 00)
+    optimizer.set_manoeuvre_start(2017, 9, 15, 16, 40, 00)
 
     pub_deltaV = rospy.Publisher('deltaV', Vector3, queue_size=10)
-    pub_distance = rospy.Publisher('distance_t_c', PointStamped, queue_size=10)
 
     # Subscribe to target orbital elements
     target_oe_sub = message_filters.Subscriber('target_oe', SatelitePose)
@@ -39,24 +38,16 @@ if __name__=='__main__':
     ts.registerCallback(optimizer.callback)
 
     rate = rospy.Rate(optimizer.rate)
+    deltaV = Vector3()
     while not rospy.is_shutdown():
         oe = optimizer.kep_chaser
-        rospy_now = rospy.Time.now()
 
-        deltaV = Vector3()
         deltaV.x = optimizer.deltaV[0]
         deltaV.y = optimizer.deltaV[1]
         deltaV.z = optimizer.deltaV[2]
-
-        distance = PointStamped()
-        distance.point.x = optimizer.estimated_distance
-        distance.point.y = 0
-        distance.point.z = 0
-        distance.header.stamp = rospy.get_rostime()
-
-        pub_distance.publish(distance)
 
         if optimizer.sleep_flag:
             pub_deltaV.publish(deltaV)
             rospy.sleep(200)
             optimizer.sleep_flag = False
+            print deltaV
