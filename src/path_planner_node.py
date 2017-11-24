@@ -5,12 +5,8 @@ import rosbag
 import message_filters
 import space_msgs
 
-
-from geometry_msgs.msg import Vector3, PointStamped
-from std_msgs.msg import Float64
+from geometry_msgs.msg import Vector3
 from space_msgs.msg import SatelitePose
-
-
 from path_optimizer import PathOptimizer
 
 import numpy as np
@@ -42,12 +38,11 @@ if __name__=='__main__':
     while not rospy.is_shutdown():
         oe = optimizer.kep_chaser
 
-        deltaV.x = optimizer.deltaV[0]
-        deltaV.y = optimizer.deltaV[1]
-        deltaV.z = optimizer.deltaV[2]
+        deltaV.x = optimizer.active_command.deltaV_TEM[0]
+        deltaV.y = optimizer.active_command.deltaV_TEM[1]
+        deltaV.z = optimizer.active_command.deltaV_TEM[2]
 
         if optimizer.sleep_flag:
             pub_deltaV.publish(deltaV)
-            rospy.sleep(200)
             optimizer.sleep_flag = False
             print deltaV

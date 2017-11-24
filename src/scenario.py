@@ -3,18 +3,18 @@ import pykep as pk
 import epoch_clock
 
 from space_tf.Constants import Constants as const
+from space_tf import Cartesian, CartesianLVLH
 
 
 class HoldPoint:
 
     def __init__(self, rel_pos=[0, 0, 0], id=0, exec_time=0):
-        self.relative_position = rel_pos
-        self.absolute_position = [0, 0, 0]
-        self.relative_velocity = [0, 0, 0]
-
         self.tolerance = [0, 0, 0]
-        self.R_abs = [0, 0, 0]
-        self.V_abs = [0, 0, 0]
+
+        self.cartesian = Cartesian()
+        self.lvlh = CartesianLVLH()
+
+        self.lvlh.R = rel_pos
 
         # Maximum allowed time for a manoeuvre from this hold point to the next
         self.execution_time = exec_time
@@ -62,12 +62,12 @@ class Scenario:
 
         # Set up a simple scenario with 6 hold points in km
         P0 = HoldPoint()
-        P1 = HoldPoint([0, 0.060, 0], 1, 6000)
-        P2 = HoldPoint([0, 0.1, 0], 2, 6000)
-        P3 = HoldPoint([0, -0.1, 0], 3, 6000)
+        P1 = HoldPoint([0, 0.060, 0], 1, 10000)
+        P2 = HoldPoint([0, 0.1, 0], 2, 10000)
+        P3 = HoldPoint([0, -0.1, 0], 3, 10000)
         P4 = HoldPoint([0, -5, 0], 4, 15000)
-        P5 = HoldPoint([0.5, -8, 0], 5, 30000)
-        P6 = HoldPoint(actual_relative_position, 6, 30000)
+        P5 = HoldPoint([0.5, -8, 0], 5, 150000)
+        P6 = HoldPoint(actual_relative_position, 6, 150000)
 
         for i in xrange(0,N):
             self.hold_points.append(eval('P' + str(i)))
