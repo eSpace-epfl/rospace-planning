@@ -30,9 +30,11 @@ class OptimalTime:
         a_min = 1e12
         theta_min = 0
         e_min = 0
-        for t in xrange(0, 1000):
+        angle_samples = 1e5
 
-            theta = 2*pi/1000 * t
+        for t in xrange(0, int(angle_samples)):
+
+            theta = 2*pi/angle_samples * t
 
             e = (r2_mag - r1_mag)/(r1_mag*cos(theta) - r2_mag*cos(theta+alpha))
 

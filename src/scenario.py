@@ -1,30 +1,28 @@
 import datetime as dt
-import pykep as pk
-import epoch_clock
 
-from space_tf.Constants import Constants as const
-from space_tf import Cartesian, CartesianLVLH
+from space_tf import Cartesian, CartesianLVLH, KepOrbElem
 
 
 class HoldPoint:
 
-    def __init__(self, rel_pos=[0, 0, 0], id=0, exec_time=0):
+    def __init__(self, rel_pos=[0, 0, 0], id=0, exec_time=0, type="absolute"):
         self.tolerance = [0, 0, 0]
 
         self.cartesian = Cartesian()
         self.lvlh = CartesianLVLH()
+        self.kep = KepOrbElem()
 
         self.lvlh.R = rel_pos
 
         # Maximum allowed time for a manoeuvre from this hold point to the next
         self.execution_time = exec_time
-        self.hold_position = True
         self.id = id
-        self.relative_semimajor_axis = 0
 
         self.next_hold_points = []
         self.next_cost = 0
         self.next_time = 0
+
+        self.type = type
 
     def set_hold_point(self, rel_pos, abs_pos, tol, time, next, id):
         self.id = id
@@ -34,10 +32,6 @@ class HoldPoint:
 
     def set_execution_time(self, exec_time):
         self.execution_time = exec_time
-
-    def update_hold_point(self):
-        # When we are in an hold point, update it with the "real" position
-        pass
 
 
 class Scenario:
@@ -55,7 +49,29 @@ class Scenario:
 
         self.start_scenario = scenario_start_time
 
-        max_time_per_manoeuvre = 30000
+        self.nr_hold_points = 7
+        N = self.nr_hold_points
+
+        # Set up a simple scenario with 6 hold points in km
+        P0 = HoldPoint()
+        P1 = HoldPoint([0, 0.060, 0], 1, 10000)
+        P2 = HoldPoint([0, 0.1, 0], 2, 10000)
+        P3 = HoldPoint([0, -0.1, 0], 3, 10000)
+        P4 = HoldPoint([0, -5, 0], 4, 15000)
+        P5 = HoldPoint([0.5, -8, 0], 5, 150000)
+        P6 = HoldPoint(actual_relative_position, 6, 150000)
+
+        for i in xrange(0,N):
+            self.hold_points.append(eval('P' + str(i)))
+            if i > 0:
+                eval('P' + str(i) + '.set_neighbour(P' + str(i-1) + ')')
+                #eval('P' + str(i) + '.set_execution_time(' + str(max_time_per_manoeuvre) + ')')
+
+
+    def start_complex_scenario(self, scenario_start_time, actual_relative_position):
+        print "Creating and starting complex scenario..."
+
+        self.start_scenario = scenario_start_time
 
         self.nr_hold_points = 7
         N = self.nr_hold_points
@@ -68,6 +84,8 @@ class Scenario:
         P4 = HoldPoint([0, -5, 0], 4, 15000)
         P5 = HoldPoint([0.5, -8, 0], 5, 150000)
         P6 = HoldPoint(actual_relative_position, 6, 150000)
+
+        P7 = HoldPoint(actual_absolute, 7, 150000)
 
         for i in xrange(0,N):
             self.hold_points.append(eval('P' + str(i)))

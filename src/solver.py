@@ -19,9 +19,6 @@ from optimal_transfer_time import OptimalTime
 class Solver:
 
     def __init__(self):
-        self.tolerance = 0.0
-        self.name = 'Std Lambert Problem solver'
-
         self.sol = None
 
     def multi_lambert_solver(self, chaser, chaser_next, target):
@@ -133,17 +130,23 @@ class Solver:
         self.sol = {'deltaV': best_deltaV, 'deltaV_1': best_deltaV_1, 'deltaV_2': best_deltaV_2, 'deltaT': best_dt}
 
 
-
-    def clohessy_wiltshire_solver(self, a_c, r_rel_c_0, v_rel_c_0, max_time,
+    def clohessy_wiltshire_solver(self, chaser, chaser_next, target, r_rel_c_0, v_rel_c_0, max_time,
                                   r_rel_t_f=np.array([0.0, 0.0, 0.0]), v_rel_t_f=np.array([0.0, 0.0, 0.0]),
                                   id=0, ko_zone=0):
 
         print "\n -------------Solving CW-equations--------------- \n"
+        print " Useful only for really close operations, "
+
+        chaser.kep.from_cartesian(chaser.cartesian)
+        chaser_next.kep.from_cartesian(chaser_next.cartesian)
+        target.kep.from_cartesian(target.cartesian)
+
+        a = target.kep.a
 
         # TODO: Try to implement a version for continuous thrusting, maybe putting v_0_A dependant on time
         # TODO: Check with HP relative velocity, if we can move to the next hold point easily by "using" the relative velocity already acquired.
         mu = const.mu_earth
-        n = np.sqrt(mu/a_c**3.0)
+        n = np.sqrt(mu/a**3.0)
 
         phi_rr = lambda t: np.array([
             [4.0 - 3.0*cos(n*t), 0.0, 0.0],
@@ -220,3 +223,14 @@ class Solver:
         :return:
         """
         pass
+
+
+    def solve(self, chaser, chaser_next, target):
+        # TODO: Implement generic solver that decide the right thing to do depending on the distance
+
+        if chaser.type == 'absolute':
+            pass
+        elif chaser.type == 'relative':
+            pass
+        else:
+            pass
