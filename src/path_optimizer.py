@@ -75,7 +75,7 @@ class PathOptimizer:
         if not self.scenario_flag:
             self.scenario = Scenario()
             actual_rel_pos = self.cart_chaser.R - self.cart_target.R
-            self.scenario.start_simple_scenario(self.manoeuvre_start, actual_rel_pos)
+            self.scenario.start_complex_scenario(self.manoeuvre_start, epoch.now(), self.cart_chaser.R, self.cart_chaser.V)
             self.scenario_flag = True
 
             # Solve right now lambert problem for this scenario
@@ -174,7 +174,9 @@ class PathOptimizer:
             #                                       chaser.execution_time, chaser_next.relative_position, chaser_next.relative_velocity,
             #                                       chaser.id, s.keep_out_zone)
 
-            self.solver.multi_lambert_solver(chaser, chaser_next, target)
+            #self.solver.multi_lambert_solver(chaser, chaser_next, target)
+
+            self.solver.solve(chaser, chaser_next, target)
 
             # r_c_prop, v_c_prop = pk.propagate_lagrangian(chaser.R_abs, chaser.V_abs + self.solver.sol['deltaV_1'],
             #                                              self.solver.sol['deltaT'], mu)

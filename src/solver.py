@@ -31,7 +31,6 @@ class Solver:
 
         # TODO: Think about minimum time, at least the amount of time it takes to make a full orbit?
         t_min = 600
-        t_max = chaser.execution_time
 
         # Absolute position of chaser at t = t0
         p_C_TEM_t0 = chaser.cartesian.R
@@ -46,7 +45,7 @@ class Solver:
         best_sol = None
 
         print "Evaluating optimal transfer time... "
-        t_opt.find_optimal_trajectory_time_for_scenario(target, chaser_next, chaser, t_max)
+        t_opt.find_optimal_trajectory_time_for_scenario(target, chaser_next, chaser)
 
         t_optimal = t_opt.t_opt
         print "t optimal: " + str(t_optimal)
@@ -58,8 +57,8 @@ class Solver:
         for dt in xrange(t_min, t_optimal + 20):
             # Propagate target position at t = t0 + dt
             p_T_TEM_t1, v_T_TEM_t1 = pk.propagate_lagrangian(p_T_TEM_t0, v_T_TEM_t0, dt, mu)
-            target.cartesian.R = p_T_TEM_t1
-            target.cartesian.V = v_T_TEM_t1
+            target.cartesian.R = np.array(p_T_TEM_t1)
+            target.cartesian.V = np.array(v_T_TEM_t1)
 
             # Now that the target is propagated, we can calculate absolute position of the chaser from its relative
             # This is the position he will have at time t = t0 + dt
@@ -85,8 +84,8 @@ class Solver:
 
         # Update ideal final target position at t1 = t0 + best_dt
         p_T_TEM_t1, v_T_TEM_t1 = pk.propagate_lagrangian(p_T_TEM_t0, v_T_TEM_t0, best_dt, mu)
-        target.cartesian.R = p_T_TEM_t1
-        target.cartesian.V = v_T_TEM_t1
+        target.cartesian.R = np.array(p_T_TEM_t1)
+        target.cartesian.V = np.array(v_T_TEM_t1)
 
         # Update next chaser position
         chaser_next.cartesian.from_lhlv_frame(target.cartesian, chaser_next.lvlh)
@@ -129,10 +128,7 @@ class Solver:
 
         self.sol = {'deltaV': best_deltaV, 'deltaV_1': best_deltaV_1, 'deltaV_2': best_deltaV_2, 'deltaT': best_dt}
 
-
-    def clohessy_wiltshire_solver(self, chaser, chaser_next, target, r_rel_c_0, v_rel_c_0, max_time,
-                                  r_rel_t_f=np.array([0.0, 0.0, 0.0]), v_rel_t_f=np.array([0.0, 0.0, 0.0]),
-                                  id=0, ko_zone=0):
+    def clohessy_wiltshire_solver(self, chaser, chaser_next, target):
 
         print "\n -------------Solving CW-equations--------------- \n"
         print " Useful only for really close operations, "
@@ -142,6 +138,15 @@ class Solver:
         target.kep.from_cartesian(target.cartesian)
 
         a = target.kep.a
+        max_time = chaser.execution_time
+        id = chaser.id
+
+        r_rel_c_0 = chaser.lhlv.R
+        v_rel_c_0 = chaser.lhlv.V
+
+        r_rel_c_n = chaser_next.lhlv.R
+        v_rel_c_n = chaser_next.lhlv.V
+
 
         # TODO: Try to implement a version for continuous thrusting, maybe putting v_0_A dependant on time
         # TODO: Check with HP relative velocity, if we can move to the next hold point easily by "using" the relative velocity already acquired.
@@ -184,8 +189,8 @@ class Solver:
             det_rv = np.linalg.det(rv_t)
 
             if det_rv != 0:
-                deltaV_1 = np.dot(np.linalg.inv(rv_t), r_rel_t_f - np.dot(phi_rr(t_), r_rel_c_0)) - v_rel_c_0
-                deltaV_2 = v_rel_t_f - np.dot(phi_vr(t_), r_rel_c_0) - np.dot(phi_vv(t_), v_rel_c_0 + deltaV_1)
+                deltaV_1 = np.dot(np.linalg.inv(rv_t), r_rel_c_n - np.dot(phi_rr(t_), r_rel_c_0)) - v_rel_c_0
+                deltaV_2 = v_rel_c_n - np.dot(phi_vr(t_), r_rel_c_0) - np.dot(phi_vv(t_), v_rel_c_0 + deltaV_1)
 
                 deltaV_tot = np.linalg.norm(deltaV_1) + np.linalg.norm(deltaV_2)
 
@@ -193,19 +198,18 @@ class Solver:
                 if best_deltaV > deltaV_tot and any(abs(deltaV_1[i]) >= min_deltaV for i in range(0, 3))\
                         and any(abs(deltaV_2[i]) >= min_deltaV for i in range(0, 3)):
                     # Check if the keep out zone is invaded and if we are not approaching it
-                    if id != 1:
-                        for t_test in xrange(0, t_ + 1):
-                            r_test = np.dot(phi_rr(t_test), r_rel_c_0) + np.dot(phi_rv(t_test), v_rel_c_0 + deltaV_1)
-                            if all(abs(r_test[i]) >= ko_zone for i in range(0, 3)):
-                                best_deltaV = deltaV_tot
-                                best_deltaV_1 = deltaV_1
-                                best_deltaV_2 = deltaV_2
-                                delta_T = t_
-                    #
-                    # best_deltaV = deltaV_tot
-                    # best_deltaV_1 = deltaV_1
-                    # best_deltaV_2 = deltaV_2
-                    # delta_T = t_
+                    # if id != 1:
+                    #     for t_test in xrange(0, t_ + 1):
+                    #         r_test = np.dot(phi_rr(t_test), r_rel_c_0) + np.dot(phi_rv(t_test), v_rel_c_0 + deltaV_1)
+                    #         if all(abs(r_test[i]) >= ko_zone for i in range(0, 3)):
+                    #             best_deltaV = deltaV_tot
+                    #             best_deltaV_1 = deltaV_1
+                    #             best_deltaV_2 = deltaV_2
+                    #             delta_T = t_
+                    best_deltaV = deltaV_tot
+                    best_deltaV_1 = deltaV_1
+                    best_deltaV_2 = deltaV_2
+                    delta_T = t_
 
         T = np.arange(0, delta_T+1, 1)
 
@@ -224,13 +228,16 @@ class Solver:
         """
         pass
 
-
     def solve(self, chaser, chaser_next, target):
         # TODO: Implement generic solver that decide the right thing to do depending on the distance
 
-        if chaser.type == 'absolute':
-            pass
-        elif chaser.type == 'relative':
-            pass
+        distance = np.linalg.norm(chaser.cartesian.R - target.cartesian.R)
+
+        if distance > 10:
+            self.multi_lambert_solver(chaser, chaser_next, target)
         else:
-            pass
+            self.clohessy_wiltshire_solver(chaser, chaser_next, target)
+
+    def save_result(self):
+        # TODO: Function to store and save results and manoeuvres in .mat format
+        pass

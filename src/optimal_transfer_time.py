@@ -1,4 +1,4 @@
-from numpy import pi, sqrt, sin, cos, arccos, tan, arctan, dot, array
+from numpy import pi, sqrt, sin, cos, arccos, tan, arctan, dot, cross, array
 from numpy.linalg import norm
 from space_tf.Constants import Constants as const
 
@@ -18,27 +18,44 @@ class OptimalTime:
     def mean_anomaly(self, e, E):
         return E - e * sin(E)
 
-    def find_time_optimal_trajectory(self, r1, r2):
+    def find_time_optimal_trajectory(self, r1, v1, r2):
+        h1 = cross(r1, v1)
+        h1 = h1 / norm(h1)
+
         r1_mag = norm(r1)
         r2_mag = norm(r2)
 
         r1_normed = r1 / r1_mag
         r2_normed = r2 / r2_mag
 
+        switch = cross(r1, r2)
         alpha = arccos(dot(r1_normed, r2_normed))
+
+        if switch[2] * h1[2] <= 0:
+            alpha = 2*pi - alpha
 
         a_min = 1e12
         theta_min = 0
         e_min = 0
-        angle_samples = 1e5
+
+        # TODO: Set accuracy to be dependant from the distance from the target
+        # Angle samples define the distance of the point considered, it can be approximated as:
+        # -->    2*pi/angle_samples * radius
+        # Therefore, for a case of r = 7300km => d = 0.471km => ca. 0.06 of a second of travel
+        # To achieve an occuracy in the order of meters, the samples should be around:
+        # -->    angle_samples = 1e6
+        # With a angle_samples of 1e4:
+        # -->    d = 4.6km => ca. 1/2 second of travel (round orbit)
+
+        angle_samples = 1e4
 
         for t in xrange(0, int(angle_samples)):
 
             theta = 2*pi/angle_samples * t
 
             e = (r2_mag - r1_mag)/(r1_mag*cos(theta) - r2_mag*cos(theta+alpha))
-
             if 0 <= e < 1:
+                # Consider only elliptical trajectories
                 p = r1_mag * (1 + e * cos(theta))
                 a = p/(1 - e**2)
 
@@ -53,7 +70,7 @@ class OptimalTime:
         M1 = self.mean_anomaly(e_min, E1)
         M2 = self.mean_anomaly(e_min, E2)
 
-        dt = abs(M1-M2) * sqrt(a_min**3/mu)
+        dt = abs(M1 - M2) * sqrt(a_min**3/mu)
 
         return {'a': a_min, 'theta': theta_min, 'e': e_min, 'dt_opt': dt}
 
@@ -78,7 +95,39 @@ class OptimalTime:
 
         return t_opt
 
+    def find_optimal_trajectory_time_for_scenario(self, target, chaser_next, chaser):
 
+        p_C_TEM_t0 = chaser.cartesian.R
+        v_C_TEM_t0 = chaser.cartesian.V
+
+        p_T_TEM_t0 = target.cartesian.R
+        v_T_TEM_t0 = target.cartesian.V
+
+        diff = 1e12
+        t_opt = 0
+        for t in xrange(0, chaser.execution_time):
+            # Propagate target position at t = t0 + dt
+            p_T_TEM_t1, v_T_TEM_t1 = pk.propagate_lagrangian(p_T_TEM_t0, v_T_TEM_t0, t, mu)
+            target.cartesian.R = p_T_TEM_t1
+            target.cartesian.V = v_T_TEM_t1
+
+            # Now that the target is propagated, we can calculate absolute position of the chaser from its relative
+            # This is the position he will have at time t = t0 + dt
+            chaser_next.cartesian.from_lhlv_frame(target.cartesian, chaser_next.lvlh)
+
+            p_C_TEM_t1 = chaser_next.cartesian.R
+            v_C_TEM_t1 = chaser_next.cartesian.V
+
+            t_ = self.find_time_optimal_trajectory(p_C_TEM_t0, v_C_TEM_t0, p_C_TEM_t1)['dt_opt']
+
+            err = abs(t_ - t)
+            if err < diff:
+                diff = err
+                t_opt = t
+                if err < 10:
+                    break
+
+        self.t_opt = t_opt
 
 
 # r1 = array([7000, 0, 0])
@@ -107,36 +156,3 @@ class OptimalTime:
 #     if err < diff:
 #         diff = err
 #         t_opt = t
-
-    def find_optimal_trajectory_time_for_scenario(self, target, chaser_next, chaser, max_time):
-
-        p_C_TEM_t0 = chaser.cartesian.R
-
-        p_T_TEM_t0 = target.cartesian.R
-        v_T_TEM_t0 = target.cartesian.V
-
-        diff = 1e12
-        t_opt = 0
-        for t in xrange(10, max_time):
-            # Propagate target position at t = t0 + dt
-            p_T_TEM_t1, v_T_TEM_t1 = pk.propagate_lagrangian(p_T_TEM_t0, v_T_TEM_t0, t, mu)
-            target.cartesian.R = p_T_TEM_t1
-            target.cartesian.V = v_T_TEM_t1
-
-            # Now that the target is propagated, we can calculate absolute position of the chaser from its relative
-            # This is the position he will have at time t = t0 + dt
-            chaser_next.cartesian.from_lhlv_frame(target.cartesian, chaser_next.lvlh)
-
-            p_C_TEM_t1 = chaser_next.cartesian.R
-            v_C_TEM_t1 = chaser_next.cartesian.V
-
-            t_ = self.find_time_optimal_trajectory(p_C_TEM_t0, p_C_TEM_t1)['dt_opt']
-
-            err = abs(t_ - t)
-            if err < diff:
-                diff = err
-                t_opt = t
-                if err < 1:
-                    break
-
-        self.t_opt = t_opt
