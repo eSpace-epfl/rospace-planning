@@ -238,64 +238,34 @@ class Solver:
         # TODO: Function to store and save results and manoeuvres in .mat format
         print "Saving manoeuvre..."
 
-
-
-        target_temp = Cartesian()
-        chaser_temp = Cartesian()
-
-        chaser_temp_lvlh = CartesianLVLH()
-
-        r_abs = [p_C_TEM_t0]
-        r_rel = [chaser.lvlh.R]
-        chaser_temp.R = p_C_TEM_t0
-        chaser_temp.V = v_C_TEM_t0 + best_deltaV_1
-        target_temp.R = p_T_TEM_t0
-        target_temp.V = v_T_TEM_t0
-
-        for j in xrange(1, best_dt+1):
-            r1, v1 = pk.propagate_lagrangian(chaser_temp.R, chaser_temp.V, 1, mu_earth)
-            r_abs.append(r1)
-
-            chaser_temp.R = np.array(r1)
-            chaser_temp.V = np.array(v1)
-
-            r1_T, v1_T = pk.propagate_lagrangian(target_temp.R, target_temp.V, 1, mu_earth)
-
-            target_temp.R = np.array(r1_T)
-            target_temp.V = np.array(v1_T)
-
-            chaser_temp_lvlh.from_cartesian_pair(chaser_temp, target_temp)
-
-            r_rel.append(chaser_temp_lvlh.R)
-
-        sio.savemat('/home/dfrey/polybox/manoeuvre/ml_maneouvre_' + str(chaser.id) + '.mat',
-                    mdict={'abs_pos': r_abs, 'rel_pos': r_rel, 'deltaV_1': best_deltaV_1, 'deltaV_2': best_deltaV_2})        target_temp = Cartesian()
-        chaser_temp = Cartesian()
-
-        chaser_temp_lvlh = CartesianLVLH()
-
-        r_abs = [p_C_TEM_t0]
-        r_rel = [chaser.lvlh.R]
-        chaser_temp.R = p_C_TEM_t0
-        chaser_temp.V = v_C_TEM_t0 + best_deltaV_1
-        target_temp.R = p_T_TEM_t0
-        target_temp.V = v_T_TEM_t0
-        for j in xrange(1, best_dt+1):
-            r1, v1 = pk.propagate_lagrangian(chaser_temp.R, chaser_temp.V, 1, mu_earth)
-            r_abs.append(r1)
-
-            chaser_temp.R = np.array(r1)
-            chaser_temp.V = np.array(v1)
-
-            r1_T, v1_T = pk.propagate_lagrangian(target_temp.R, target_temp.V, 1, mu_earth)
-
-            target_temp.R = np.array(r1_T)
-            target_temp.V = np.array(v1_T)
-
-            chaser_temp_lvlh.from_cartesian_pair(chaser_temp, target_temp)
-
-            r_rel.append(chaser_temp_lvlh.R)
-
-        sio.savemat('/home/dfrey/polybox/manoeuvre/ml_maneouvre_' + str(chaser.id) + '.mat',
-                    mdict={'abs_pos': r_abs, 'rel_pos': r_rel, 'deltaV_1': best_deltaV_1, 'deltaV_2': best_deltaV_2})
-
+        # target_temp = Cartesian()
+        # chaser_temp = Cartesian()
+        #
+        # chaser_temp_lvlh = CartesianLVLH()
+        #
+        # r_abs = [p_C_TEM_t0]
+        # r_rel = [chaser.lvlh.R]
+        # chaser_temp.R = p_C_TEM_t0
+        # chaser_temp.V = v_C_TEM_t0 + best_deltaV_1
+        # target_temp.R = p_T_TEM_t0
+        # target_temp.V = v_T_TEM_t0
+        #
+        # for j in xrange(1, best_dt+1):
+        #     r1, v1 = pk.propagate_lagrangian(chaser_temp.R, chaser_temp.V, 1, mu_earth)
+        #     r_abs.append(r1)
+        #
+        #     chaser_temp.R = np.array(r1)
+        #     chaser_temp.V = np.array(v1)
+        #
+        #     r1_T, v1_T = pk.propagate_lagrangian(target_temp.R, target_temp.V, 1, mu_earth)
+        #
+        #     target_temp.R = np.array(r1_T)
+        #     target_temp.V = np.array(v1_T)
+        #
+        #     chaser_temp_lvlh.from_cartesian_pair(chaser_temp, target_temp)
+        #
+        #     r_rel.append(chaser_temp_lvlh.R)
+        #
+        # sio.savemat('/home/dfrey/polybox/manoeuvre/ml_maneouvre_' + str(chaser.id) + '.mat',
+        #             mdict={'abs_pos': r_abs, 'rel_pos': r_rel, 'deltaV_1': best_deltaV_1, 'deltaV_2': best_deltaV_2})        target_temp = Cartesian()
+        #
