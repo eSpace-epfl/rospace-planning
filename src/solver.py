@@ -38,12 +38,17 @@ class Solver:
         best_dt = 0
         best_sol = None
 
-        if np.linalg.norm(v_C_TEM_t0 - v_T_TEM_t0) != 0:
-            t_min = int(np.linalg.norm(p_C_TEM_t0 - p_T_TEM_t0) / np.linalg.norm(v_C_TEM_t0 - v_T_TEM_t0))
-        else:
+        # if np.linalg.norm(v_C_TEM_t0 - v_T_TEM_t0) != 0:
+        #     t_min = int(np.linalg.norm(p_C_TEM_t0 - p_T_TEM_t0) / np.linalg.norm(v_C_TEM_t0 - v_T_TEM_t0))
+        # else:
+        #     t_min = 1
+
+        t_min = int(chaser.execution_time/2 - 100)
+        t_max = int(chaser.execution_time/2 + 100)
+        if t_min < 0:
             t_min = 1
 
-        for dt in xrange(t_min, chaser.execution_time):
+        for dt in xrange(t_min, t_max):
             # Propagate target position at t = t0 + dt
             p_T_TEM_t1, v_T_TEM_t1 = pk.propagate_lagrangian(p_T_TEM_t0, v_T_TEM_t0, dt, mu_earth)
             target.cartesian.R = np.array(p_T_TEM_t1)
@@ -56,10 +61,10 @@ class Solver:
             p_C_TEM_t1 = chaser_next.cartesian.R
 
             # Calculate the maximum number of revolutions given orbit period
-            T = 2*pi*sqrt(chaser.kep.a)
+            # T = 2*pi*sqrt(chaser.kep.a)
 
             # TODO: Instead of solving everytime the lambert problem, check if it can be optimal before
-            sol = pk.lambert_problem(p_C_TEM_t0, p_C_TEM_t1, dt, mu_earth, True, N)
+            sol = pk.lambert_problem(p_C_TEM_t0, p_C_TEM_t1, dt, mu_earth, True, 10)
 
             # Check for the best solution for this dt
             for i in xrange(0, len(sol.get_v1())):
@@ -85,37 +90,37 @@ class Solver:
 
         print "Chaser final relative position: " + str(chaser_next.lvlh.R)
 
-        print "Saving manoeuvre..."
-
-        target_temp = Cartesian()
-        chaser_temp = Cartesian()
-
-        chaser_temp_lvlh = CartesianLVLH()
-
-        r_abs = [p_C_TEM_t0]
-        r_rel = [chaser.lvlh.R]
-        chaser_temp.R = p_C_TEM_t0
-        chaser_temp.V = v_C_TEM_t0 + best_deltaV_1
-        target_temp.R = p_T_TEM_t0
-        target_temp.V = v_T_TEM_t0
-        for j in xrange(1, best_dt+1):
-            r1, v1 = pk.propagate_lagrangian(chaser_temp.R, chaser_temp.V, 1, mu_earth)
-            r_abs.append(r1)
-
-            chaser_temp.R = np.array(r1)
-            chaser_temp.V = np.array(v1)
-
-            r1_T, v1_T = pk.propagate_lagrangian(target_temp.R, target_temp.V, 1, mu_earth)
-
-            target_temp.R = np.array(r1_T)
-            target_temp.V = np.array(v1_T)
-
-            chaser_temp_lvlh.from_cartesian_pair(chaser_temp, target_temp)
-
-            r_rel.append(chaser_temp_lvlh.R)
-
-        sio.savemat('/home/dfrey/polybox/manoeuvre/ml_maneouvre_' + str(chaser.id) + '.mat',
-                    mdict={'abs_pos': r_abs, 'rel_pos': r_rel, 'deltaV_1': best_deltaV_1, 'deltaV_2': best_deltaV_2})
+        # print "Saving manoeuvre..."
+        #
+        # target_temp = Cartesian()
+        # chaser_temp = Cartesian()
+        #
+        # chaser_temp_lvlh = CartesianLVLH()
+        #
+        # r_abs = [p_C_TEM_t0]
+        # r_rel = [chaser.lvlh.R]
+        # chaser_temp.R = p_C_TEM_t0
+        # chaser_temp.V = v_C_TEM_t0 + best_deltaV_1
+        # target_temp.R = p_T_TEM_t0
+        # target_temp.V = v_T_TEM_t0
+        # for j in xrange(1, best_dt+1):
+        #     r1, v1 = pk.propagate_lagrangian(chaser_temp.R, chaser_temp.V, 1, mu_earth)
+        #     r_abs.append(r1)
+        #
+        #     chaser_temp.R = np.array(r1)
+        #     chaser_temp.V = np.array(v1)
+        #
+        #     r1_T, v1_T = pk.propagate_lagrangian(target_temp.R, target_temp.V, 1, mu_earth)
+        #
+        #     target_temp.R = np.array(r1_T)
+        #     target_temp.V = np.array(v1_T)
+        #
+        #     chaser_temp_lvlh.from_cartesian_pair(chaser_temp, target_temp)
+        #
+        #     r_rel.append(chaser_temp_lvlh.R)
+        #
+        # sio.savemat('/home/dfrey/polybox/manoeuvre/ml_maneouvre_' + str(chaser.id) + '.mat',
+        #             mdict={'abs_pos': r_abs, 'rel_pos': r_rel, 'deltaV_1': best_deltaV_1, 'deltaV_2': best_deltaV_2})
 
         self.sol = {'deltaV': best_deltaV, 'deltaV_1': best_deltaV_1, 'deltaV_2': best_deltaV_2, 'deltaT': best_dt}
 

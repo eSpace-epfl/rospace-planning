@@ -156,27 +156,25 @@ class PathOptimizer:
         # Set relative position at t = t_start
         chaser.lvlh.from_cartesian_pair(chaser.cartesian, target.cartesian)
 
-
-        print "Saving manoeuvre..."
-
-
-        for j in xrange(1, int(t_prop+1)):
-            r1, v1 = pk.propagate_lagrangian(chaser_temp.R, chaser_temp.V, 1, mu_earth)
-
-            chaser_temp.R = np.array(r1)
-            chaser_temp.V = np.array(v1)
-
-            r1_T, v1_T = pk.propagate_lagrangian(target_temp.R, target_temp.V, 1, mu_earth)
-
-            target_temp.R = np.array(r1_T)
-            target_temp.V = np.array(v1_T)
-
-            chaser_temp_lvlh.from_cartesian_pair(chaser_temp, target_temp)
-
-            r_rel.append(chaser_temp_lvlh.R)
-
-        sio.savemat('/home/dfrey/polybox/manoeuvre/ml_maneouvre_0.mat',
-                    mdict={'rel_pos': r_rel})
+        # print "Saving manoeuvre..."
+        #
+        # for j in xrange(1, int(t_prop+1)):
+        #     r1, v1 = pk.propagate_lagrangian(chaser_temp.R, chaser_temp.V, 1, mu_earth)
+        #
+        #     chaser_temp.R = np.array(r1)
+        #     chaser_temp.V = np.array(v1)
+        #
+        #     r1_T, v1_T = pk.propagate_lagrangian(target_temp.R, target_temp.V, 1, mu_earth)
+        #
+        #     target_temp.R = np.array(r1_T)
+        #     target_temp.V = np.array(v1_T)
+        #
+        #     chaser_temp_lvlh.from_cartesian_pair(chaser_temp, target_temp)
+        #
+        #     r_rel.append(chaser_temp_lvlh.R)
+        #
+        # sio.savemat('/home/dfrey/polybox/manoeuvre/ml_maneouvre_0.mat',
+        #             mdict={'rel_pos': r_rel})
 
 
         # TODO: Consider that when we arrive at the node we will have for sure a different position / velocity.

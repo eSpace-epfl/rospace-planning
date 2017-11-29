@@ -77,7 +77,6 @@ class Scenario:
                 eval('P' + str(i) + '.set_neighbour(P' + str(i-1) + ')')
                 #eval('P' + str(i) + '.set_execution_time(' + str(max_time_per_manoeuvre) + ')')
 
-
     def start_complex_scenario(self, scenario_start_time, actual_epoch, actual_position, actual_velocity):
         print "Creating and starting complex scenario..."
 
@@ -169,4 +168,7 @@ class Scenario:
         # number of hold points to be reached, depending on the actual position.
 
         # Start by adding
+        pass
+
+    def import_solved_scenario(self):
         pass
