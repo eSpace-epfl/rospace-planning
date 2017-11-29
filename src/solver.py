@@ -11,8 +11,7 @@ import scipy.io as sio
 import pykep as pk
 
 from numpy import cos, sin, pi
-from space_tf.Constants import Constants as const
-from space_tf import Cartesian, CartesianLVLH
+from space_tf import Cartesian, CartesianLVLH, mu_earth
 from optimal_transfer_time import OptimalTime
 
 
@@ -25,12 +24,7 @@ class Solver:
 
         print "\n -------------Solving Multi-Lambert Problem nr. " + str(chaser.id) + "--------------- \n"
 
-        mu = const.mu_earth
-
-        t_opt = OptimalTime()
-
         # TODO: Think about minimum time, at least the amount of time it takes to make a full orbit?
-        t_min = 600
 
         # Absolute position of chaser at t = t0
         p_C_TEM_t0 = chaser.cartesian.R
@@ -44,29 +38,28 @@ class Solver:
         best_dt = 0
         best_sol = None
 
-        print "Evaluating optimal transfer time... "
-        t_opt.find_optimal_trajectory_time_for_scenario(target, chaser_next, chaser)
+        if np.linalg.norm(v_C_TEM_t0 - v_T_TEM_t0) != 0:
+            t_min = int(np.linalg.norm(p_C_TEM_t0 - p_T_TEM_t0) / np.linalg.norm(v_C_TEM_t0 - v_T_TEM_t0))
+        else:
+            t_min = 1
 
-        t_optimal = t_opt.t_opt
-        print "t optimal: " + str(t_optimal)
-
-        t_min = t_optimal - 20 if t_optimal - 20 > 0 else 1
-
-        print "\n Chaser velocity at the beginning: " + str(chaser.cartesian.V)
-
-        for dt in xrange(t_min, t_optimal + 20):
+        for dt in xrange(t_min, chaser.execution_time):
             # Propagate target position at t = t0 + dt
-            p_T_TEM_t1, v_T_TEM_t1 = pk.propagate_lagrangian(p_T_TEM_t0, v_T_TEM_t0, dt, mu)
+            p_T_TEM_t1, v_T_TEM_t1 = pk.propagate_lagrangian(p_T_TEM_t0, v_T_TEM_t0, dt, mu_earth)
             target.cartesian.R = np.array(p_T_TEM_t1)
             target.cartesian.V = np.array(v_T_TEM_t1)
 
             # Now that the target is propagated, we can calculate absolute position of the chaser from its relative
             # This is the position he will have at time t = t0 + dt
-            chaser_next.cartesian.from_lhlv_frame(target.cartesian, chaser_next.lvlh)
+            chaser_next.cartesian.from_lvlh_frame(target.cartesian, chaser_next.lvlh)
 
             p_C_TEM_t1 = chaser_next.cartesian.R
 
-            sol = pk.lambert_problem(p_C_TEM_t0, p_C_TEM_t1, dt, mu, True, 10)
+            # Calculate the maximum number of revolutions given orbit period
+            T = 2*pi*sqrt(chaser.kep.a)
+
+            # TODO: Instead of solving everytime the lambert problem, check if it can be optimal before
+            sol = pk.lambert_problem(p_C_TEM_t0, p_C_TEM_t1, dt, mu_earth, True, N)
 
             # Check for the best solution for this dt
             for i in xrange(0, len(sol.get_v1())):
@@ -83,12 +76,12 @@ class Solver:
                     best_sol = sol
 
         # Update ideal final target position at t1 = t0 + best_dt
-        p_T_TEM_t1, v_T_TEM_t1 = pk.propagate_lagrangian(p_T_TEM_t0, v_T_TEM_t0, best_dt, mu)
+        p_T_TEM_t1, v_T_TEM_t1 = pk.propagate_lagrangian(p_T_TEM_t0, v_T_TEM_t0, best_dt, mu_earth)
         target.cartesian.R = np.array(p_T_TEM_t1)
         target.cartesian.V = np.array(v_T_TEM_t1)
 
         # Update next chaser position
-        chaser_next.cartesian.from_lhlv_frame(target.cartesian, chaser_next.lvlh)
+        chaser_next.cartesian.from_lvlh_frame(target.cartesian, chaser_next.lvlh)
 
         print "Chaser final relative position: " + str(chaser_next.lvlh.R)
 
@@ -106,13 +99,13 @@ class Solver:
         target_temp.R = p_T_TEM_t0
         target_temp.V = v_T_TEM_t0
         for j in xrange(1, best_dt+1):
-            r1, v1 = pk.propagate_lagrangian(chaser_temp.R, chaser_temp.V, 1, mu)
+            r1, v1 = pk.propagate_lagrangian(chaser_temp.R, chaser_temp.V, 1, mu_earth)
             r_abs.append(r1)
 
             chaser_temp.R = np.array(r1)
             chaser_temp.V = np.array(v1)
 
-            r1_T, v1_T = pk.propagate_lagrangian(target_temp.R, target_temp.V, 1, mu)
+            r1_T, v1_T = pk.propagate_lagrangian(target_temp.R, target_temp.V, 1, mu_earth)
 
             target_temp.R = np.array(r1_T)
             target_temp.V = np.array(v1_T)
@@ -121,10 +114,8 @@ class Solver:
 
             r_rel.append(chaser_temp_lvlh.R)
 
-        print "Chaser propagated final position: " + str(chaser_temp_lvlh.R)
-
         sio.savemat('/home/dfrey/polybox/manoeuvre/ml_maneouvre_' + str(chaser.id) + '.mat',
-                    mdict={'abs_pos': r_abs, 'rel_pos': r_rel})
+                    mdict={'abs_pos': r_abs, 'rel_pos': r_rel, 'deltaV_1': best_deltaV_1, 'deltaV_2': best_deltaV_2})
 
         self.sol = {'deltaV': best_deltaV, 'deltaV_1': best_deltaV_1, 'deltaV_2': best_deltaV_2, 'deltaT': best_dt}
 
@@ -150,8 +141,8 @@ class Solver:
 
         # TODO: Try to implement a version for continuous thrusting, maybe putting v_0_A dependant on time
         # TODO: Check with HP relative velocity, if we can move to the next hold point easily by "using" the relative velocity already acquired.
-        mu = const.mu_earth
-        n = np.sqrt(mu/a**3.0)
+
+        n = np.sqrt(mu_earth/a**3.0)
 
         phi_rr = lambda t: np.array([
             [4.0 - 3.0*cos(n*t), 0.0, 0.0],
@@ -233,11 +224,78 @@ class Solver:
 
         distance = np.linalg.norm(chaser.cartesian.R - target.cartesian.R)
 
-        if distance > 10:
-            self.multi_lambert_solver(chaser, chaser_next, target)
-        else:
-            self.clohessy_wiltshire_solver(chaser, chaser_next, target)
+        # TODO: Version 2.0
+        # if distance > 10:
+        #     self.multi_lambert_solver(chaser, chaser_next, target)
+        # else:
+        #     self.clohessy_wiltshire_solver(chaser, chaser_next, target)
 
-    def save_result(self):
+
+        # "Working" version only with lambert solver
+        self.multi_lambert_solver(chaser, chaser_next, target)
+
+    def save_result(self, chaser, chaser_next, target):
         # TODO: Function to store and save results and manoeuvres in .mat format
-        pass
+        print "Saving manoeuvre..."
+
+
+
+        target_temp = Cartesian()
+        chaser_temp = Cartesian()
+
+        chaser_temp_lvlh = CartesianLVLH()
+
+        r_abs = [p_C_TEM_t0]
+        r_rel = [chaser.lvlh.R]
+        chaser_temp.R = p_C_TEM_t0
+        chaser_temp.V = v_C_TEM_t0 + best_deltaV_1
+        target_temp.R = p_T_TEM_t0
+        target_temp.V = v_T_TEM_t0
+
+        for j in xrange(1, best_dt+1):
+            r1, v1 = pk.propagate_lagrangian(chaser_temp.R, chaser_temp.V, 1, mu_earth)
+            r_abs.append(r1)
+
+            chaser_temp.R = np.array(r1)
+            chaser_temp.V = np.array(v1)
+
+            r1_T, v1_T = pk.propagate_lagrangian(target_temp.R, target_temp.V, 1, mu_earth)
+
+            target_temp.R = np.array(r1_T)
+            target_temp.V = np.array(v1_T)
+
+            chaser_temp_lvlh.from_cartesian_pair(chaser_temp, target_temp)
+
+            r_rel.append(chaser_temp_lvlh.R)
+
+        sio.savemat('/home/dfrey/polybox/manoeuvre/ml_maneouvre_' + str(chaser.id) + '.mat',
+                    mdict={'abs_pos': r_abs, 'rel_pos': r_rel, 'deltaV_1': best_deltaV_1, 'deltaV_2': best_deltaV_2})        target_temp = Cartesian()
+        chaser_temp = Cartesian()
+
+        chaser_temp_lvlh = CartesianLVLH()
+
+        r_abs = [p_C_TEM_t0]
+        r_rel = [chaser.lvlh.R]
+        chaser_temp.R = p_C_TEM_t0
+        chaser_temp.V = v_C_TEM_t0 + best_deltaV_1
+        target_temp.R = p_T_TEM_t0
+        target_temp.V = v_T_TEM_t0
+        for j in xrange(1, best_dt+1):
+            r1, v1 = pk.propagate_lagrangian(chaser_temp.R, chaser_temp.V, 1, mu_earth)
+            r_abs.append(r1)
+
+            chaser_temp.R = np.array(r1)
+            chaser_temp.V = np.array(v1)
+
+            r1_T, v1_T = pk.propagate_lagrangian(target_temp.R, target_temp.V, 1, mu_earth)
+
+            target_temp.R = np.array(r1_T)
+            target_temp.V = np.array(v1_T)
+
+            chaser_temp_lvlh.from_cartesian_pair(chaser_temp, target_temp)
+
+            r_rel.append(chaser_temp_lvlh.R)
+
+        sio.savemat('/home/dfrey/polybox/manoeuvre/ml_maneouvre_' + str(chaser.id) + '.mat',
+                    mdict={'abs_pos': r_abs, 'rel_pos': r_rel, 'deltaV_1': best_deltaV_1, 'deltaV_2': best_deltaV_2})
+

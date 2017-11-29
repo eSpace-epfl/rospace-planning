@@ -3,11 +3,11 @@ import numpy as np
 import rospy
 import datetime as dt
 import epoch_clock
+import scipy.io as sio
 
 from scenario import Scenario
 from solver import Solver
 from space_tf import *
-from space_tf.Constants import Constants as const
 
 epoch = epoch_clock.Epoch()
 
@@ -75,7 +75,7 @@ class PathOptimizer:
         if not self.scenario_flag:
             self.scenario = Scenario()
             actual_rel_pos = self.cart_chaser.R - self.cart_target.R
-            self.scenario.start_complex_scenario(self.manoeuvre_start, epoch.now(), self.cart_chaser.R, self.cart_chaser.V)
+            self.scenario.start_simple_scenario(self.manoeuvre_start, epoch.now(), self.cart_chaser.R, self.cart_chaser.V)
             self.scenario_flag = True
 
             # Solve right now lambert problem for this scenario
@@ -112,9 +112,6 @@ class PathOptimizer:
         # Extract scenario
         s = self.scenario
 
-        # Extract needed constants
-        mu = const.mu_earth
-
         # TODO: Eventually update again the position of the chaser exactly before performing the propagation
 
         # Define the first point when the manoeuvre start
@@ -132,11 +129,23 @@ class PathOptimizer:
         # Extract target
         target = s.hold_points.pop(0)
 
+        # Output things
+        target_temp = Cartesian()
+        chaser_temp = Cartesian()
+
+        chaser_temp_lvlh = CartesianLVLH()
+
+        r_rel = [chaser.lvlh.R]
+        chaser_temp.R = self.cart_chaser.R
+        chaser_temp.V = self.cart_chaser.V
+        target_temp.R = self.cart_target.R
+        target_temp.V = self.cart_target.V
+
         # Propagate actual position in TEME to the moment in time when the maneouvre will start, and set chaser according to that
         r_c_prop, v_c_prop = \
-            pk.propagate_lagrangian(self.cart_chaser.R, self.cart_chaser.V, t_prop, mu)
+            pk.propagate_lagrangian(self.cart_chaser.R, self.cart_chaser.V, t_prop, mu_earth)
         r_t_prop, v_t_prop = \
-            pk.propagate_lagrangian(self.cart_target.R, self.cart_target.V, t_prop, mu)
+            pk.propagate_lagrangian(self.cart_target.R, self.cart_target.V, t_prop, mu_earth)
 
         # Set absolute position at t = t_start
         chaser.cartesian.R = np.array(r_c_prop)
@@ -146,6 +155,29 @@ class PathOptimizer:
 
         # Set relative position at t = t_start
         chaser.lvlh.from_cartesian_pair(chaser.cartesian, target.cartesian)
+
+
+        print "Saving manoeuvre..."
+
+
+        for j in xrange(1, int(t_prop+1)):
+            r1, v1 = pk.propagate_lagrangian(chaser_temp.R, chaser_temp.V, 1, mu_earth)
+
+            chaser_temp.R = np.array(r1)
+            chaser_temp.V = np.array(v1)
+
+            r1_T, v1_T = pk.propagate_lagrangian(target_temp.R, target_temp.V, 1, mu_earth)
+
+            target_temp.R = np.array(r1_T)
+            target_temp.V = np.array(v1_T)
+
+            chaser_temp_lvlh.from_cartesian_pair(chaser_temp, target_temp)
+
+            r_rel.append(chaser_temp_lvlh.R)
+
+        sio.savemat('/home/dfrey/polybox/manoeuvre/ml_maneouvre_0.mat',
+                    mdict={'rel_pos': r_rel})
+
 
         # TODO: Consider that when we arrive at the node we will have for sure a different position / velocity.
         # -> Think about what to do to correct for that
@@ -218,7 +250,6 @@ class PathOptimizer:
 
     # OLD
     def solve_optimization(self, r_c1, v_c1, t_rdv, t_start):
-        mu = Constants.mu_earth
         opt = OptimizationProblem()
 
         obj = lambda x: [
@@ -226,4 +257,4 @@ class PathOptimizer:
             x[2].get_v2()[i] for i in range(1, 3)]
         opt.init_objective_function(lambda x: x[0].get_v1()[0] + x[1] + x[2])
 
-        r_c_start, v_c_start = pk.propagate_lagrangian(r_c1, v_c1, t_start, mu)
+        r_c_start, v_c_start = pk.propagate_lagrangian(r_c1, v_c1, t_start, mu_earth)

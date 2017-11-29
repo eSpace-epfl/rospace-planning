@@ -2,8 +2,7 @@ import datetime as dt
 import pykep as pk
 import numpy as np
 
-from space_tf import Cartesian, CartesianLVLH, KepOrbElem
-from space_tf.Constants import Constants as const
+from space_tf import Cartesian, CartesianLVLH, KepOrbElem, mu_earth
 
 
 class HoldPoint:
@@ -47,7 +46,7 @@ class Scenario:
         self.hold_points = []
         self.start_scenario = dt.datetime(2017, 9, 15, 12, 20, 0)
 
-    def start_simple_scenario(self, scenario_start_time, actual_relative_position):
+    def start_simple_scenario(self, scenario_start_time, actual_epoch, actual_position, actual_velocity):
         print "Creating and starting simple scenario..."
 
         self.start_scenario = scenario_start_time
@@ -55,14 +54,22 @@ class Scenario:
         self.nr_hold_points = 7
         N = self.nr_hold_points
 
+        # Propagate the actual position to the time the scenario will start
+        prop_time = scenario_start_time - actual_epoch
+        prop_time = prop_time.seconds
+
+        p_next, v_next = pk.propagate_lagrangian(actual_position, actual_velocity, prop_time, mu_earth)
+
         # Set up a simple scenario with 6 hold points in km
         P0 = HoldPoint()
         P1 = HoldPoint([0, 0.060, 0], 1, 10000)
         P2 = HoldPoint([0, 0.1, 0], 2, 10000)
         P3 = HoldPoint([0, -0.1, 0], 3, 10000)
         P4 = HoldPoint([0, -5, 0], 4, 15000)
-        P5 = HoldPoint([0.5, -8, 0], 5, 150000)
-        P6 = HoldPoint(actual_relative_position, 6, 150000)
+        P5 = HoldPoint([0.5, -8, 0], 5, 86000)
+        P6 = HoldPoint(id=6, exec_time=86000)
+        P6.cartesian.R = np.array(p_next)
+        P6.cartesian.V = np.array(v_next)
 
         for i in xrange(0,N):
             self.hold_points.append(eval('P' + str(i)))
@@ -81,7 +88,7 @@ class Scenario:
         prop_time = scenario_start_time - actual_epoch
         prop_time = prop_time.seconds
 
-        p_next, v_next = pk.propagate_lagrangian(actual_position, actual_velocity, prop_time, const.mu_earth)
+        p_next, v_next = pk.propagate_lagrangian(actual_position, actual_velocity, prop_time, mu_earth)
 
         N = self.nr_hold_points
 
