@@ -2,7 +2,7 @@ import datetime as dt
 import pykep as pk
 import numpy as np
 
-from space_tf import Cartesian, CartesianLVLH, KepOrbElem, mu_earth
+from space_tf import Cartesian, CartesianLVLH, KepOrbElem, mu_earth, QNSRelOrbElements
 
 
 class HoldPoint:
@@ -45,6 +45,8 @@ class Scenario:
         self.keep_out_zone = 0.05
         self.hold_points = []
         self.start_scenario = dt.datetime(2017, 9, 15, 12, 20, 0)
+
+        self.positions = []
 
     def start_simple_scenario(self, scenario_start_time, actual_epoch, actual_position, actual_velocity):
         print "Creating and starting simple scenario..."
@@ -172,3 +174,57 @@ class Scenario:
 
     def import_solved_scenario(self):
         pass
+
+    def relative_keplerian_scenario(self, target, chaser):
+        """
+        Define a scenario w.r.t to quasi-relative orbital elements.
+        Not suited for equatorial orbit.
+
+        Args:
+            target (KepOrbElem)
+            chaser (KepOrbElem)
+        """
+
+        # Overview of a possible plan
+        # 1. Reach and keep the same orbital plane
+        # 2. Align to the same orbit
+        # 3. Observe target from a convenient position behind or in front of him
+        # 4. Approach the target up to a few hundred of meters
+        # 5. Go on a circling orbit to increase the position estimation accuracy
+        # 6. Stop in the front of the target
+        # 7. Begin the approach staying always inside a cone arriving to approx 5m distance
+
+        n_t = np.sqrt(mu_earth/target.a**3)
+        n_c = np.sqrt(mu_earth/chaser.a**3)
+
+        # Definition of #0
+        P0 = QNSRelOrbElements()
+        P0.from_keporb(target, chaser)
+
+        # Definition of #1
+        P1 = QNSRelOrbElements()
+        P1.from_vector([P0.dA, target.m - chaser.m + target.w - chaser.w,
+                        target.e * np.cos(target.w) - chaser.e * np.cos(chaser.w),
+                        target.e * np.sin(target.w) - chaser.e * np.sin(chaser.w), 0, 0])
+
+        # Definition of #2
+        P2 = QNSRelOrbElements()
+        P2.from_vector([0, 1, 0, 0, 0, 0])
+
+        # Definition of #3
+        P3 = QNSRelOrbElements()
+        P3.from_vector([0, target.m - chaser.m, 0, 0, 0, 0])
+
+        # Definition of #4
+        P4 = QNSRelOrbElements()
+        P4.from_vector([0, 0.1, 0, 0, 0, 0])
+
+        # Definition of #5
+        P5 = QNSRelOrbElements()
+        P5.from_vector([0.01, target.m - chaser.m, target.e * np.cos(target.w) - chaser.e * np.cos(chaser.w)])
+
+        # Definition of #6
+        P6 = QNSRelOrbElements()
+
+        # Definition of #7
+        P7 = QNSRelOrbElements()

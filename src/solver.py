@@ -20,6 +20,21 @@ class Solver:
     def __init__(self):
         self.sol = None
 
+    def solve(self, chaser, chaser_next, target):
+        # TODO: Implement generic solver that decide the right thing to do depending on the distance
+
+        distance = np.linalg.norm(chaser.cartesian.R - target.cartesian.R)
+
+        # TODO: Version 2.0
+        # if distance > 10:
+        #     self.multi_lambert_solver(chaser, chaser_next, target)
+        # else:
+        #     self.clohessy_wiltshire_solver(chaser, chaser_next, target)
+
+
+        # "Working" version only with lambert solver
+        self.multi_lambert_solver(chaser, chaser_next, target)
+
     def multi_lambert_solver(self, chaser, chaser_next, target):
 
         print "\n -------------Solving Multi-Lambert Problem nr. " + str(chaser.id) + "--------------- \n"
@@ -224,20 +239,10 @@ class Solver:
         """
         pass
 
-    def solve(self, chaser, chaser_next, target):
-        # TODO: Implement generic solver that decide the right thing to do depending on the distance
-
-        distance = np.linalg.norm(chaser.cartesian.R - target.cartesian.R)
-
-        # TODO: Version 2.0
-        # if distance > 10:
-        #     self.multi_lambert_solver(chaser, chaser_next, target)
-        # else:
-        #     self.clohessy_wiltshire_solver(chaser, chaser_next, target)
+    def solve_between_rel_orbits(self, chaser, chaser_next, target):
+        pass
 
 
-        # "Working" version only with lambert solver
-        self.multi_lambert_solver(chaser, chaser_next, target)
 
     def save_result(self, chaser, chaser_next, target):
         # TODO: Function to store and save results and manoeuvres in .mat format
