@@ -6,44 +6,77 @@ import pickle
 from space_tf import Cartesian, CartesianLVLH, KepOrbElem, mu_earth, QNSRelOrbElements
 
 
-class Command:
-
-    def __init__(self):
-        self.deltaV_TEM = [0, 0, 0]
-        self.execution_time = dt.datetime(2017, 9, 15, 12, 20, 0)
-
-    def set_deltaV(self, deltaV):
-        self.deltaV_TEM = deltaV
-
-    def set_execution_time(self, datetime):
-        self.execution_time = datetime
-
-
 class Position:
 
     def __init__(self):
+        # Position definition
+        # Note that in theory the cartesian, keplerian and lvlh position are available
+        # only for target and chaser actual position.
+        # For all the others only the wanted relative keplerian are manually defined
         self.cartesian = Cartesian()
         self.lvlh = CartesianLVLH()
         self.kep = KepOrbElem()
         self.rel_kep = QNSRelOrbElements()
+        # TODO: Think about which keplerian elements are defined there. Osculating? Mean?
 
         self.id = id
         self.next_position = []
-        self.command = Command()
 
     def set_neighbour(self, next_position):
         self.next_position.append(next_position)
+
+    def update_target_from_cartesian(self, r, v):
+        """
+            Update target coordinates from cartesian.
+            Note that in this case only keplerian elements and cartesian coordinates are update,
+            as the other two make no sense.
+
+        Args:
+             r (array): Radius vector in cartesian coordinate of the target
+             v (array): Velocity vector in cartesian coordinate of the target
+        """
+
+        # Update cartesian coordinates
+        self.cartesian.R = np.array(r)
+        self.cartesian.V = np.array(v)
+
+        # Update keplerian coordinates
+        self.kep.from_cartesian(self.cartesian)
+
+    def update_from_cartesian(self, r, v, target):
+        """
+            Update a chaser Position given the target position to calculate relative elements.
+
+        Args:
+            r (array): Radius vector in cartesian coordinate of the chaser
+            v (array): Velocity vector in cartesian coordinate of the chaser
+            target (Position):
+        """
+
+        # Update cartesian coordinates
+        self.cartesian.R = np.array(r)
+        self.cartesian.V = np.array(v)
+
+        # Update keplerian coordinates
+        self.kep.from_cartesian(self.cartesian)
+
+        # Update lvlh coordinates
+        self.lvlh.from_cartesian_pair(self.cartesian, target.cartesian)
+
+        # Update relative orbital elements
+        self.rel_kep.from_keporb(target.kep, self.kep)
 
 
 class Scenario:
 
     def __init__(self):
-
         # Scenario information
         self.nr_positions = 0
         self.keep_out_zone = 0.05
         self.positions = []
-        self.start_scenario = dt.datetime(2017, 9, 15, 12, 20, 0)
+        self.name = 'Standard'
+        self.overview = ''
+        self.mission_start = dt.datetime(2017, 9, 15, 13, 20, 0)
 
     def import_solved_scenario(self):
         """
@@ -74,26 +107,31 @@ class Scenario:
 
         # Overview of a possible plan
         # 1. Reach and keep the same orbital plane
-        # 2. Align to the same orbit
+        # 2. Align to the same orbit, far by a certain mean anomaly
         # 3. Observe target from a convenient position behind or in front of him
         # 4. Approach the target up to a few hundred of meters
         # 5. Go on a circling orbit to increase the position estimation accuracy
         # 6. Stop in the front of the target
         # 7. Begin the approach staying always inside a cone arriving to approx 5m distance
 
+        self.nr_positions = 7
+        self.name = 'Scenario Euler'
+        self.overview = "1. Reach and keep the same orbital plane \n" \
+                        "2. Align to the same orbit, far by a certain mean anomaly \n" \
+                        "3. Observe target from a convenient position behind or in front of him \n" \
+                        "4. Approach the target up to a few hundred of meters \n" \
+                        "5. Go on a circling orbit to increase the position estimation accuracy \n" \
+                        "6. Stop in the front of the target \n" \
+                        "7. Begin the approach staying always inside a cone arriving to approx 5m distance \n"
+
         n_t = np.sqrt(mu_earth/target.a**3)
         n_c = np.sqrt(mu_earth/chaser.a**3)
 
         # Definition of #0: Actual position that is constantly updated
-        P0 = Position()
-        P0.rel_kep.from_keporb(target, chaser)
-        P0.kep = chaser
-        P0.cartesian.from_keporb(chaser)
-        P0.lvlh.from_cartesian_pair(chaser, target)
 
         # Definition of #1
         P1 = Position()
-        P1.rel_kep.from_vector([P0.dA, target.m - chaser.m + target.w - chaser.w,
+        P1.rel_kep.from_vector([(target.a - chaser.a)/chaser.a, target.m - chaser.m + target.w - chaser.w,
                                 target.e * np.cos(target.w) - chaser.e * np.cos(chaser.w),
                                 target.e * np.sin(target.w) - chaser.e * np.sin(chaser.w), 0, 0])
 
@@ -135,3 +173,6 @@ class Scenario:
         P7 = Position()
         P7.rel_kep.from_vector([0, -n_t * 0.01, 0, 0, 0, 0])
 
+        # Add all the position to the list
+        for i in xrange(0, self.nr_positions):
+            self.positions.append(eval('P' + str(i+1)))
