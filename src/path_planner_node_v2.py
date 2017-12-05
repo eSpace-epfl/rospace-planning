@@ -1,16 +1,12 @@
 #!/usr/bin/env python
 
 import rospy
-import rosbag
 import message_filters
 import space_msgs
 
 from geometry_msgs.msg import Vector3Stamped
 from space_msgs.msg import SatelitePose
 from path_optimizer_v2 import TrajectoryController
-
-import numpy as np
-import epoch_clock
 
 
 if __name__=='__main__':
