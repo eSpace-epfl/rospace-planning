@@ -38,18 +38,19 @@ class TrajectoryController:
         # If scenario has not been created yet or if there are no available, locally saved solution
         if not self.scenario_flag:
             self.scenario.create_scenario(self.target.kep, self.chaser.kep)
+            try:
+                self.solver.command_line = self.scenario.import_solved_scenario()
+            except:
+                # Solve scenario
+                self.solver.solve_scenario(self.scenario, self.chaser, self.target)
             self.scenario_flag = True
-
-            # Solve scenario
-            self.solver.solve_scenario(self.scenario, self.chaser, self.target)
-
-        elif self.scenario.import_solved_scenario():
-            # Scenario already solver, only need to apply outputs through the trajectory controller
-            # Import scenario
+        else:
+            # Scenario already solved, only need to apply outputs through the trajectory controller
+            # TODO: set outputs for kaloyan
             pass
 
-        else:
-            # Define the active command and wait until it's time to output it
-            # TODO: Orientation time!
-
-            self.active_command = self.solver.command_line.pop(0)
+        # else:
+        #     # Define the active command and wait until it's time to output it
+        #     # TODO: Orientation time!
+        #
+        #     self.active_command = self.solver.command_line.pop(0)

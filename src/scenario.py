@@ -94,9 +94,9 @@ class Scenario:
         N = self.nr_hold_points
 
         # Set up a more complex scenario with 8 hold points in km
-        P0 = HoldPoint()
-        P1 = HoldPoint([0, 0.060, 0], 1, 10000)
-        P2 = HoldPoint([0, 0.1, 0], 2, 10000)
+        S0 = HoldPoint([-4, 10, 0], 0, 60000)
+        S1 = HoldPoint([0, 0.060, 0], 1, 10000)
+        S2 = HoldPoint([0, 0.1, 0], 2, 10000)
         P3 = HoldPoint([0, -0.1, 0], 3, 10000)
         P4 = HoldPoint([0, -5, 0], 4, 15000)
         P5 = HoldPoint([0.5, -8, 0], 5, 86400)
@@ -110,121 +110,3 @@ class Scenario:
             if i > 0:
                 eval('P' + str(i) + '.set_neighbour(P' + str(i-1) + ')')
                 #eval('P' + str(i) + '.set_execution_time(' + str(max_time_per_manoeuvre) + ')')
-
-    def create_approach_graph(self):
-        """
-            Create an approach graph, depending on the number of hold lines we want to have.
-            Assuming we are already in the same orbital plane.
-        :param N:
-        :return:
-        """
-
-        hold_lines_position = [50, 500, -500, -5000, -30000]
-        hold_lines_cardinality = [1, 3, 3, 3, 5]
-        hold_points = []
-        id = 0
-        N = len(hold_lines_cardinality)
-
-        # Create target hold point
-        P_T = HoldPoint()
-        P_T.set_hold_point(0, 0, 0, 0, 0, id)
-        hold_points.append(P_T)
-
-        for n in xrange(0, N):
-            hold_points_old = hold_points
-            hold_points = []
-
-            for it in xrange(0, hold_lines_cardinality[n]):
-                id += 1
-
-                HP = HoldPoint()
-                HP.set_hold_point(0, 0, 0, 0, 0, id)
-
-                for i in xrange(0, len(hold_points_old)):
-                    HP.set_neighbour(hold_points_old[i])
-                hold_points.append(HP)
-
-
-        id += 1
-        # Create chaser hold point
-        P_C = HoldPoint()
-        P_C.set_hold_point(0, 0, 0, 0, 0, 0, id)
-
-        for i in xrange(0, len(hold_points)):
-            P_C.set_neighbour(hold_points[i])
-
-    def plan_front_approach(self):
-        """
-            In this type of scenario the target is fly-byed, to ultimately reach a position in front of
-            it, where the chaser can afterwards start a slow deceleration towards the target.
-        :return:
-        """
-
-        # Add last hold point before mating
-        P1 = HoldPoint()
-        P1.set_hold_point()
-        self.hold_points.append(P1)
-
-    def plan_scenario(self):
-        # Starting from the target position and from the given keep_out_zone, do a backward planning of a certain
-        # number of hold points to be reached, depending on the actual position.
-
-        # Start by adding
-        pass
-
-    def import_solved_scenario(self):
-        pass
-
-    def relative_keplerian_scenario(self, target, chaser):
-        """
-        Define a scenario w.r.t to quasi-relative orbital elements.
-        Not suited for equatorial orbit.
-
-        Args:
-            target (KepOrbElem)
-            chaser (KepOrbElem)
-        """
-
-        # Overview of a possible plan
-        # 1. Reach and keep the same orbital plane
-        # 2. Align to the same orbit
-        # 3. Observe target from a convenient position behind or in front of him
-        # 4. Approach the target up to a few hundred of meters
-        # 5. Go on a circling orbit to increase the position estimation accuracy
-        # 6. Stop in the front of the target
-        # 7. Begin the approach staying always inside a cone arriving to approx 5m distance
-
-        n_t = np.sqrt(mu_earth/target.a**3)
-        n_c = np.sqrt(mu_earth/chaser.a**3)
-
-        # Definition of #0
-        P0 = QNSRelOrbElements()
-        P0.from_keporb(target, chaser)
-
-        # Definition of #1
-        P1 = QNSRelOrbElements()
-        P1.from_vector([P0.dA, target.m - chaser.m + target.w - chaser.w,
-                        target.e * np.cos(target.w) - chaser.e * np.cos(chaser.w),
-                        target.e * np.sin(target.w) - chaser.e * np.sin(chaser.w), 0, 0])
-
-        # Definition of #2
-        P2 = QNSRelOrbElements()
-        P2.from_vector([0, 1, 0, 0, 0, 0])
-
-        # Definition of #3
-        P3 = QNSRelOrbElements()
-        P3.from_vector([0, target.m - chaser.m, 0, 0, 0, 0])
-
-        # Definition of #4
-        P4 = QNSRelOrbElements()
-        P4.from_vector([0, 0.1, 0, 0, 0, 0])
-
-        # Definition of #5
-        P5 = QNSRelOrbElements()
-        P5.from_vector([0.01, target.m - chaser.m, target.e * np.cos(target.w) - chaser.e * np.cos(chaser.w)])
-
-        # Definition of #6
-        P6 = QNSRelOrbElements()
-
-        # Definition of #7
-        P7 = QNSRelOrbElements()
