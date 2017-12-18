@@ -5,8 +5,8 @@ import datetime as dt
 import scipy.io as sio
 import epoch_clock
 
-from scenario import Scenario, Position
-from solver import Solver, Command
+from scenario_v2 import Scenario, Position
+from solver_v2 import Solver, Command
 from space_tf import *
 
 epoch = epoch_clock.Epoch()
@@ -43,14 +43,11 @@ class TrajectoryController:
         elif len(self.solver.command_line) == 0:
             self.sleep_flag = False
 
-        if self.active_command.true_anomaly <= self.chaser.kep.v and len(self.solver.command_line) > 0 \
-            and self.active_command.theta_diff == None:
+        if self.active_command.true_anomaly <= self.chaser.kep.v and epoch.now() >= self.scenario.mission_start \
+                and len(self.solver.command_line) > 0 and epoch.now() >= self.active_command.epoch:
             # Command may be applied
             self.sleep_flag = True
             self.previous_command = True
-        elif self.active_command.theta_diff != None:
-            pass
-
 
     def check_trajectory(self):
         """

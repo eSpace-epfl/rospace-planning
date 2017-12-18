@@ -6,8 +6,9 @@ import sys
 import os
 import xml.etree.ElementTree as ET
 import rospy
+import scipy.io as sio
 
-from space_tf import Cartesian, CartesianLVLH, KepOrbElem, mu_earth, QNSRelOrbElements
+from space_tf import Cartesian, CartesianLVLH, KepOrbElem, mu_earth, QNSRelOrbElements, CartesianLVC
 
 
 class AimPoint:
@@ -34,9 +35,10 @@ class Position:
         self.lvlh = CartesianLVLH()
         self.kep = KepOrbElem()
         self.rel_kep = QNSRelOrbElements()
+        self.lvc = CartesianLVC()
 
         # Contains a list of locked attributes
-        #self._lock = []
+        # self._lock = []
 
         # TODO: Think about which keplerian elements are defined there. Osculating? Mean?
 
@@ -102,6 +104,9 @@ class Position:
         # Update relative orbital elements
         self.rel_kep.from_keporb(target.kep, self.kep)
 
+        # Update lvc coordinate frame
+        self.lvc.from_keporb(self.kep, target.kep)
+
     def update_from_lvlh(self, target, dR):
         """
             Set a position coordinates depending on the relative distance we want to have from the target.
@@ -112,9 +117,9 @@ class Position:
         """
 
         self.lvlh.R = dR
-        self.cartesian.from_lvlh_frame(target, self.lvlh)
+        self.cartesian.from_lvlh_frame(target.cartesian, self.lvlh)
         self.kep.from_cartesian(self.cartesian)
-        self.rel_kep.from_keporb(self.kep)
+        self.rel_kep.from_keporb(target.kep, self.kep)
 
     def update_from_lvc(self, target, dr, dv):
         """
@@ -180,8 +185,8 @@ class Scenario:
             with open('scenario.pickle', 'rb') as file:
                 obj = pickle.load(file)
                 if obj['scenario_name'] == self.name:
-                    print "-----------------> Old manoeuvre elaborated <--------------------"
-                    print "Loading old solution..."
+                    print "\n -----------------> Old manoeuvre elaborated <--------------------"
+                    print "Old solution loaded!"
                     return obj['command_line']
                 else:
                     print "Old scenario does not correspond to actual one."
@@ -202,8 +207,9 @@ class Scenario:
 
             obj = {'scenario_name': self.name, 'command_line': command_line}
 
-            pickle.dump(obj, file)
+            pickle.dump(obj, file, protocol=pickle.HIGHEST_PROTOCOL)
             print "Command Line & Scenario saved..."
+
 
     def create_scenario(self, target, chaser):
         """
@@ -346,9 +352,10 @@ class Scenario:
 
         for AP in APs:
             pos = AP.position
-            pos.cartesian.from_lvlh_frame(target.cartesian, pos.lvlh)
-            pos.kep.from_cartesian(pos.cartesian)
-            pos.rel_kep.from_keporb(target.kep, pos.kep)
+            pos.update_from_lvlh(target, pos.lvlh.R)
+            # pos.cartesian.from_lvlh_frame(target.cartesian, pos.lvlh)
+            # pos.kep.from_cartesian(pos.cartesian)
+            # pos.rel_kep.from_keporb(target.kep, pos.kep)
 
         # TODO: Right now, the only blocked value is R in LVLH frame. Would be interesting to implement
         # general conversions that depending on the locked update all the other parameters
