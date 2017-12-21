@@ -1,3 +1,11 @@
+"""
+    Module that contains a definition of the solver, that calculates in real time the next manouver to be done.
+
+    References:
+        [1] Orbital Mechanics for Engineering Students, 3rd Edition, Howard D. Curtis, ISBN 978-0-08-097747-8
+        [2] Fundamentals of Astrodynamics and Applications, 2nd Edition, David A. Vallado, ISBN 1-881883-12-4
+"""
+
 import numpy as np
 import scipy.io as sio
 import epoch_clock
@@ -29,39 +37,34 @@ class Solver:
         self.solver_clock = 0
 
     def solve_scenario(self, scenario, chaser, target):
+        print "\n+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
         print "Solving the scenario: " + scenario.name + "\n"
         print "Scenario overview: "
         print scenario.overview
+        print "Mission start as soon as the simulation start! "
 
-        # Extract scenario start time to propagate chaser and target position
-        epoch = epoch_clock.Epoch()
-        t_start = scenario.mission_start
-        t_now = epoch.now()
-
-        dt = t_start - t_now
-        dt = dt.seconds
-        self.solver_clock = t_start
+        # # Extract scenario start time to propagate chaser and target position
+        # epoch = epoch_clock.Epoch()
+        # t_start = scenario.mission_start
+        # t_now = epoch.now()
+        #
+        # dt = t_start - t_now
+        # dt = dt.seconds
+        # self.solver_clock = t_start
 
         chaser_old = Position()
         chaser_old.from_other_position(chaser)
         target_old = Position()
         target_old.from_other_position(target)
 
-        print "Chaser position at 12:20:00:    " + str(chaser.cartesian.R)
-        print "Target position at 12:20:00:    " + str(target.cartesian.R)
-
         # Propagate chaser and target position to t_start
-        self._propagator(chaser, target, dt)
-
-        print "Manoeuvre start at (chaser):     " + str(chaser.cartesian.R)
-        print "               ... (target):     " + str(target.cartesian.R)
-        print "Relative position at start:      " + str(chaser.lvlh.R)
+        # self._propagator(chaser, target, dt)
 
         # Update scenario positions with the target position at t_start
-        scenario.update_yaml_scenario(target)
+        # scenario.update_yaml_scenario(target)
 
         # Extract scenario positions
-        positions = scenario.positions
+        positions = scenario.checkpoints
 
         # Define total deltav and total time
         tot_time = 0
@@ -70,27 +73,15 @@ class Solver:
         # Start solving scenario by popping positions from position list
         i = 0
         while i < len(positions):
-            print "\n------> Evaluating manoeuvre " + str(i)
+            print "\n>> Evaluating manoeuvre " + str(i)
 
             # Extract the first position, at t = t_start
             chaser_next = positions[i].position
 
             self.solve(chaser, chaser_next, target)
 
-            print "Delta-V needed for the first burn:     " + str(self.command_line[-2].deltaV_C)
-            print "Delta-V needed for the second burn:    " + str(self.command_line[-1].deltaV_C)
-            print "Total Delta-V for this manoeuvre:      " + str(np.linalg.norm(self.command_line[-2].deltaV_C)
-                                                             + np.linalg.norm(self.command_line[-1].deltaV_C))
-            print "Time needed to perform this manoeuvre: " + str(self.command_line[-2].duration)
-            print "Scheduled at:                          " + str(self.command_line[-2].epoch)
-
-            print "Arrival relative position:             " + str(chaser.lvlh.R)
-
-            tot_time += self.command_line[-2].duration
-            tot_deltaV += np.linalg.norm(self.command_line[-2].deltaV_C) + np.linalg.norm(self.command_line[-1].deltaV_C)
-
-            # Update positions
-            scenario.update_yaml_scenario(target)
+            # TODO, TOTHINK: Update positions
+            # scenario.update_yaml_scenario(target)
             i += 1
 
         print "\n\n-----------------> Manoeuvre elaborated <--------------------"
@@ -100,33 +91,74 @@ class Solver:
 
         scenario.export_solved_scenario(self.command_line)
 
-        self._save_result(chaser_old, target_old, dt)
+        self._save_result(chaser_old, target_old)
 
     def solve(self, chaser, chaser_next, target):
-        # TODO: Version 2.0
-        # Correct for the plane angles, TODO: Set some thresholds in which we can change them
+
+        # TODO: Separate solver depending on the distance from the target!!
+
+        tol = 1e-7
+
+        # Correct for the plane angles,
         # Inclination
-        dIx_C_CN = chaser.rel_kep.dIx - chaser_next.rel_kep.dIx
-        dIy_C_CN = chaser.rel_kep.dIy / np.sin(chaser.kep.i) - \
-                   chaser_next.rel_kep.dIy / np.sin(target.kep.i - chaser_next.rel_kep.dIx)
-        if dIx_C_CN != 0 or dIy_C_CN != 0:
+        di = chaser_next.kep.i - chaser.kep.i
+        dO = chaser_next.kep.O - chaser.kep.O
+        if abs(di) > tol or abs(dO) > tol:
             # Relative inclination between chaser and chaser next has to be adjusted
             self.plane_correction(chaser, chaser_next, target)
 
-        # Perigee
-        dEx_C_CN = chaser.rel_kep.dEx - chaser_next.rel_kep.dEx
-        dEy_C_CN = chaser.rel_kep.dEy - chaser_next.rel_kep.dEy
-        dw = dEx_C_CN**2 + dEy_C_CN*2
-        if dw == 0:
-            # Relative argument of perigee between chaser and chaser next has to be adjusted.
-            # TODO: put tolerance instead of 0
-            self.adjust_perigee(chaser, chaser_next)
+        print "New Chaser state: "
+        print "      a :     " + str(chaser.kep.a)
+        print "      e :     " + str(chaser.kep.e)
+        print "      i :     " + str(chaser.kep.i)
+        print "      O :     " + str(chaser.kep.O)
+        print "      w :     " + str(chaser.kep.w)
+        print "      v :     " + str(chaser.kep.v)
 
-        # Once the angles are corrected, the orbit can be modified according to the next position wanted using the
-        # Lambert solver.
-        self.adjust_eccentricity_semimajoraxis(chaser, chaser_next, target)
+        # Perigee
+        dw = chaser_next.kep.w - chaser.kep.w
+        if abs(dw) > 1e-3:
+            # Relative argument of perigee between chaser and chaser next has to be adjusted.
+            self.adjust_perigee(chaser, chaser_next, target)
+
+        print "New Chaser state: "
+        print "      a :     " + str(chaser.kep.a)
+        print "      e :     " + str(chaser.kep.e)
+        print "      i :     " + str(chaser.kep.i)
+        print "      O :     " + str(chaser.kep.O)
+        print "      w :     " + str(chaser.kep.w)
+        print "      v :     " + str(chaser.kep.v)
+
+        # Eccentricity and Semi-Major Axis
+        da = chaser_next.kep.a - chaser.kep.a
+        de = chaser_next.kep.e - chaser.kep.e
+        if abs(da) > 0.2 or abs(de) > 1e-3:
+            self.adjust_eccentricity_semimajoraxis(chaser, chaser_next, target)
+
+        print "New Chaser state: "
+        print "      a :     " + str(chaser.kep.a)
+        print "      e :     " + str(chaser.kep.e)
+        print "      i :     " + str(chaser.kep.i)
+        print "      O :     " + str(chaser.kep.O)
+        print "      w :     " + str(chaser.kep.w)
+        print "      v :     " + str(chaser.kep.v)
 
     def adjust_eccentricity_semimajoraxis(self, chaser, chaser_next, target):
+        """
+            Adjust eccentricity and semi-major axis at the same time with an Hohmann-Transfer like manouevre:
+            1) Burn at perigee to match the needed intermediate orbit
+            2) Burn at apogee to arrive at the final, wanted orbit
+
+            [1] Chapter 6
+
+        Args:
+            chaser (Position)
+            chaser_next (Position)
+            target (Position)
+        """
+
+        # TODO: Think about circular orbit true anomaly... And where the burn is executed...
+
         # When this solver is called, only the first two relative orbital elements have to be aligned with
         # the requested one.
         a_i = chaser.kep.a
@@ -134,47 +166,116 @@ class Solver:
         a_f = chaser_next.kep.a
         e_f = chaser_next.kep.e
 
-        r_a_f = a_f * (1.0 + e_f)
-        r_p_i = a_i * (1.0 - e_i)
+        # Check if the orbits intersecate
+        t = (a_f*(1-e_f**2) - a_i*(1-e_i**2))/(a_i*e_f*(1-e_i)**2 - a_f*e_i*(1-e_f**2))
 
-        # Calculate intermediate orbital elements
-        a_int = (r_a_f + r_p_i) / 2.0
-        e_int = 1.0 - r_p_i / a_int
+        if abs(t) <= 1:
+            # Orbit intersecate
+            theta_i = np.arccos(t)
+            theta_i_tmp = 2.0 * np.pi - theta_i
 
-        # Calculate deltaV's
-        deltaV_C_1 = np.sqrt(mu_earth * (2.0 / r_p_i - 1.0 / a_int)) - np.sqrt(mu_earth * (2.0 / r_p_i - 1.0 / a_i))
-        deltaV_C_2 = np.sqrt(mu_earth * (2.0 / r_a_f - 1.0 / a_f)) - np.sqrt(mu_earth * (2.0 / r_a_f - 1.0 / a_int))
+            if theta_i < chaser.kep.v:
+                dv1 = 2*np.pi + theta_i - chaser.kep.v
+            else:
+                dv1 = theta_i - chaser.kep.v
 
-        # Delta-V in chaser reference frame
-        deltaV_C_1 = deltaV_C_1 * np.array([1, 0, 0])
-        deltaV_C_2 = deltaV_C_2 * np.array([1, 0, 0])
+            if theta_i_tmp < chaser.kep.v:
+                dv2 = 2*np.pi + theta_i_tmp - chaser.kep.v
+            else:
+                dv2 = theta_i_tmp - chaser.kep.v
+
+            if dv1 > dv2:
+                theta_i = theta_i_tmp
+
+            V_PERI_i = np.sqrt(mu_earth / (a_i * (1.0 - e_i**2))) * np.array([-np.sin(theta_i), e_i + np.cos(theta_i), 0.0])
+            V_TEM_i = np.linalg.inv(chaser.kep.get_pof()).dot(V_PERI_i)
+
+            V_PERI_f = np.sqrt(mu_earth / (a_f * (1.0 - e_f**2))) * np.array([-np.sin(theta_i), e_f + np.cos(theta_i), 0.0])
+            V_TEM_f = np.linalg.inv(chaser_next.kep.get_pof()).dot(V_PERI_f)
+
+            deltaV_C = V_TEM_f - V_TEM_i
+
+            # Create command
+            c = Command()
+            c.deltaV_C = deltaV_C
+            c.true_anomaly = theta_i
+            c.ideal_transfer_orbit = []
+            c.duration = self.travel_time(chaser, chaser.kep.v, theta_i)
+
+            # Propagate chaser and target to evaluate all the future commands properly
+            self._propagator(chaser, target, c.duration)
+            self._propagator(chaser, target, 1e-3, deltaV_C)            # Propagate with a close-to-impulsive thrust
+
+            # Add to the command line the burn needed
+            self.command_line.append(c)
+
+        else:
+            if a_f > a_i:
+                r_a_f = a_f * (1.0 + e_f)
+                r_p_i = a_i * (1.0 - e_i)
+
+                # Calculate intermediate orbital elements
+                a_int = (r_a_f + r_p_i) / 2.0
+                e_int = 1.0 - r_p_i / a_int
+            else:
+                r_a_i = a_i * (1.0 + e_i)
+                r_p_f = a_f * (1.0 - e_f)
+
+                # Calculate intermediate orbital elements
+                a_int = (r_a_i + r_p_f) / 2.0
+                e_int = 1.0 - r_p_f / a_int
 
 
-        # Check if a specific relative distance w.r.t the target is wanted.
-        # In that case compute the waiting time on the intermediate orbit, check if it's possible to achieve the wanted
-        # position. If not, adjust the burn to achieve phasing.
-        dtheta = target.kep.v - chaser_next.kep.v
-        synodal_period = self.calc_synodal_period(chaser_next, target)
-        # Check after how much time such a configuration will happen again
-        # Wait till the configuration is reached
-        # Do the second (if wanted) burn
+            # Calculate Delta-V's in perifocal frame of reference
+            V_PERI_i_1 = np.sqrt(mu_earth / (a_i * (1.0 - e_i**2))) * np.array([0, e_i + 1, 0.0])
+            V_TEM_i_1 = np.linalg.inv(chaser.kep.get_pof()).dot(V_PERI_i_1)
+            V_PERI_f_1 = np.sqrt(mu_earth / (a_int * (1.0 - e_int**2))) * np.array([0, e_int + 1, 0.0])
+            V_TEM_f_1 = np.linalg.inv(chaser.kep.get_pof()).dot(V_PERI_f_1)
 
-        # Create command
-        c1 = Command()
-        c1.deltaV_C = deltaV_C_1
-        c1.true_anomaly = 0
-        c1.ideal_transfer_orbit = []
+            deltaV_C_1 = V_TEM_f_1 - V_TEM_i_1
 
-        c2 = Command()
-        c2.deltaV_C = deltaV_C_2
-        c2.true_anomaly = np.pi
-        c2.ideal_transfer_orbit = []
+            V_PERI_i_2 = np.sqrt(mu_earth / (a_int * (1.0 - e_int ** 2))) * np.array([0, e_int - 1, 0.0])
+            V_TEM_i_2 = np.linalg.inv(chaser.kep.get_pof()).dot(V_PERI_i_2)
+            V_PERI_f_2 = np.sqrt(mu_earth / (a_f * (1.0 - e_f ** 2))) * np.array([0, e_f - 1, 0.0])
+            V_TEM_f_2 = np.linalg.inv(chaser.kep.get_pof()).dot(V_PERI_f_2)
 
-        # Add to the command line the burn needed
-        self.command_line.append(c1)
-        self.command_line.append(c2)
+            deltaV_C_2 = V_TEM_f_2 - V_TEM_i_2
 
-    def adjust_perigee(self, chaser, chaser_next):
+            # Check if a specific relative distance w.r.t the target is wanted.
+            # In that case compute the waiting time on the intermediate orbit, check if it's possible to achieve the wanted
+            # position. If not, adjust the burn to achieve phasing.
+            dtheta = target.kep.v - chaser_next.kep.v
+            synodal_period = self.calc_synodal_period(chaser_next, target)
+            # Check after how much time such a configuration will happen again
+            # Wait till the configuration is reached
+            # Do the second (if wanted) burn
+
+            # Create command
+            c1 = Command()
+            c1.deltaV_C = deltaV_C_1
+            c1.true_anomaly = 0
+            c1.ideal_transfer_orbit = []
+            c1.duration = 2.0 * np.pi * np.sqrt(a_i**3 / mu_earth) + self.travel_time(chaser, chaser.kep.v, 2.0 * np.pi)
+
+            # Propagate chaser and target to evaluate all the future commands properly
+            self._propagator(chaser, target, c1.duration)
+            self._propagator(chaser, target, 1e-3, deltaV_C_1)            # Propagate almost as an impulsive thrust has been given
+
+            c2 = Command()
+            c2.deltaV_C = deltaV_C_2
+            c2.true_anomaly = np.pi
+            c2.ideal_transfer_orbit = []
+            c2.duration = np.pi * np.sqrt(a_int**3 / mu_earth)
+
+            # Propagate chaser and target to evaluate all the future commands properly
+            self._propagator(chaser, target, c2.duration)
+            self._propagator(chaser, target, 1e-3, deltaV_C_1)            # Propagate almost as an impulsive thrust has been given
+
+            # Add to the command line the burn needed
+            self.command_line.append(c1)
+            self.command_line.append(c2)
+
+    def adjust_perigee(self, chaser, chaser_next, target):
         """
             Given the chaser relative orbital elements w.r.t target,
             ad its next wanted status correct the perigee argument.
@@ -184,36 +285,64 @@ class Solver:
               chaser_next (Position):
         """
 
-        # TODO: Add manoeuvre duration & print of informations (deltaV, time)
+        # Easy fix for the case of circular orbit:
+        if chaser.kep.e < 1e-5:
+            chaser.kep.w = 0
+        else:
+            # Extract constants
+            a = chaser.kep.a
+            e = chaser.kep.e
 
-        # Evaluate perigee difference to correct
-        # TODO: Think about what happen when sin(0.5*(w_n - w)) = 0...
-        ddEx = chaser.rel_kep.dEx - chaser_next.rel_kep.dEx
-        ddEy = chaser.rel_kep.dEy - chaser_next.rel_kep.dEy
-        dw = 2 * (np.arctan(-ddEx/ddEy) - chaser.kep.w)
+            # Evaluate perigee difference to correct
+            dw = chaser_next.kep.w - chaser.kep.w
 
-        # Position at which the burn should occur
-        # TODO: Review this calculation, think in which of the two the deltav will be less
-        theta = [dw/2.0, np.pi + dw/2.0]
+            # Position at which the burn should occur
+            # TODO: Review this calculation, think in which of the two the deltav will be less
+            theta = [dw/2.0, np.pi + dw/2.0]
 
-        # Calculate burn intensity
-        # TODO: The velocity has to be propagated to the point where the burn occurs as well as the radius
-        alpha = np.arccos((1 + 2*chaser.kep.e*np.cos(dw/2.0) + np.cos(dw) * chaser.kep.e**2) *
-                          np.linalg.norm(chaser.cartesian.R)/((1 - chaser.kep.e**2)*(2*chaser.kep.a - np.linalg.norm(chaser.cartesian.R))))
-        deltav = np.linalg.norm(chaser.cartesian.v) * np.sqrt(2 * (1 - np.cos(alpha)))
+            # Two possible positions where the burn can occur
+            theta_i = dw/2.0
+            theta_i_tmp = theta_i + np.pi
+            theta_f = 2.0*np.pi - theta_i
+            theta_f_tmp = theta_f - np.pi
 
-        # Evaluate burn direction in chaser frame of reference
-        deltav_C = deltav * np.array([np.cos(np.pi / 2 + alpha / 2), 0, np.sin(np.pi / 2 + alpha / 2)])
+            # Check which one is the closest
+            if theta_i < chaser.kep.v:
+                dv1 = 2*np.pi + theta_i - chaser.kep.v
+            else:
+                dv1 = theta_i - chaser.kep.v
 
-        # Create command
-        # TODO: Think about ideal transfer orbit to check for differences
-        c = Command()
-        c.deltaV_C = deltav_C
-        c.true_anomaly = theta
-        c.ideal_transfer_orbit = []
+            if theta_i_tmp < chaser.kep.v:
+                dv2 = 2*np.pi + theta_i_tmp - chaser.kep.v
+            else:
+                dv2 = theta_i_tmp - chaser.kep.v
 
-        # Add to the command line the burn needed
-        self.command_line.append(c)
+            if dv1 > dv2:
+                theta_i = theta_i_tmp
+                theta_f = theta_f_tmp
+
+            V_PERI_i = np.sqrt(mu_earth / (a * (1.0 - e**2))) * np.array([-np.sin(theta_i), e + np.cos(theta_i), 0.0])
+            V_TEM_i = np.linalg.inv(chaser.kep.get_pof()).dot(V_PERI_i)
+
+            V_PERI_f = np.sqrt(mu_earth / (a * (1.0 - e**2))) * np.array([-np.sin(theta_f), e + np.cos(theta_f), 0.0])
+            V_TEM_f = np.linalg.inv(chaser_next.kep.get_pof()).dot(V_PERI_f)
+
+            deltaV_C = V_TEM_f - V_TEM_i
+
+            # Create command
+            # TODO: Think about ideal transfer orbit to check for differences + duration
+            c = Command()
+            c.deltaV_C = deltaV_C
+            c.true_anomaly = theta_i
+            c.ideal_transfer_orbit = []
+            c.duration = self.travel_time(chaser, chaser.kep.v, theta_i)
+
+            # Propagate chaser and target to evaluate all the future commands properly
+            self._propagator(chaser, target, c.duration)
+            self._propagator(chaser, target, 1e-3, deltaV_C)            # Propagate almost as an impulsive thrust has been given
+
+            # Add to the command line the burn needed
+            self.command_line.append(c)
 
     def _error_estimator(self, chaser, chaser_next, target):
         """
@@ -250,7 +379,7 @@ class Solver:
         r_T, v_T = pk.propagate_lagrangian(target.cartesian.R, target.cartesian.V, dt, mu_earth)
         target.update_target_from_cartesian(r_T, v_T)
 
-    def _save_result(self, chaser, target, dt):
+    def _save_result(self, chaser, target):
         if os.path.isdir('/home/dfrey/polybox/manoeuvre'):
             print "Saving manoeuvre..."
 
@@ -267,27 +396,20 @@ class Solver:
             R_chaser_lvlh = [chaser_tmp.lvlh.R]
             R_chaser_lvc =  [np.array([chaser_tmp.lvc.dR, chaser_tmp.lvc.dV, chaser_tmp.lvc.dH])]
 
-
-            for k in xrange(0, dt):
-                self._propagator(chaser_tmp, target_tmp, 1)
-                R_chaser.append(chaser_tmp.cartesian.R)
-                R_target.append(target_tmp.cartesian.R)
-                R_chaser_lvlh.append(chaser_tmp.lvlh.R)
-                R_chaser_lvc.append(np.array([chaser_tmp.lvc.dR, chaser_tmp.lvc.dV, chaser_tmp.lvc.dH]))
-
-
             for i in xrange(0, len(self.command_line)):
                 cmd = self.command_line[i]
 
-                # Apply dV
-                chaser_tmp.cartesian.V += cmd.deltaV_C
+                duration = np.arange(0, cmd.duration, 0.1)
 
-                for j in xrange(0, cmd.duration):
-                    self._propagator(chaser_tmp, target_tmp, 1)
+                for j in xrange(0, len(duration)):
+                    self._propagator(chaser_tmp, target_tmp, 0.1)
                     R_chaser.append(chaser_tmp.cartesian.R)
                     R_target.append(target_tmp.cartesian.R)
                     R_chaser_lvlh.append(chaser_tmp.lvlh.R)
                     R_chaser_lvc.append(np.array([chaser_tmp.lvc.dR, chaser_tmp.lvc.dV, chaser_tmp.lvc.dH]))
+
+                # Apply dV
+                chaser_tmp.cartesian.V += cmd.deltaV_C
 
                 print "Relative Position after command " + str(i) + ":    " + str(chaser_tmp.lvlh.R)
 
@@ -391,7 +513,8 @@ class Solver:
     def plane_correction(self, chaser, chaser_next, target):
         """
             Correct plane inclination and raan with one single manoeuvre
-            [] Space Mechanics, Chapter 9
+            [1] Chapter 6
+            [2] Chapter 6
         """
 
         # In a plane correction the following parameters are changed:
@@ -400,10 +523,8 @@ class Solver:
         # While those remain the same:
         # - Eccentricity
         # - Semi-Major Axis
-        #
-        # Normally, a plane change is better suited with a circularized orbit.
-        # Therefore, in this function it is assumed that the orbit is circular, and the nodes where the burn has to be
-        # executed is calculated according to that.
+
+        # TODO: account for dO/dt and di/dt
 
         # Constant values
         a = chaser.kep.a
@@ -432,6 +553,7 @@ class Solver:
 
         psi = np.arcsin(np.sin(i_i) * np.sin(i_f) * np.sin(dO) / np.sin(alpha))
 
+        # Two possible positions where the burn can occur
         theta_i = A_Li - chaser.kep.w
         theta_i_tmp = theta_i + np.pi
 
@@ -479,16 +601,6 @@ class Solver:
         # Evaluate deltaV
         deltaV_C = V_TEM_f - V_TEM_i
 
-        # Evaluate velocity vector in Earth-Inertial reference frame at theta_i
-        V_PERI_i = np.sqrt(mu_earth / (a * (1.0 - e**2))) * np.array([-np.sin(theta_i_tmp), e + np.cos(theta_i_tmp), 0.0])
-        V_TEM_i = np.linalg.inv(chaser.kep.get_pof()).dot(V_PERI_i)
-
-        # Rotate vector around c by alpha radiants
-        V_TEM_f = R_c.dot(V_TEM_i)
-
-        # Evaluate deltaV
-        deltaV_C = V_TEM_f - V_TEM_i
-
         # # Compare against lambert solver
         # R_PERI_i =  a * (1.0 - e**2)/(1 + e * np.cos(theta_i)) * np.array([np.cos(theta_i), np.sin(theta_i), 0.0])
         # R_TEM_i = np.linalg.inv(chaser.kep.get_pof()).dot(R_PERI_i)
@@ -500,17 +612,23 @@ class Solver:
         # dt = self.travel_time(chaser, theta_i, theta_i + np.pi/2.0)
         # sol = pk.lambert_problem(R_TEM_i, R_TEM_f, dt, mu_earth, True)
         #
-        # # Try to propagate
-        # self._propagator(chaser, target, self.travel_time(chaser, chaser.kep.v, theta_i))
-        # self._propagator(chaser, target, dt, deltaV_C)
 
         # Create command
         c1 = Command()
         c1.deltaV_C = deltaV_C
         c1.true_anomaly = theta_i
         c1.ideal_transfer_orbit = []
+        c1.duration = self.travel_time(chaser, chaser.kep.v, theta_i)
+
+        # Propagate chaser and target to evaluate all the future commands properly
+        self._propagator(chaser, target, c1.duration)
+        self._propagator(chaser, target, 1e-3, deltaV_C)            # Propagate almost as an impulsive thrust has been given
+
+        self.command_line.append(c1)
 
     def travel_time(self, chaser, theta0, theta1):
+
+        # TODO: Review + put reference
 
         a = chaser.kep.a
         e = chaser.kep.e

@@ -13,6 +13,212 @@ class CheckPoint:
         self.id = id
         self.position = Position()
 
+        self.time_dependancy = False
+
+    def generate_free_coordinates(self, var_list, chaser, target):
+        """
+            Check what is given as checkpoint and generate all the missing coordinate, assuming that:
+             -> The next orbit has to be coelliptic with the actual one.
+             -> If the missing values regards the plane tilt (RAAN, inclination), then we assume the plane is the same
+             ->
+        Args:
+            list_of_defined_values: Contain a list of string of the names of the variables imposed in the .yaml file
+
+        """
+        # Set baseline orbital elements
+        a = None
+        i = None
+        e = None
+        O = None
+        w = None
+        v = None
+
+        # Check time dependancy
+        if 'kep.v' in var_list or 'rel_kep.dL' in var_list or 'lvlh.R' in var_list:
+            self.time_dependancy = True
+
+        # Check plane coordinates. Inclination/RAAN/Argument of perigee
+        # Inclination
+        if 'kep.i' in var_list:
+            i = self.position.kep.i
+        elif 'rel_kep.dIx' in var_list:
+            i = target.kep.i - self.position.rel_kep.dIx
+        elif 'rel_kep.dIy' in var_list:
+            # Check RAAN
+            if 'kep.O' in var_list:
+                i = np.arcsin(self.position.rel_kep.dIy / (target.kep.O - self.position.kep.O))
+            elif 'rel_kep.dL' in var_list:
+                print "Still to think about it... TBD"
+            else:
+                # Think about this part...
+                pass
+        else:
+            # Plane inclination not defined, keep the one of the chaser
+            i = chaser.kep.i
+
+        # RAAN
+        if 'kep.O' in var_list:
+            O = self.position.kep.O
+        elif 'rel_kep.dIy' in var_list:
+            if O != None:
+                raise Warning("There may be some conflicts in the definitions of RAAN and inclination!")
+            else:
+                O = target.kep.O - self.position.rel_kep.dIy / np.sin(self.position.kep.i)
+        else:
+            # RAAN not defined, keep the one of the chaser
+            O = chaser.kep.O
+
+        # Argument of perigee
+        if 'kep.w' in var_list:
+            w = self.position.kep.w
+        elif 'rel_kep.dEx' in var_list:
+            # Think how to concatenate the eccentricity with perigee argument...
+            pass
+        elif 'rel_kep.dEy' in var_list:
+            # Same as above
+            pass
+        else:
+            # No definition found, keep using the one of the chaser
+            w = chaser.kep.w
+
+        # Check if semi-major axis and/or eccentricity are fixed.
+        if 'kep.a' in var_list:
+            a = self.position.kep.a
+        elif 'rel_kep.dA' in var_list:
+            a_T = target.kep.a
+            a = a_T / (1.0 + self.position.rel_kep.dA)
+        else:
+            # Semi-Major axis is calculated according to the assumptions above
+            a = -1.0
+
+        if 'kep.e' in var_list:
+            e = self.position.kep.e
+        elif 'rel_kep.dEx' in var_list and 'rel_kep.dEy' in var_list and 'kep.w' in var_list:
+            c = target.kep.e**2 - self.position.rel_kep.dEx**2 - self.position.rel_kep.dEy**2
+            b = -2.0 * target.kep.e * np.cos(target.kep.w - self.position.kep.w)
+
+            e1 = (-b + np.sqrt(b**2 - 4.0 * c)) / 2.0
+            e2 = (-b - np.sqrt(b**2 - 4.0 * c)) / 2.0
+
+            if e1 < 0:
+                e = e2
+            else:
+                e = e1
+        elif 'rel_kep.dEx' in var_list and 'rel_kep.dEy' in var_list:
+            # kep.w not defined => assumed that it is the same as the target
+            e = np.sqrt(self.position.rel_kep.dEx**2 + self.position.rel_kep.dEy**2 - target.kep.e**2)
+        else:
+            # Eccentricity is calculated according to the assumptions above
+            e = -1.0
+
+        # Check Relative position in LVLH frame
+        if 'lvlh.R' in var_list and 'lvlh.V' in var_list:
+            # Both relative position and velocity are set, therefore the position is fully defined.
+            # Function:
+            # -> update_from_lvlh
+            # can be used then quit
+            # Overwrite all the orbital elements previously defined
+            self.position.update_from_lvlh(target)
+            return
+        elif 'lvlh.R' in var_list and 'lvlh.V' not in var_list:
+            # Only radius is defined, therefore velocity has to be reconstructed according to the assumptions
+            # above. Theoretically, the relative position and relative navigation starts when we have already reached
+            # the same orbital plane
+
+            R_rel_TEM_CP = np.linalg.inv(target.cartesian.get_lof()).dot(self.position.lvlh.R)
+            R_TEM_CP = R_rel_TEM_CP + target.cartesian.R
+            R_PERI_CP = target.kep.get_pof().dot(R_TEM_CP)
+            R_PERI_CP_mag = np.linalg.norm(R_PERI_CP)
+
+            e_R_PERI_CP = R_PERI_CP / R_PERI_CP_mag
+            v = np.arccos(e_R_PERI_CP[0])
+
+            if a == -1.0 and e == -1.0:
+                # Evaluate possible eccentricity given above assumptions
+                e1 = (-R_PERI_CP_mag + np.sqrt(R_PERI_CP_mag**2 + 4.0 * (R_PERI_CP_mag*np.cos(v) + chaser.kep.a*chaser.kep.e) * chaser.kep.a * chaser.kep.e)) \
+                     / (2.0 * (R_PERI_CP_mag*np.cos(v) + chaser.kep.a * chaser.kep.e))
+                e2 = (-R_PERI_CP_mag - np.sqrt(R_PERI_CP_mag**2 + 4.0 * (R_PERI_CP_mag*np.cos(v) + chaser.kep.a*chaser.kep.e) * chaser.kep.a * chaser.kep.e)) \
+                     / (2.0 * (R_PERI_CP_mag*np.cos(v) + chaser.kep.a * chaser.kep.e))
+
+                if e1 < 0:
+                    e = e2
+                else:
+                    e = e1
+
+                a = chaser.kep.a * chaser.kep.e / e
+            elif a == -1.0 and e != -1.0:
+                a = R_PERI_CP_mag * (1.0 + e * np.cos(v)) / (1.0 - e**2)
+            elif a != -1.0 and e == -1.0:
+                e1 = (-R_PERI_CP_mag * np.cos(v) + np.sqrt(R_PERI_CP_mag**2 * np.cos(v)**2 - 4.0 * a * (R_PERI_CP_mag - a)))/(2*a)
+                e2 = (-R_PERI_CP_mag * np.cos(v) - np.sqrt(R_PERI_CP_mag**2 * np.cos(v)**2 - 4.0 * a * (R_PERI_CP_mag - a)))/(2*a)
+
+                if e1 < 0:
+                    e = e2
+                else:
+                    e = e1
+
+            V_PERI_CP = np.sqrt(mu_earth / (a * (1.0 - e ** 2))) * np.array([-np.sin(v), e + np.cos(v), 0.0])
+            V_TEM_CP = np.linalg.inv(target.kep.get_pof()).dot(V_PERI_CP)
+            V_rel_TEM_CP = target.cartesian.V - V_TEM_CP
+
+            self.position.lvlh.V = target.cartesian.get_lof().dot(V_rel_TEM_CP)
+
+        elif 'lvlh.R' not in var_list and 'lvlh.V' in var_list:
+            print "Case with only velocity in lvlh and no position TBD!"
+            pass
+
+        else:
+            # No relative position defined!
+            pass
+
+        # Complete missing relative orbital elements
+
+        # Complete missing orbital elements
+        # Check if a is defined now
+        if a == -1.0:
+            # a TBD
+            if e == -1.0:
+                # Also eccentricity still TDB
+                pass
+            else:
+                # Eccentricity is defined, calculate a w.r.t the position of the chaser
+                # Calc specific angular momentum
+                H = np.cross(chaser.cartesian.R.flat, chaser.cartesian.V.flat)
+                h = np.linalg.norm(H, ord=2)
+                rp = h ** 2 / mu_earth * 1 / (1 + e)
+                ra = h ** 2 / mu_earth * 1 / (1 - e)
+                a = 0.5 * (rp + ra)
+        else:
+            pass
+
+        # Check true anomaly, if it has already been assigned it means that we are dealing with a time dependant
+        # checkpoint.
+        if v == None:
+            # We do not really care yet about where we are with respect to the target, we just need to reach a certain
+            # orbit, update to the actual value of the anomaly.
+            v = chaser.kep.v
+
+        # Update orbital elements
+        self.position.kep.a = a
+        self.position.kep.e = e
+        self.position.kep.i = i
+        self.position.kep.O = O
+        self.position.kep.w = w
+        self.position.kep.v = v
+
+        print "\nCheckPoint " + str(self.id) + ":"
+        print "      a :     " + str(a)
+        print "      e :     " + str(e)
+        print "      i :     " + str(i)
+        print "      O :     " + str(O)
+        print "      w :     " + str(w)
+        print "      v :     " + str(v)
+        print "      Time dependant? " + str(self.time_dependancy)
+
+
+        # Update from keporb
+        self.position.update_from_keporb()
+
 class Position:
 
     def __init__(self):
@@ -90,29 +296,25 @@ class Position:
         # Update lvc coordinate frame
         self.lvc.from_keporb(self.kep, target.kep)
 
-    def update_from_lvlh(self, target, dR):
+    def update_from_lvlh(self, target):
         """
             Set a position coordinates depending on the relative distance we want to have from the target.
 
         Args:
             target (Position)
-            dR (Vector3):   Vector in LHLV frame in km, defining relative position bewteen target and chaser.
         """
 
-        self.lvlh.R = dR
         self.cartesian.from_lvlh_frame(target.cartesian, self.lvlh)
         self.kep.from_cartesian(self.cartesian)
         self.rel_kep.from_keporb(target.kep, self.kep)
 
-    def update_from_keporb(self, position):
+    def update_from_keporb(self):
+        """
+            Update all the other positions given self.kep.
         """
 
-        Args:
-            position (Position)
-        """
+        pass
 
-
-        self.kep.a = position.kep.a
 
 class Scenario:
 
@@ -120,7 +322,7 @@ class Scenario:
         # Scenario information
         self.nr_positions = 0
         self.keep_out_zone = 0.05
-        self.positions = []
+        self.checkpoints = []
         self.name = 'Standard'
         self.overview = ''
         self.mission_start = dt.datetime(2017, 9, 15, 13, 20, 0)
@@ -142,7 +344,7 @@ class Scenario:
                     print "Old scenario does not correspond to actual one."
                     sys.exit(1)
         except IOError:
-            print "Scenario file not found."
+            print "\nScenario file not found."
             sys.exit(1)
 
     def export_solved_scenario(self, command_line):
@@ -166,11 +368,11 @@ class Scenario:
         Not suited for equatorial orbit.
 
         Args:
-            target (KepOrbElem)
-            chaser (KepOrbElem)
+            target (Position)
+            chaser (Position)
         """
 
-        self.import_yaml_scenario()
+        self.import_yaml_scenario(chaser, target)
 
         # Overview of a possible plan
         # 1. Reach and keep the same orbital plane
@@ -244,7 +446,7 @@ class Scenario:
         # for i in xrange(0, self.nr_positions):
         #     self.positions.append(eval('P' + str(i+1)))
 
-    def import_yaml_scenario(self):
+    def import_yaml_scenario(self, chaser, target):
         scenario = rospy.get_param('scenario', 0)
 
         self.nr_positions = len(scenario['CheckPoints'])
@@ -252,23 +454,28 @@ class Scenario:
         self.overview = scenario['overview']
 
         CP = scenario['CheckPoints']
+        chaser_next = chaser
 
         # Extract CheckPoints
         for i in xrange(0, self.nr_positions):
             S = CheckPoint()
             S.id = CP['S' + str(i)]['id']
             pos = CP['S' + str(i)]['position']
+            var_list = []
             for ref_frame in pos:
                 for var in pos[ref_frame]:
                     exec('S.position.' + ref_frame + '.' + var +
                          '= ' + str(pos[ref_frame][var]))
-                    self.positions.append(S)
+                    var_list.append(ref_frame + '.' + var)
+                self.checkpoints.append(S)
+            S.generate_free_coordinates(var_list, chaser_next, target)
+            chaser_next = S.position
 
     def update_yaml_scenario(self, target):
         # Update scenario depending on future target position.
         # For now the locked reference frame is the LVLH, therefore all the other has to be updated according to that
 
-        APs = self.positions
+        APs = self.checkpoints
 
         for AP in APs:
             pos = AP.position
@@ -279,7 +486,3 @@ class Scenario:
 
         # TODO: Right now, the only blocked value is R in LVLH frame. Would be interesting to implement
         # general conversions that depending on the locked update all the other parameters
-
-
-    def generate_free_coordinates(self):
-        

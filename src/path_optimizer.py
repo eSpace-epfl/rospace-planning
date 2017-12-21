@@ -81,12 +81,12 @@ class TrajectoryController:
 
         # If scenario has not been created yet or if there are no available, locally saved solution
         if not self.scenario_flag:
-            self.scenario.create_scenario(self.target.kep, self.chaser.kep)
+            self.scenario.create_scenario(self.target, self.chaser)
             try:
                 self.solver.command_line = self.scenario.import_solved_scenario()
             except:
                 # Solve scenario
-                self.solver.solve_scenario(self.scenario, self.chaser, self.target)
+                    self.solver.solve_scenario(self.scenario, self.chaser, self.target)
             self.scenario_flag = True
 
             # Simulation has just been started, set tau_T and tau_C giving as t0 = 0 the start of the simulation
