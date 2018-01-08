@@ -4,6 +4,7 @@ import pickle
 import sys
 import rospy
 import scipy.io as sio
+import warnings
 
 from space_tf import Cartesian, CartesianLVLH, KepOrbElem, mu_earth, QNSRelOrbElements, CartesianLVC
 
@@ -14,6 +15,7 @@ class CheckPoint:
         self.position = Position()
 
         self.time_dependancy = False
+        self.error_ellipsoid = [0, 0, 0]
 
     def generate_free_coordinates(self, var_list, chaser, target):
         """
@@ -125,6 +127,8 @@ class CheckPoint:
             # above. Theoretically, the relative position and relative navigation starts when we have already reached
             # the same orbital plane
 
+            # TODO: Think about when timing get taken into account... Target should be propagated
+
             R_rel_TEM_CP = np.linalg.inv(target.cartesian.get_lof()).dot(self.position.lvlh.R)
             R_TEM_CP = R_rel_TEM_CP + target.cartesian.R
             R_PERI_CP = target.kep.get_pof().dot(R_TEM_CP)
@@ -178,8 +182,13 @@ class CheckPoint:
         if a == -1.0:
             # a TBD
             if e == -1.0:
-                # Also eccentricity still TDB
-                pass
+                # Both semi-major axis and eccentricity are not defined
+                warnings.warn("Eccentricity nor Semi-Major Axis defined for Checkpoint " + str(self.id) + " (using coelliptic assumption).")
+
+                # a do not change
+                a = chaser.kep.a
+                e = target.kep.a * target.kep.e / a
+
             else:
                 # Eccentricity is defined, calculate a w.r.t the position of the chaser
                 # Calc specific angular momentum
@@ -353,6 +362,7 @@ class Scenario:
         """
 
         # TODO: Find a way to store the complete scenario and upload it afterwards
+        # TODO: Remove the first command, s.t the scenario can be applied regardless of the initial position
 
         # Export the "self" into "scenario.p"
         with open('scenario.pickle', 'wb') as file:
@@ -460,6 +470,12 @@ class Scenario:
         for i in xrange(0, self.nr_positions):
             S = CheckPoint()
             S.id = CP['S' + str(i)]['id']
+
+            try:
+                S.error_ellipsoid = CP['S' + str(i)]['error_ellipsoid']
+            except:
+                pass
+
             pos = CP['S' + str(i)]['position']
             var_list = []
             for ref_frame in pos:
