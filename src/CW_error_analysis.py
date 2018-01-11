@@ -126,10 +126,18 @@ def from_cartesian(R, V):
 
     return a, e, i, O, w, v
 
+def O(R, V, B):
+    H = np.cross(R, V)
+    h = H / np.linalg.norm(H)
+    n = h / np.linalg.norm(R) ** 2
+    return n * B[2, 0:3]
+
 mu_earth = 398600
 
 R_0 = np.array([-749.0, 742.0, -7000.0])
 V_0 = np.array([5.84, 4.70, -0.12])
+B_0 = B(R_0, V_0)
+O_T_0 = O(R_0, V_0, B_0)
 
 n = np.sqrt(mu_earth / np.linalg.norm(R_0) ** 3.0)
 T = 2600
@@ -155,18 +163,34 @@ phi_vv = lambda t: np.array([
     [0.0, 0.0, np.cos(n * t)]
 ])
 
-B_0 = B(R_0, V_0)
-
+dr_0 = np.array([0.0, 0.0, 0.0])
 dr_i = np.array([4.0, 4.0, 0.0])
-dv_0 = np.linalg.inv(phi_rv(T)).dot(dr_i)
+
+dv_0_TEME = V_0 - V_0 - np.cross(O_T_0, dr_0)
+dv_0_LVLH_from_TEME = B_0.dot(dv_0_TEME)
+
+DeltaV_0_LVLH = np.linalg.inv(phi_rv(T)).dot(dr_i - phi_rr(T).dot(dr_0)) - dv_0_LVLH_from_TEME
+
+
 
 R_T_i, V_T_i = pk.propagate_lagrangian(R_0, V_0, T, mu_earth)
 
 B_i = B(R_T_i, V_T_i)
+O_T_i = O(R_T_i, V_T_i, B_i)
 
 R_i = np.array(R_T_i) + np.linalg.inv(B_i).dot(dr_i)
 sol = pk.lambert_problem(R_0, R_i, T, mu_earth, True)
-R_i, V_i = pk.propagate_lagrangian(R_0, np.array(sol.get_v1()[0]), T, mu_earth)
+
+R_i, V_i = pk.propagate_lagrangian(R_0, sol.get_v1()[0], T, mu_earth)
+
+DeltaV_0_TEME_from_PK = sol.get_v1()[0] - V_0
+DeltaV_0_LVLH_from_PK = B_0.dot(DeltaV_0_TEME_from_PK)
+
+dv_i_TEME = np.array(V_i) - np.array(V_T_i) - np.cross(O_T_i, dr_i)
+dv_i_LVLH_from_TEME = B_i.dot(dv_i_TEME)
+dv_i_LVLH_from_CW = phi_rv(T).dot(dr_0) + phi_vv(T).dot(dv_0_LVLH_from_TEME + DeltaV_0_LVLH)
+
+R_test, V_test = pk.propagate_lagrangian(R_0, V_0 + np.linalg.inv(B_0).dot(DeltaV_0_LVLH), T, mu_earth)
 
 r = R_0 + np.array([0.04, 0.1, 0.01])
 v = V_0 + np.array([0.002, 0.001, 0.0])
@@ -181,7 +205,7 @@ p_T = h_T**2 / mu_earth
 
 a, e_T, i, O, w, theta_T_0 = from_cartesian(r_T, v_T)
 
-Tmax = 100
+Tmax = 1000
 
 C = np.array([[0, 1, 0], [-1, 0, 0], [0, 0, 1]])
 
@@ -194,29 +218,32 @@ for t in xrange(1, Tmax):
     r_T = np.array(r_T)
     v_T = np.array(v_T)
 
-    r_CW = phi_rr(t).dot(dr_0) + phi_rv(t).dot(dv_0)
-    v_CW = phi_vr(t).dot(dr_0) + phi_vv(t).dot(dv_0)
+    r_CW = phi_rr(1).dot(dr_0) + phi_rv(1).dot(dv_0)
+    v_CW = phi_vr(1).dot(dr_0) + phi_vv(1).dot(dv_0)
 
     B_t = B(r_T, v_T)
+    dr_0 = B_t.dot(r - r_T)
+    dv_0 = B_t.dot(v - v_T)
 
-    a, e_T, i, O, w, theta_T = from_cartesian(r_T, v_T)
 
-    IP, OP = chinese_solver(dr_0, dv_0, e_T, theta_T_0, theta_T, h_T, p_T, t, 0)
+    # a, e_T, i, O, w, theta_T = from_cartesian(r_T, v_T)
+    #
+    # IP, OP = chinese_solver(dr_0, dv_0, e_T, theta_T_0, theta_T, h_T, p_T, t, 0)
+    #
+    # trafo = np.array([
+    #     [0.0, -1.0, 0.0],
+    #     [1.0, 0.0, 0.0],
+    #     [0.0, 0.0, -1.0]
+    # ])
 
-    trafo = np.array([
-        [0.0, -1.0, 0.0],
-        [1.0, 0.0, 0.0],
-        [0.0, 0.0, -1.0]
-    ])
-
-    err_pos = np.linalg.norm(r_CW - B_t.dot(r - r_T))
-    err_vel = np.linalg.norm(v_CW - B_t.dot(v - v_T))
-    err_chin_pos = np.linalg.norm(trafo.dot(np.array([IP[0], IP[1], OP[0]])) - B_t.dot(r - r_T))
-    err_chin_vel = np.linalg.norm(trafo.dot(np.array([IP[2], IP[3], OP[1]])) - B_t.dot(v - v_T))
+    err_pos = np.linalg.norm(r_CW - dr_0)
+    err_vel = np.linalg.norm(v_CW - dv_0)
+    # err_chin_pos = np.linalg.norm(trafo.dot(np.array([IP[0], IP[1], OP[0]])) - B_t.dot(r - r_T))
+    # err_chin_vel = np.linalg.norm(trafo.dot(np.array([IP[2], IP[3], OP[1]])) - B_t.dot(v - v_T))
 
     plt.semilogy(t, err_pos, 'k.')
     plt.semilogy(t, err_vel, 'r.')
-    plt.semilogy(t, err_chin_pos, 'ko')
-    plt.semilogy(t, err_chin_vel, 'ro')
+    # plt.semilogy(t, err_chin_pos, 'ko')
+    # plt.semilogy(t, err_chin_vel, 'ro')
 
 plt.show()
