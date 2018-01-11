@@ -113,67 +113,67 @@ class CheckPoint:
             # Eccentricity is calculated according to the assumptions above
             e = -1.0
 
-        # Check Relative position in LVLH frame
-        if 'lvlh.R' in var_list and 'lvlh.V' in var_list:
-            # Both relative position and velocity are set, therefore the position is fully defined.
-            # Function:
-            # -> update_from_lvlh
-            # can be used then quit
-            # Overwrite all the orbital elements previously defined
-            self.position.update_from_lvlh(target)
-            return
-        elif 'lvlh.R' in var_list and 'lvlh.V' not in var_list:
-            # Only radius is defined, therefore velocity has to be reconstructed according to the assumptions
-            # above. Theoretically, the relative position and relative navigation starts when we have already reached
-            # the same orbital plane
-
-            # TODO: Think about when timing get taken into account... Target should be propagated
-
-            R_rel_TEM_CP = np.linalg.inv(target.cartesian.get_lof()).dot(self.position.lvlh.R)
-            R_TEM_CP = R_rel_TEM_CP + target.cartesian.R
-            R_PERI_CP = target.kep.get_pof().dot(R_TEM_CP)
-            R_PERI_CP_mag = np.linalg.norm(R_PERI_CP)
-
-            e_R_PERI_CP = R_PERI_CP / R_PERI_CP_mag
-            v = np.arccos(e_R_PERI_CP[0])
-
-            if a == -1.0 and e == -1.0:
-                # Evaluate possible eccentricity given above assumptions
-                e1 = (-R_PERI_CP_mag + np.sqrt(R_PERI_CP_mag**2 + 4.0 * (R_PERI_CP_mag*np.cos(v) + chaser.kep.a*chaser.kep.e) * chaser.kep.a * chaser.kep.e)) \
-                     / (2.0 * (R_PERI_CP_mag*np.cos(v) + chaser.kep.a * chaser.kep.e))
-                e2 = (-R_PERI_CP_mag - np.sqrt(R_PERI_CP_mag**2 + 4.0 * (R_PERI_CP_mag*np.cos(v) + chaser.kep.a*chaser.kep.e) * chaser.kep.a * chaser.kep.e)) \
-                     / (2.0 * (R_PERI_CP_mag*np.cos(v) + chaser.kep.a * chaser.kep.e))
-
-                if e1 < 0:
-                    e = e2
-                else:
-                    e = e1
-
-                a = chaser.kep.a * chaser.kep.e / e
-            elif a == -1.0 and e != -1.0:
-                a = R_PERI_CP_mag * (1.0 + e * np.cos(v)) / (1.0 - e**2)
-            elif a != -1.0 and e == -1.0:
-                e1 = (-R_PERI_CP_mag * np.cos(v) + np.sqrt(R_PERI_CP_mag**2 * np.cos(v)**2 - 4.0 * a * (R_PERI_CP_mag - a)))/(2*a)
-                e2 = (-R_PERI_CP_mag * np.cos(v) - np.sqrt(R_PERI_CP_mag**2 * np.cos(v)**2 - 4.0 * a * (R_PERI_CP_mag - a)))/(2*a)
-
-                if e1 < 0:
-                    e = e2
-                else:
-                    e = e1
-
-            V_PERI_CP = np.sqrt(mu_earth / (a * (1.0 - e ** 2))) * np.array([-np.sin(v), e + np.cos(v), 0.0])
-            V_TEM_CP = np.linalg.inv(target.kep.get_pof()).dot(V_PERI_CP)
-            V_rel_TEM_CP = target.cartesian.V - V_TEM_CP
-
-            self.position.lvlh.V = target.cartesian.get_lof().dot(V_rel_TEM_CP)
-
-        elif 'lvlh.R' not in var_list and 'lvlh.V' in var_list:
-            print "Case with only velocity in lvlh and no position TBD!"
-            pass
-
-        else:
-            # No relative position defined!
-            pass
+        # # Check Relative position in LVLH frame
+        # if 'lvlh.R' in var_list and 'lvlh.V' in var_list:
+        #     # Both relative position and velocity are set, therefore the position is fully defined.
+        #     # Function:
+        #     # -> update_from_lvlh
+        #     # can be used then quit
+        #     # Overwrite all the orbital elements previously defined
+        #     self.position.update_from_lvlh(target)
+        #     return
+        # elif 'lvlh.R' in var_list and 'lvlh.V' not in var_list:
+        #     # Only radius is defined, therefore velocity has to be reconstructed according to the assumptions
+        #     # above. Theoretically, the relative position and relative navigation starts when we have already reached
+        #     # the same orbital plane
+        #
+        #     # TODO: Think about when timing get taken into account... Target should be propagated
+        #
+        #     R_rel_TEM_CP = np.linalg.inv(target.cartesian.get_lof()).dot(self.position.lvlh.R)
+        #     R_TEM_CP = R_rel_TEM_CP + target.cartesian.R
+        #     R_PERI_CP = target.kep.get_pof().dot(R_TEM_CP)
+        #     R_PERI_CP_mag = np.linalg.norm(R_PERI_CP)
+        #
+        #     e_R_PERI_CP = R_PERI_CP / R_PERI_CP_mag
+        #     v = np.arccos(e_R_PERI_CP[0])
+        #
+        #     if a == -1.0 and e == -1.0:
+        #         # Evaluate possible eccentricity given above assumptions
+        #         e1 = (-R_PERI_CP_mag + np.sqrt(R_PERI_CP_mag**2 + 4.0 * (R_PERI_CP_mag*np.cos(v) + chaser.kep.a*chaser.kep.e) * chaser.kep.a * chaser.kep.e)) \
+        #              / (2.0 * (R_PERI_CP_mag*np.cos(v) + chaser.kep.a * chaser.kep.e))
+        #         e2 = (-R_PERI_CP_mag - np.sqrt(R_PERI_CP_mag**2 + 4.0 * (R_PERI_CP_mag*np.cos(v) + chaser.kep.a*chaser.kep.e) * chaser.kep.a * chaser.kep.e)) \
+        #              / (2.0 * (R_PERI_CP_mag*np.cos(v) + chaser.kep.a * chaser.kep.e))
+        #
+        #         if e1 < 0:
+        #             e = e2
+        #         else:
+        #             e = e1
+        #
+        #         a = chaser.kep.a * chaser.kep.e / e
+        #     elif a == -1.0 and e != -1.0:
+        #         a = R_PERI_CP_mag * (1.0 + e * np.cos(v)) / (1.0 - e**2)
+        #     elif a != -1.0 and e == -1.0:
+        #         e1 = (-R_PERI_CP_mag * np.cos(v) + np.sqrt(R_PERI_CP_mag**2 * np.cos(v)**2 - 4.0 * a * (R_PERI_CP_mag - a)))/(2*a)
+        #         e2 = (-R_PERI_CP_mag * np.cos(v) - np.sqrt(R_PERI_CP_mag**2 * np.cos(v)**2 - 4.0 * a * (R_PERI_CP_mag - a)))/(2*a)
+        #
+        #         if e1 < 0:
+        #             e = e2
+        #         else:
+        #             e = e1
+        #
+        #     V_PERI_CP = np.sqrt(mu_earth / (a * (1.0 - e ** 2))) * np.array([-np.sin(v), e + np.cos(v), 0.0])
+        #     V_TEM_CP = np.linalg.inv(target.kep.get_pof()).dot(V_PERI_CP)
+        #     V_rel_TEM_CP = target.cartesian.V - V_TEM_CP
+        #
+        #     self.position.lvlh.V = target.cartesian.get_lof().dot(V_rel_TEM_CP)
+        #
+        # elif 'lvlh.R' not in var_list and 'lvlh.V' in var_list:
+        #     print "Case with only velocity in lvlh and no position TBD!"
+        #     pass
+        #
+        # else:
+        #     # No relative position defined!
+        #     pass
 
         # Complete missing relative orbital elements
 
@@ -215,6 +215,10 @@ class CheckPoint:
         self.position.kep.w = w
         self.position.kep.v = v
 
+        # Update from keporb
+        if 'lvlh.R' not in var_list and 'lvlh.V' not in var_list:
+            self.position.update_from_keporb(target)
+
         print "\nCheckPoint " + str(self.id) + ":"
         print "      a :     " + str(a)
         print "      e :     " + str(e)
@@ -224,9 +228,6 @@ class CheckPoint:
         print "      v :     " + str(v)
         print "      Time dependant? " + str(self.time_dependancy)
 
-
-        # Update from keporb
-        self.position.update_from_keporb()
 
 class Position:
 
@@ -279,6 +280,10 @@ class Position:
         # Update keplerian coordinates
         self.kep.from_cartesian(self.cartesian)
 
+    def update_target_from_keporb(self):
+
+        self.cartesian.from_keporb(self.kep)
+
     def update_from_cartesian(self, r, v, target):
         """
             Update a chaser Position given the target position to calculate relative elements.
@@ -317,12 +322,14 @@ class Position:
         self.kep.from_cartesian(self.cartesian)
         self.rel_kep.from_keporb(target.kep, self.kep)
 
-    def update_from_keporb(self):
+    def update_from_keporb(self, target):
         """
             Update all the other positions given self.kep.
         """
 
-        pass
+        self.cartesian.from_keporb(self.kep)
+        self.lvlh.from_cartesian_pair(self.cartesian, target.cartesian)
+        self.rel_kep.from_keporb(target.kep, self.kep)
 
 
 class Scenario:
