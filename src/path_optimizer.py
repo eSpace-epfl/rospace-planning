@@ -74,6 +74,18 @@ class TrajectoryController:
         self.chaser.rel_kep.from_keporb(self.target.kep, self.chaser.kep)
         self.chaser.lvlh.from_cartesian_pair(self.chaser.cartesian, self.target.cartesian)
 
+
+        # Give directly some initial estimated coordinate to set up the first scenario solution
+        self.target.kep.from_tle(98.5214*np.pi/180.0, 158.5411*np.pi/180.0, 0.0007083, 19.2594*np.pi/180.0, 340.8336*np.pi/180.0, 14.5610940)
+        self.chaser.from_other_position(self.target)
+        self.chaser.kep.a -= 100.0
+        self.chaser.kep.i -= 4e-4
+        self.chaser.kep.O -= 4e-4
+        self.chaser.kep.e = 0.0
+        self.chaser.kep.w = 0.0
+        self.chaser.update_from_keporb(self.target)
+        self.target.update_target_from_keporb()
+
         dt = epoch.now() - epoch.epoch_datetime
         dt = dt.seconds
         n_C = np.sqrt(mu_earth / self.chaser.kep.a ** 3.0)
