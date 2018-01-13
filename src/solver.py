@@ -229,13 +229,14 @@ class Solver:
             c.ideal_transfer_orbit = []
             c.duration = self.travel_time(chaser, chaser.kep.v, theta_i)
             c.description = 'Apogee/Perigee raise (intersecating orbits)'
+            self.command_line.append(c)
+
+            # Save single manoeuvre...
+            self._save_result(chaser, target, len(self.command_line), True)
 
             # Propagate chaser and target to evaluate all the future commands properly
             self._propagator(chaser, target, c.duration)
-            self._propagator(chaser, target, 1e-3, deltaV_C)            # Propagate with a close-to-impulsive thrust
-
-            # Add to the command line the burn needed
-            self.command_line.append(c)
+            chaser.cartesian.V += deltaV_C
 
         else:
             if a_f > a_i:
@@ -293,10 +294,14 @@ class Solver:
             c1.ideal_transfer_orbit = []
             c1.duration = self.travel_time(chaser, chaser.kep.v, theta_1)
             c1.description = 'Apogee/Perigee raise'
+            self.command_line.append(c1)
+
+            # Save single manoeuvre...
+            self._save_result(chaser, target, len(self.command_line), True)
 
             # Propagate chaser and target to evaluate all the future commands properly
             self._propagator(chaser, target, c1.duration)
-            self._propagator(chaser, target, 1e-3, deltaV_C_1)            # Propagate almost as an impulsive thrust has been given
+            chaser.cartesian.V += deltaV_C_1
 
             c2 = Command()
             c2.deltaV_C = deltaV_C_2
@@ -304,14 +309,14 @@ class Solver:
             c2.ideal_transfer_orbit = []
             c2.duration = np.pi * np.sqrt(a_int**3 / mu_earth)
             c2.description = 'Apogee/Perigee raise'
+            self.command_line.append(c2)
+
+            # Save single manoeuvre...
+            self._save_result(chaser, target, len(self.command_line), True)
 
             # Propagate chaser and target to evaluate all the future commands properly
             self._propagator(chaser, target, c2.duration)
-            self._propagator(chaser, target, 1e-3, deltaV_C_2)            # Propagate almost as an impulsive thrust has been given
-
-            # Add to the command line the burn needed
-            self.command_line.append(c1)
-            self.command_line.append(c2)
+            chaser.cartesian.V += deltaV_C_2
 
     def adjust_perigee(self, chaser, chaser_next, target):
         """
@@ -374,13 +379,14 @@ class Solver:
             c.ideal_transfer_orbit = []
             c.duration = self.travel_time(chaser, chaser.kep.v, theta_i)
             c.description = 'Argument of Perigee correction'
+            self.command_line.append(c)
+
+            # Save single manoeuvre...
+            self._save_result(chaser, target, len(self.command_line), True)
 
             # Propagate chaser and target to evaluate all the future commands properly
             self._propagator(chaser, target, c.duration)
-            self._propagator(chaser, target, 1e-3, deltaV_C)            # Propagate almost as an impulsive thrust has been given
-
-            # Add to the command line the burn needed
-            self.command_line.append(c)
+            chaser.cartesian.V += deltaV_C            # Propagate as an impulsive thrust has been given
 
     def _error_estimator(self, chaser, chaser_next, target):
         """
@@ -417,9 +423,14 @@ class Solver:
         r_T, v_T = pk.propagate_lagrangian(target.cartesian.R, target.cartesian.V, dt, mu_earth)
         target.update_target_from_cartesian(r_T, v_T)
 
-    def _save_result(self, chaser, target):
+    def _save_result(self, chaser, target, id=0, single_manoeuvre=False):
         if os.path.isdir('/home/dfrey/polybox/manoeuvre'):
-            print "Saving manoeuvre..."
+            if single_manoeuvre:
+                print "Saving single manoeuvre..."
+                L = 1
+            else:
+                print "Saving complete manoeuvre..."
+                L = len(self.command_line)
 
             # Simulating the whole manoeuvre and store the result
             chaser_tmp = Position()
@@ -434,8 +445,11 @@ class Solver:
             R_chaser_lvlh = [chaser_tmp.lvlh.R]
             R_chaser_lvc = [np.array([chaser_tmp.lvc.dR, chaser_tmp.lvc.dV, chaser_tmp.lvc.dH])]
 
-            for i in xrange(0, len(self.command_line)):
-                cmd = self.command_line[i]
+            for i in xrange(0, L):
+                if single_manoeuvre:
+                    cmd = self.command_line[-1]
+                else:
+                    cmd = self.command_line[i]
 
                 duration = np.arange(0, cmd.duration, 0.1)
 
@@ -449,10 +463,15 @@ class Solver:
                 # Apply dV
                 chaser_tmp.cartesian.V += cmd.deltaV_C
 
-                print "Relative Position after command " + str(i) + ":    " + str(chaser_tmp.lvlh.R)
+                self.print_state(chaser_tmp, target_tmp)
 
             # Saving in .mat file
-            sio.savemat('/home/dfrey/polybox/manoeuvre/full_manoeuvre.mat',
+            if single_manoeuvre:
+                sio.savemat('/home/dfrey/polybox/manoeuvre/manoeuvre_' + str(id) + '.mat',
+                        mdict={'abs_pos_c': R_chaser, 'rel_pos_c': R_chaser_lvlh, 'abs_pos_t': R_target,
+                                'lvc_c': R_chaser_lvc})
+            else:
+                sio.savemat('/home/dfrey/polybox/manoeuvre/complete_manoeuvre.mat',
                         mdict={'abs_pos_c': R_chaser, 'rel_pos_c': R_chaser_lvlh, 'abs_pos_t': R_target,
                                'lvc_c': R_chaser_lvc})
 
@@ -707,27 +726,31 @@ class Solver:
         # R_C_f_testCW = target_old.cartesian.R + np.linalg.inv(target_old.cartesian.get_lof()).dot(dr_C_f_testCW)
         # ##################################### ----> IT WORKS!
 
-        # Update target and chaser after the first burn
-        self._propagator(chaser, target, best_dt, best_deltaV_1)
-        self.print_state(chaser, target)
-        self._propagator(chaser, target, 1e-3, best_deltaV_2)
-        self.print_state(chaser, target)
-
         c1 = Command()
         c1.deltaV_C = best_deltaV_1
         c1.true_anomaly = chaser.kep.v
         c1.duration = 0
         c1.description = 'Multi-Lambert solution'
+        self.command_line.append(c1)
+
+        # Save single manoeuvre...
+        self._save_result(chaser, target, len(self.command_line), True)
+
+        self._propagator(chaser, target, best_dt, best_deltaV_1)
+        self.print_state(chaser, target)
 
         c2 = Command()
         c2.deltaV_C = best_deltaV_2
         c2.true_anomaly = chaser_next.kep.v
         c2.duration = best_dt
         c2.description = 'Multi-Lambert solution'
-
-        # Add to the command line the burn needed
-        self.command_line.append(c1)
         self.command_line.append(c2)
+
+        # Save single manoeuvre...
+        self._save_result(chaser, target, len(self.command_line), True)
+
+        chaser.cartesian.V += best_deltaV_2
+        self.print_state(chaser, target)
 
     def plane_correction(self, chaser, chaser_next, target):
         """
@@ -839,12 +862,14 @@ class Solver:
         c.ideal_transfer_orbit = []
         c.duration = self.travel_time(chaser, chaser.kep.v, theta_i)
         c.description = 'Inclination and RAAN correction'
+        self.command_line.append(c)
+
+        # Save single manoeuvre...
+        self._save_result(chaser, target, len(self.command_line), True)
 
         # Propagate chaser and target to evaluate all the future commands properly
         self._propagator(chaser, target, c.duration)
         self._propagator(chaser, target, 1e-3, deltaV_C)            # Propagate almost as an impulsive thrust has been given
-
-        self.command_line.append(c)
 
     def travel_time(self, chaser, theta0, theta1):
         """
