@@ -1,0 +1,111 @@
+# TODO: Define a template with the measure units of the inputs
+
+name: "Scenario_CSO"
+
+scenario:
+  name: 'Scenario CSO'
+
+  overview: " 0. Reach the same orbital plane as target. \n
+            1. Go on a co-elliptic orbit ~35km below the target.  \n
+            2. Go on a co-elliptic orbit ~10km below the target. \n
+            3. Reach the first important Hold Point at [-4, -10, 0]. \n
+            4. Drift in front of the target to a position [-4, 4, 0] in the meantime observe it. \n
+            5. Go on the same orbit and stop in the front of the target \n
+            6. Go behind the target, to have a certain amount of observation time \n"
+
+  InitialConditions:
+    tle_target:
+      i: 98.5214*np.pi/180.0
+      O: 158.5411*np.pi/180.0
+      e: 0.0007083
+      w: 340.8336*np.pi/180.0
+      m: 19.2594*np.pi/180.0
+      n: 14.5610940
+
+    kep_chaser:
+      a: target.kep.a - 60.0
+      e: 0.0005
+      i: target.kep.i + 0.5 * np.pi / 180.0
+      w: target.kep.w + 15 * np.pi / 180.0
+      O: target.kep.O + 1.0 * np.pi / 180.0
+      v: 0.0
+
+
+  CheckPoints:
+    S0:
+      id: 0
+      position:
+        kep:
+          i: target.kep.i
+          O: target.kep.O
+          w: chaser.kep.w
+          a: chaser.kep.a
+          e: chaser.kep.e
+
+    S1:
+      id: 1
+      position:
+        kep:
+          a: target.kep.a - 35.0
+          e: target.kep.a * target.kep.e / (target.kep.a - 100.0)
+
+    S2:
+      id: 2
+      position:
+         kep:
+          a: target.kep.a - 10.0
+          e: target.kep.a * target.kep.e / (target.kep.a - 10.0)
+
+    S3:
+      id: 3
+      position:
+        lvlh:
+          R: -4, -10, 0
+      error_ellipsoid: [3, 1.5, 1.5]
+
+    S4:
+      id: 4
+      position:
+        lvlh:
+          R: -4, 4, 0
+      error_ellipsoid: [3, 1.5, 1.5]
+
+    S5:
+      id: 5
+      position:
+        lvlh:
+          R: 0, 15, 0
+
+      error_ellipsoid: [0.0, 0.0, 0.0]
+
+    S6:
+      id: 6
+      position:
+        lvlh:
+          R: 0, -5, 0
+
+      error_ellipsoid: [0.0, 0.0, 0.0]
+
+    S7:
+      id: 7
+      position:
+        lvlh:
+          R: 0, -1, 0
+
+      error_ellipsoid: [0.0, 0.0, 0.0]
+
+    S8:
+      id: 7
+      position:
+        lvlh:
+          R: 0, -0.1, 0
+
+      error_ellipsoid: [0.0, 0.0, 0.0]
+
+    S9:
+      id: 7
+      position:
+        lvlh:
+          R: 0, -0.01, 0
+
+      error_ellipsoid: [0.0, 0.0, 0.0]
