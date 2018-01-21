@@ -128,9 +128,6 @@ class Solver:
                 # Check if the drift time is below a certain limit
                 if t_est is not None and t_est <= t_limit:
                     # Drift, propagate chaser and target for t_est
-                    self._propagator(chaser, target, t_est)
-                    self.print_state(chaser, target)
-
                     # Add drift command to the command line
                     c = Command()
                     c.deltaV_C = np.array([0.0, 0.0, 0.0])
@@ -138,6 +135,12 @@ class Solver:
                     c.ideal_transfer_orbit = []
                     c.duration = t_est
                     c.description = 'Drift for ' + str(t_est) + ' seconds'
+                    self.command_line.append(c)
+
+                    self._save_result(chaser, target, len(self.command_line), True)
+
+                    self._propagator(chaser, target, t_est)
+                    # self.print_state(chaser, target)
 
                 elif t_est is not None and t_est > t_limit:
                     # TODO: Do a resynchronisation manoeuvre
@@ -388,14 +391,6 @@ class Solver:
             self._propagator(chaser, target, c.duration)
             chaser.cartesian.V += deltaV_C            # Propagate as an impulsive thrust has been given
 
-    def _error_estimator(self, chaser, chaser_next, target):
-        """
-            Given the position of chaser, the next position we want to reach and the target position
-            estimate the amount of dV more that will be needed by integrating the disturbances over
-            the path planned.
-        """
-        pass
-
     def _propagator(self, chaser, target, dt, dv=np.array([0, 0, 0])):
         """
             Propagate chaser and target to t* = now + dt.
@@ -408,12 +403,41 @@ class Solver:
 
         # TODO: Change to a propagator that includes at least J2 disturbance
 
-        r_C, v_C = pk.propagate_lagrangian(chaser.cartesian.R, chaser.cartesian.V + dv, dt, mu_earth)
-        r_T, v_T = pk.propagate_lagrangian(target.cartesian.R, target.cartesian.V, dt, mu_earth)
+        r_C = chaser.cartesian.R
+        v_C = chaser.cartesian.V
+
+        r_T = target.cartesian.R
+        v_T = target.cartesian.V
+
+        T_ = dt
+
+        # T = int(np.floor(dt))
+        # T_ = np.floor(dt) - T
+        #
+        # R_chaser_lvlh = [chaser.lvlh.R]
+        #
+        # for k in xrange(0, T):
+        #
+        #     r_C, v_C = pk.propagate_lagrangian(r_C, v_C + dv, 1.0, mu_earth)
+        #     r_T, v_T = pk.propagate_lagrangian(r_T, v_T, 1.0, mu_earth)
+        #
+        #     # Update positions of chaser and target objects
+        #     target.update_target_from_cartesian(r_T, v_T)
+        #     chaser.update_from_cartesian(r_C, v_C, target)
+        #
+        #     R_chaser_lvlh.append(chaser.lvlh.R)
+
+        r_C, v_C = pk.propagate_lagrangian(r_C, v_C + dv, T_, mu_earth)
+        r_T, v_T = pk.propagate_lagrangian(r_T, v_T, T_, mu_earth)
 
         # Update positions of chaser and target objects
         target.update_target_from_cartesian(r_T, v_T)
         chaser.update_from_cartesian(r_C, v_C, target)
+
+        # R_chaser_lvlh.append(chaser.lvlh.R)
+
+        # sio.savemat('/home/dfrey/polybox/manoeuvre/manoeuvre_TEST_' + str(len(self.command_line)) + '.mat',
+        #             mdict={'rel_pos': R_chaser_lvlh})
 
     def _target_propagator(self, target, dt):
 
@@ -426,7 +450,7 @@ class Solver:
     def _save_result(self, chaser, target, id=0, single_manoeuvre=False):
         if os.path.isdir('/home/dfrey/polybox/manoeuvre'):
             if single_manoeuvre:
-                print "Saving single manoeuvre..."
+                print "Saving single manoeuvre " + str(id) + "..."
                 L = 1
             else:
                 print "Saving complete manoeuvre..."
@@ -443,7 +467,7 @@ class Solver:
             R_target = [target_tmp.cartesian.R]
             R_chaser = [chaser_tmp.cartesian.R]
             R_chaser_lvlh = [chaser_tmp.lvlh.R]
-            R_chaser_lvc = [np.array([chaser_tmp.lvc.dR, chaser_tmp.lvc.dV, chaser_tmp.lvc.dH])]
+            # R_chaser_lvc = [np.array([chaser_tmp.lvc.dR, chaser_tmp.lvc.dV, chaser_tmp.lvc.dH])]
 
             for i in xrange(0, L):
                 if single_manoeuvre:
@@ -451,29 +475,26 @@ class Solver:
                 else:
                     cmd = self.command_line[i]
 
-                duration = np.arange(0, cmd.duration, 0.1)
-
-                for j in xrange(0, len(duration)):
-                    self._propagator(chaser_tmp, target_tmp, 0.1)
+                for j in xrange(0, int(np.floor(cmd.duration))):
+                    self._propagator(chaser_tmp, target_tmp, 1.0)
                     R_chaser.append(chaser_tmp.cartesian.R)
                     R_target.append(target_tmp.cartesian.R)
                     R_chaser_lvlh.append(chaser_tmp.lvlh.R)
-                    R_chaser_lvc.append(np.array([chaser_tmp.lvc.dR, chaser_tmp.lvc.dV, chaser_tmp.lvc.dH]))
+                    # R_chaser_lvc.append(np.array([chaser_tmp.lvc.dR, chaser_tmp.lvc.dV, chaser_tmp.lvc.dH]))
+
+                self._propagator(chaser_tmp, target_tmp, cmd.duration - np.floor(cmd.duration))
 
                 # Apply dV
-                chaser_tmp.cartesian.V += cmd.deltaV_C
-
-                self.print_state(chaser_tmp, target_tmp)
+                self._propagator(chaser_tmp, target_tmp, 1e-3, cmd.deltaV_C)
+                # self.print_state(chaser_tmp, target_tmp)
 
             # Saving in .mat file
             if single_manoeuvre:
                 sio.savemat('/home/dfrey/polybox/manoeuvre/manoeuvre_' + str(id) + '.mat',
-                        mdict={'abs_pos_c': R_chaser, 'rel_pos_c': R_chaser_lvlh, 'abs_pos_t': R_target,
-                                'lvc_c': R_chaser_lvc})
+                        mdict={'abs_pos_c': R_chaser, 'rel_pos_c': R_chaser_lvlh, 'abs_pos_t': R_target})
             else:
                 sio.savemat('/home/dfrey/polybox/manoeuvre/complete_manoeuvre.mat',
-                        mdict={'abs_pos_c': R_chaser, 'rel_pos_c': R_chaser_lvlh, 'abs_pos_t': R_target,
-                               'lvc_c': R_chaser_lvc})
+                        mdict={'abs_pos_c': R_chaser, 'rel_pos_c': R_chaser_lvlh, 'abs_pos_t': R_target})
 
             print "Manoeuvre saved."
 
@@ -643,7 +664,7 @@ class Solver:
 
         # PROBLEM: To solve the lambert problem I need to state a certain dt. And the target will
         # be propagated by that dt.
-        for dt in xrange(10, 10000):
+        for dt in xrange(10, 30000):
             # Propagate absolute position we want to reach in the optimal way at t1 = t_start + dt
             # Propagate target position at t = t0 + dt
             target_old = Position()
@@ -736,8 +757,7 @@ class Solver:
         # Save single manoeuvre...
         self._save_result(chaser, target, len(self.command_line), True)
 
-        self._propagator(chaser, target, best_dt, best_deltaV_1)
-        self.print_state(chaser, target)
+        self._propagator(chaser, target, 1e-3, best_deltaV_1)
 
         c2 = Command()
         c2.deltaV_C = best_deltaV_2
@@ -746,11 +766,12 @@ class Solver:
         c2.description = 'Multi-Lambert solution'
         self.command_line.append(c2)
 
-        # Save single manoeuvre...
         self._save_result(chaser, target, len(self.command_line), True)
 
-        chaser.cartesian.V += best_deltaV_2
-        self.print_state(chaser, target)
+        self._propagator(chaser, target, best_dt)
+
+        # Save single manoeuvre...
+        self._propagator(chaser, target, 1e-3, best_deltaV_2)
 
     def plane_correction(self, chaser, chaser_next, target):
         """
