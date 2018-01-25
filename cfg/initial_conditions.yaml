@@ -1,0 +1,18 @@
+
+target:
+  tle:
+    i: 98.5214*np.pi/180.0
+    O: 158.5411*np.pi/180.0
+    e: 0.0007083
+    w: 340.8336*np.pi/180.0
+    m: 19.2594*np.pi/180.0
+    n: 14.5610940
+
+chaser:
+  kep:
+    a: self.target.kep.a - 60.0
+    e: 0.0005
+    i: self.target.kep.i + 0.5 * np.pi / 180.0
+    w: self.target.kep.w + 15.0 * np.pi / 180.0
+    O: self.target.kep.O + 1.0 * np.pi / 180.0
+    v: 0.0
