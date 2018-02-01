@@ -30,14 +30,23 @@ class Scenario(object):
             Import a solved scenario from pickle file 'scenario.p'
         """
 
+        # Actual path
+        path = os.getcwd()
+
+        if '.ros' in path:
+            # Running within ROS
+            scenario_path = os.getcwd()[:-4] + 'cso_ws/src/rdv-cap-sim/nodes/cso_path_planner/src/scenario.pickle'
+        else:
+            # Running from node folder
+            scenario_path = os.getcwd() + '/scenario.pickle'
+
         # Try to import the file
         try:
-            with open('scenario.pickle', 'rb') as file:
+            with open(scenario_path, 'rb') as file:
                 obj = pickle.load(file)
                 if obj['scenario_name'] == self.name:
-                    print "\n -----------------> Old manoeuvre elaborated <--------------------"
-                    print "Old solution loaded!"
-                    return obj['command_line']
+                    print "\n ----> Offline solution loaded! <---- \n"
+                    return obj['manoeuvre_plan']
                 else:
                     print "Old scenario does not correspond to actual one."
                     sys.exit(1)
@@ -45,7 +54,7 @@ class Scenario(object):
             print "\nScenario file not found."
             sys.exit(1)
 
-    def export_solved_scenario(self, command_line):
+    def export_solved_scenario(self, manoeuvre_plan):
         """
             Export a solved scenario into pickle file 'scenario.p'
         """
@@ -56,7 +65,7 @@ class Scenario(object):
         # Export the "self" into "scenario.p"
         with open('scenario.pickle', 'wb') as file:
 
-            obj = {'scenario_name': self.name, 'command_line': command_line}
+            obj = {'scenario_name': self.name, 'manoeuvre_plan': manoeuvre_plan}
 
             pickle.dump(obj, file, protocol=pickle.HIGHEST_PROTOCOL)
             print "Command Line & Scenario saved..."
@@ -66,15 +75,25 @@ class Scenario(object):
             Parse scenario from .yaml file.
         """
 
+        # Actual path
+        path = os.getcwd()
+
+        if '.ros' in path:
+            # Running within ROS
+            scenario_path = os.getcwd()[:-4] + 'cso_ws/src/rdv-cap-sim/nodes/cso_path_planner/cfg/scenario.yaml'
+            initial_conditions_path = os.getcwd()[:-4] + 'cso_ws/src/rdv-cap-sim/nodes/cso_path_planner/cfg/initial_conditions.yaml'
+        else:
+            # Running from node folder
+            scenario_path = os.getcwd()[:-3] + 'cfg/scenario.yaml'
+            initial_conditions_path = os.getcwd()[:-3] + 'cfg/initial_conditions.yaml'
+
         # Opening scenario file
-        scenario_path = os.getcwd()[:-3] + 'cfg/scenario.yaml'
         scenario_file = file(scenario_path, 'r')
         scenario = yaml.load(scenario_file)
         scenario = scenario['scenario']
         checkpoints = scenario['CheckPoints']
 
         # Opening initial conditions file
-        initial_conditions_path = os.getcwd()[:-3] + 'cfg/initial_conditions.yaml'
         initial_conditions_file = file(initial_conditions_path, 'r')
         initial_conditions = yaml.load(initial_conditions_file)
         chaser_ic = initial_conditions['chaser']
