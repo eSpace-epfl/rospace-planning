@@ -22,7 +22,6 @@ class Solver(object):
 
     def __init__(self):
         self.manoeuvre_plan = []
-        self.solver_clock = 0
 
     def solve_scenario(self, scenario):
         print "\n+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
@@ -119,8 +118,8 @@ class Solver(object):
 
             if t_est is None and np.linalg.norm(chaser.lvlh.R) <= 20.0:
                 # Distance from the target is below 10.0 km => use CW-solver
-                self.clohessy_wiltshire_solver(chaser, chaser_next, target)
-                # self.multi_lambert(chaser, chaser_next, target)
+                # self.clohessy_wiltshire_solver(chaser, chaser_next, target)
+                self.multi_lambert(chaser, chaser_next, target)
 
             # Check if the drift time is below a certain limit
             # FOR NOW: drift in any case, just does not care about a time limit
@@ -451,57 +450,6 @@ class Solver(object):
 
         target.kep.from_cartesian(target_cart)
 
-    def _save_result(self, chaser, target, id=0, single_manoeuvre=False):
-        if os.path.isdir('/home/dfrey/polybox/manoeuvre'):
-            if single_manoeuvre:
-                print "Saving single manoeuvre " + str(id) + "..."
-                L = 1
-            else:
-                print "Saving complete manoeuvre..."
-                L = len(self.command_line)
-
-            # Simulating the whole manoeuvre and store the result
-            chaser_tmp = Position()
-            target_tmp = Position()
-
-            chaser_tmp.from_other_position(chaser)
-            target_tmp.from_other_position(target)
-
-            # Creating list of radius of target and chaser
-            R_target = [target_tmp.cartesian.R]
-            R_chaser = [chaser_tmp.cartesian.R]
-            R_chaser_lvlh = [chaser_tmp.lvlh.R]
-            # R_chaser_lvc = [np.array([chaser_tmp.lvc.dR, chaser_tmp.lvc.dV, chaser_tmp.lvc.dH])]
-
-            for i in xrange(0, L):
-                if single_manoeuvre:
-                    cmd = self.command_line[-1]
-                else:
-                    cmd = self.command_line[i]
-
-                for j in xrange(0, int(np.floor(cmd.duration))):
-                    self._propagator(chaser_tmp, target_tmp, 1.0)
-                    R_chaser.append(chaser_tmp.cartesian.R)
-                    R_target.append(target_tmp.cartesian.R)
-                    R_chaser_lvlh.append(chaser_tmp.lvlh.R)
-                    # R_chaser_lvc.append(np.array([chaser_tmp.lvc.dR, chaser_tmp.lvc.dV, chaser_tmp.lvc.dH]))
-
-                self._propagator(chaser_tmp, target_tmp, cmd.duration - np.floor(cmd.duration))
-
-                # Apply dV
-                self._propagator(chaser_tmp, target_tmp, 1e-3, cmd.deltaV_C)
-                # self.print_state(chaser_tmp, target_tmp)
-
-            # Saving in .mat file
-            if single_manoeuvre:
-                sio.savemat('/home/dfrey/polybox/manoeuvre/manoeuvre_' + str(id) + '.mat',
-                        mdict={'abs_pos_c': R_chaser, 'rel_pos_c': R_chaser_lvlh, 'abs_pos_t': R_target})
-            else:
-                sio.savemat('/home/dfrey/polybox/manoeuvre/complete_manoeuvre.mat',
-                        mdict={'abs_pos_c': R_chaser, 'rel_pos_c': R_chaser_lvlh, 'abs_pos_t': R_target})
-
-            print "Manoeuvre saved."
-
     def clohessy_wiltshire_solver(self, chaser, chaser_next, target):
         """
             Solve Hill's Equation to get the amount of DeltaV needed to go from chaser position to chaser_next.
@@ -516,7 +464,7 @@ class Solver(object):
         print ">>>> Solving CW-equations\n"
 
         a = target.kep.a
-        max_time = 10 * int(2*np.pi * np.sqrt(a**3 / mu_earth))
+        max_time = int(2*np.pi * np.sqrt(a**3 / mu_earth))
 
         r_rel_c_0 = chaser.lvlh.R
         v_rel_c_0 = chaser.lvlh.V
@@ -578,45 +526,6 @@ class Solver(object):
                 best_deltaV_2 = deltaV_2
                 delta_T = t_
 
-        # T = np.arange(0, delta_T+1, 1)
-        # r = np.dot(phi_rr(T), r_rel_c_0) + np.dot(phi_rv(T),  v_rel_c_0 + best_deltaV_1)
-        # v = np.dot(phi_vr(T), r_rel_c_0) + np.dot(phi_vv(T), v_rel_c_0 + best_deltaV_1)
-
-        # plt.plot(r[:][0], r[:][1], 'r--')
-
-        # ############################## TEST WITH MULTI-LAMBERT
-        # target_old = State()
-        # target_old.from_other_state(target)
-        # chaser_old = State()
-        # chaser_old.from_other_state(chaser)
-        #
-        # self._target_propagator(target, delta_T)
-        #
-        # target_cart = Cartesian()
-        # chaser_cart = Cartesian()
-        # target_cart.from_keporb(target.kep)
-        # chaser_cart.from_keporb(chaser.kep)
-        #
-        # B = target_cart.get_lof()
-        # R_target = target_cart.R + np.linalg.inv(B).dot(chaser_next.lvlh.R)
-        #
-        # sol = pk.lambert_problem(chaser_cart.R, R_target, delta_T, mu_earth, True, 10)
-        #
-        # target.from_other_state(target_old)
-        # target_cart.from_keporb(target.kep)
-        #
-        # deltaV_1_ML_TEME = np.array(sol.get_v1()[0]) - chaser_cart.V
-        # deltaV_1_ML_LVLH = target_cart.get_lof().dot(deltaV_1_ML_TEME)
-        #
-        # self._propagator(chaser, target, 1e-3, np.array(sol.get_v1()[0]) - chaser_cart.V)
-        # for l in xrange(0, delta_T):
-        #     plt.plot(chaser.lvlh.R[0], chaser.lvlh.R[1], 'g.')
-        #     self._propagator(chaser, target, 1)
-        #
-        # chaser.from_other_state(chaser_old)
-        # target.from_other_state(target_old)
-        # ###########################################
-
         target_cart = Cartesian()
         target_cart.from_keporb(target.kep)
 
@@ -634,12 +543,6 @@ class Solver(object):
 
         # Propagate chaser and target to evaluate all the future commands properly
         self._propagator(chaser, target, 1e-3, deltaV_C_1)
-
-        # for l in xrange(0, delta_T):
-        #     plt.plot(chaser.lvlh.R[0], chaser.lvlh.R[1], 'b.')
-        #     self._propagator(chaser, target, 1)
-        #
-        # plt.show()
 
         self._propagator(chaser, target, delta_T)
 
@@ -689,7 +592,7 @@ class Solver(object):
 
         # PROBLEM: To solve the lambert problem I need to state a certain dt. And the target will
         # be propagated by that dt.
-        for dt in xrange(10, 20000):
+        for dt in xrange(10, 30000):
             # Propagate absolute position we want to reach in the optimal way at t1 = t_start + dt
             # Propagate target position at t = t0 + dt
             target_old = Cartesian()
@@ -726,61 +629,6 @@ class Solver(object):
                     best_deltaV_1 = deltaV_1
                     best_deltaV_2 = deltaV_2
                     best_dt = dt
-
-
-        ############################## TEST WITH CW
-
-
-        n = np.sqrt(mu_earth/np.linalg.norm(R_T_i)**3.0)
-        n_test = np.linalg.norm(np.cross(R_T_i, V_T_i))/np.linalg.norm(R_T_i)**2
-
-        O_T_i = np.cross(R_T_i, V_T_i) / np.linalg.norm(R_T_i)**2
-        B_LVLH_TEME_i = target_cart.get_lof()
-
-
-        phi_rr = lambda t: np.array([
-            [4.0 - 3.0 * np.cos(n*t), 0.0, 0.0],
-            [6.0*(np.sin(n*t) - n*t), 1.0, 0.0],
-            [0.0, 0.0, np.cos(n*t)]
-        ])
-
-        phi_rv = lambda t: np.array([
-            [1.0/n * np.sin(n*t), 2.0/n * (1 - np.cos(n*t)), 0.0],
-            [2.0/n * (np.cos(n*t) - 1.0), 1.0 / n * (4.0 * np.sin(n*t) - 3.0*n*t), 0.0],
-            [0.0, 0.0, 1.0 / n * np.sin(n*t)]
-        ])
-
-        phi_vr = lambda t: np.array([
-            [3.0 * n * np.sin(n*t), 0.0, 0.0],
-            [6.0 * n * (np.cos(n*t) - 1), 0.0, 0.0],
-            [0.0, 0.0, -n * np.sin(n*t)]
-        ])
-
-        phi_vv = lambda t: np.array([
-            [np.cos(n*t), 2.0 * np.sin(n*t), 0.0],
-            [-2.0 * np.sin(n*t), 4.0 * np.cos(n*t) - 3.0, 0.0],
-            [0.0, 0.0, np.cos(n*t)]
-        ])
-
-        dr_0_TEME = R_C_i - R_T_i
-        dv_0_TEME = V_C_i - V_T_i - np.cross(O_T_i, dr_0_TEME)
-
-        dr_0_LVLH = B_LVLH_TEME_i.dot(dr_0_TEME)
-        dv_0_LVLH = B_LVLH_TEME_i.dot(dv_0_TEME)
-
-        dv_0_LVLH_transfer = dv_0_LVLH + B_LVLH_TEME_i.dot(best_deltaV_1)
-
-        dr_C_f_testCW = phi_rr(best_dt).dot(dr_0_LVLH) + phi_rv(best_dt).dot(dv_0_LVLH_transfer)
-
-        target_old = State()
-        target_old.from_other_state(target)
-        self._target_propagator(target_old, best_dt)
-
-        target_old_cart = Cartesian()
-        target_old_cart.from_keporb(target_old.kep)
-
-        R_C_f_testCW = target_old_cart.R + np.linalg.inv(target_old_cart.get_lof()).dot(dr_C_f_testCW)
-        ##################################### ----> IT WORKS!
 
         c1 = Manoeuvre()
         c1.deltaV_C = best_deltaV_1
@@ -966,21 +814,6 @@ class Solver(object):
 
         return dt
 
-    def calc_synodic_period(self, chaser, target):
-        """
-            Calculate the synodic period
-        """
-
-        T_chaser = 2.0 * np.pi * np.sqrt(chaser.kep.a**3 / mu_earth)
-        T_target = 2.0 * np.pi * np.sqrt(target.kep.a**3 / mu_earth)
-
-        if T_chaser < T_target:
-            T_syn = 1.0 / (1.0 / T_chaser - 1.0 / T_target)
-        else:
-            T_syn = 1.0 / (1.0 / T_target - 1.0 / T_chaser)
-
-        return T_syn
-
     def drift_to(self, chaser, chaser_next, target, error):
         """
             Try to drift to the next checkpoint, inside a certain error ellipsoid. Return the time needed.
@@ -1084,3 +917,54 @@ class Solver(object):
             tot_dt += command.duration
 
         return tot_dv, tot_dt
+
+    def _save_result(self, chaser, target, id=0, single_manoeuvre=False):
+        if os.path.isdir('/home/dfrey/polybox/manoeuvre'):
+            if single_manoeuvre:
+                print "Saving single manoeuvre " + str(id) + "..."
+                L = 1
+            else:
+                print "Saving complete manoeuvre..."
+                L = len(self.command_line)
+
+            # Simulating the whole manoeuvre and store the result
+            chaser_tmp = Position()
+            target_tmp = Position()
+
+            chaser_tmp.from_other_position(chaser)
+            target_tmp.from_other_position(target)
+
+            # Creating list of radius of target and chaser
+            R_target = [target_tmp.cartesian.R]
+            R_chaser = [chaser_tmp.cartesian.R]
+            R_chaser_lvlh = [chaser_tmp.lvlh.R]
+            # R_chaser_lvc = [np.array([chaser_tmp.lvc.dR, chaser_tmp.lvc.dV, chaser_tmp.lvc.dH])]
+
+            for i in xrange(0, L):
+                if single_manoeuvre:
+                    cmd = self.command_line[-1]
+                else:
+                    cmd = self.command_line[i]
+
+                for j in xrange(0, int(np.floor(cmd.duration))):
+                    self._propagator(chaser_tmp, target_tmp, 1.0)
+                    R_chaser.append(chaser_tmp.cartesian.R)
+                    R_target.append(target_tmp.cartesian.R)
+                    R_chaser_lvlh.append(chaser_tmp.lvlh.R)
+                    # R_chaser_lvc.append(np.array([chaser_tmp.lvc.dR, chaser_tmp.lvc.dV, chaser_tmp.lvc.dH]))
+
+                self._propagator(chaser_tmp, target_tmp, cmd.duration - np.floor(cmd.duration))
+
+                # Apply dV
+                self._propagator(chaser_tmp, target_tmp, 1e-3, cmd.deltaV_C)
+                # self.print_state(chaser_tmp, target_tmp)
+
+            # Saving in .mat file
+            if single_manoeuvre:
+                sio.savemat('/home/dfrey/polybox/manoeuvre/manoeuvre_' + str(id) + '.mat',
+                        mdict={'abs_pos_c': R_chaser, 'rel_pos_c': R_chaser_lvlh, 'abs_pos_t': R_target})
+            else:
+                sio.savemat('/home/dfrey/polybox/manoeuvre/complete_manoeuvre.mat',
+                        mdict={'abs_pos_c': R_chaser, 'rel_pos_c': R_chaser_lvlh, 'abs_pos_t': R_target})
+
+            print "Manoeuvre saved."
