@@ -1,44 +1,36 @@
 import yaml
-import os
-import datetime as dt
 import numpy as np
 import pickle
 import sys
 
-from state import State
-from checkpoint import CheckPoint
+from state import Chaser, Target
+from checkpoint import RelativeCP, AbsoluteCP
 
 class Scenario(object):
 
     def __init__(self):
         # Scenario information
-        self.nr_checkpoints = 0
-        self.checkpoints = []
         self.name = 'Standard'
         self.overview = ''
 
-        # Chaser and target actual state
-        self.chaser = State()
-        self.target = State()
+        # Checkpoint list
+        self.checkpoints = []
 
-        # TDB
-        self.mission_start = dt.datetime(2017, 9, 15, 13, 20, 0)
-        self.keep_out_zone = 0.05
+        # Chaser and target actual state
+        self.chaser = Chaser()
+        self.target = Target()
 
     def import_solved_scenario(self):
         """
-            Import a solved scenario from pickle file 'scenario.p'
+            Import a solved scenario, i.e the manoeuvre plan, from pickle file 'scenario.pickle'
         """
 
         # Actual path
-        path = os.getcwd()
+        abs_path = sys.argv[0]
+        path_idx = abs_path.find('cso_path_planner')
+        abs_path = abs_path[0:path_idx + 16]
 
-        if '.ros' in path:
-            # Running within ROS
-            scenario_path = os.getcwd()[:-4] + 'cso_ws/src/rdv-cap-sim/nodes/cso_path_planner/src/scenario.pickle'
-        else:
-            # Running from node folder
-            scenario_path = os.getcwd() + '/scenario.pickle'
+        scenario_path = abs_path + '/src/scenario.pickle'
 
         # Try to import the file
         try:
@@ -56,11 +48,8 @@ class Scenario(object):
 
     def export_solved_scenario(self, manoeuvre_plan):
         """
-            Export a solved scenario into pickle file 'scenario.p'
+            Export a solved scenario into pickle file 'scenario.pickle'
         """
-
-        # TODO: Find a way to store the complete scenario and upload it afterwards
-        # TODO: Remove the first command, s.t the scenario can be applied regardless of the initial position
 
         # Export the "self" into "scenario.p"
         with open('scenario.pickle', 'wb') as file:
@@ -68,24 +57,20 @@ class Scenario(object):
             obj = {'scenario_name': self.name, 'manoeuvre_plan': manoeuvre_plan}
 
             pickle.dump(obj, file, protocol=pickle.HIGHEST_PROTOCOL)
-            print "Command Line & Scenario saved..."
+            print "Manoeuvre plan saved..."
 
     def import_yaml_scenario(self):
         """
-            Parse scenario from .yaml file.
+            Parse scenario from .yaml files in the /cfg folder
         """
 
         # Actual path
-        path = os.getcwd()
+        abs_path = sys.argv[0]
+        path_idx = abs_path.find('cso_path_planner')
+        abs_path = abs_path[0:path_idx + 16]
 
-        if '.ros' in path:
-            # Running within ROS
-            scenario_path = os.getcwd()[:-4] + 'cso_ws/src/rdv-cap-sim/nodes/cso_path_planner/cfg/scenario.yaml'
-            initial_conditions_path = os.getcwd()[:-4] + 'cso_ws/src/rdv-cap-sim/nodes/cso_path_planner/cfg/initial_conditions.yaml'
-        else:
-            # Running from node folder
-            scenario_path = os.getcwd()[:-3] + 'cfg/scenario.yaml'
-            initial_conditions_path = os.getcwd()[:-3] + 'cfg/initial_conditions.yaml'
+        scenario_path = abs_path + '/cfg/scenario.yaml'
+        initial_conditions_path = abs_path + '/cfg/initial_conditions.yaml'
 
         # Opening scenario file
         scenario_file = file(scenario_path, 'r')
@@ -100,47 +85,29 @@ class Scenario(object):
         target_ic = initial_conditions['target']
 
         # Assign variables
-        self.nr_checkpoints = len(checkpoints)
         self.name = scenario['name']
         self.overview = scenario['overview']
 
         # Assign initial conditions, assuming target in tle and chaser in keplerian
-        tle_target = target_ic['tle']
-        self.target.kep.from_tle(eval(str(tle_target['i'])),
-                                 eval(str(tle_target['O'])),
-                                 eval(str(tle_target['e'])),
-                                 eval(str(tle_target['m'])),
-                                 eval(str(tle_target['w'])),
-                                 eval(str(tle_target['n'])))
-
-        kep_chaser = chaser_ic['kep']
-        for k in kep_chaser:
-            exec('self.chaser.kep.' + k + '=' + str(kep_chaser[k]))
+        self.target.set_abs_state_from_tle(target_ic['tle'])
+        self.chaser.set_abs_state_from_kep(chaser_ic['kep'], self.target)
 
         # Extract CheckPoints
-        for i in xrange(0, self.nr_checkpoints):
-            checkpoint = CheckPoint()
+        for i in xrange(0, len(checkpoints)):
+            pos = checkpoints['S' + str(i)]['position']
+            ref_frame = pos.keys()[0]
+
+            prev = self.checkpoints[-1] if len(self.checkpoints) > 0 else None
+
+            if ref_frame == 'lvlh':
+                checkpoint = RelativeCP()
+                checkpoint.set_rel_state_from_lvlh(pos[ref_frame], self.chaser, self.target)
+                checkpoint.error_ellipsoid = checkpoints['S' + str(i)]['error_ellipsoid']
+            elif ref_frame == 'kep':
+                checkpoint = AbsoluteCP(prev)
+                checkpoint.set_abs_state_from_kep(pos[ref_frame], self.chaser, self.target)
+
             checkpoint.id = checkpoints['S' + str(i)]['id']
 
-            try:
-                checkpoint.state.from_other_state(self.checkpoints[-1].state)
-            except:
-                pass
-
-            try:
-                checkpoint.error_ellipsoid = checkpoints['S' + str(i)]['error_ellipsoid']
-            except:
-                pass
-
-            pos = checkpoints['S' + str(i)]['position']
-            var_list = []
-            for ref_frame in pos:
-                for var in pos[ref_frame]:
-                    exec('checkpoint.state.' + ref_frame + '.' + var + '= ' + str(pos[ref_frame][var]))
-                    var_list.append(ref_frame + '.' + var)
-
-                if ref_frame == 'lvlh':
-                    checkpoint.time_dependancy = True
-
-                self.checkpoints.append(checkpoint)
+            self.checkpoints.append(checkpoint)
 
