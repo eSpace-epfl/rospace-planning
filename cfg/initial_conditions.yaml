@@ -10,9 +10,9 @@ target:
 
 chaser:
   kep:
-    a: self.target.kep.a - 60.0
+    a: target.abs_state.a - 60.0
     e: 0.0005
-    i: self.target.kep.i + 0.5 * np.pi / 180.0
-    w: self.target.kep.w + 15.0 * np.pi / 180.0
-    O: self.target.kep.O + 1.0 * np.pi / 180.0
+    i: target.abs_state.i + 0.5 * np.pi / 180.0
+    w: target.abs_state.w + 15.0 * np.pi / 180.0
+    O: target.abs_state.O + 1.0 * np.pi / 180.0
     v: 0.0

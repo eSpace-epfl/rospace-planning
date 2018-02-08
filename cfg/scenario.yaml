@@ -18,25 +18,25 @@ scenario:
       id: 0
       position:
         kep:
-          i: self.target.kep.i
-          O: self.target.kep.O
-          w: self.chaser.kep.w
-          a: self.chaser.kep.a
-          e: self.chaser.kep.e
+          i: target.abs_state.i
+          O: target.abs_state.O
+          w: chaser.abs_state.w
+          a: chaser.abs_state.a
+          e: chaser.abs_state.e
 
     S1:
       id: 1
       position:
         kep:
-          a: self.target.kep.a - 35.0
-          e: self.target.kep.a * self.target.kep.e / (self.target.kep.a - 100.0)
+          a: target.abs_state.a - 35.0
+          e: target.abs_state.a * target.abs_state.e / (target.abs_state.a - 100.0)
 
     S2:
       id: 2
       position:
          kep:
-          a: self.target.kep.a - 10.0
-          e: self.target.kep.a * self.target.kep.e / (self.target.kep.a - 10.0)
+          a: target.abs_state.a - 10.0
+          e: target.abs_state.a * target.abs_state.e / (target.abs_state.a - 10.0)
 
     S3:
       id: 3
