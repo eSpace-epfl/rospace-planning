@@ -65,7 +65,7 @@ class RelativeCP(CheckPoint):
         # target state. Therefore, when the string is evaluated you need to give also the target and to have the same
         # name both in this function and in the scenario.yaml file.
 
-        if type(lvlh) == dict:
+        if type(rel_state) == dict:
             self.rel_state.R = eval(rel_state['R']) if 'R' in rel_state.keys() else np.array([0.0, 0.0, 0.0])
             self.rel_state.V = eval(rel_state['V']) if 'V' in rel_state.keys() else np.array([0.0, 0.0, 0.0])
         else:
