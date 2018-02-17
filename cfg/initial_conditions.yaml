@@ -1,18 +1,27 @@
 
 target:
   tle:
-    i: 98.5214*np.pi/180.0
-    O: 158.5411*np.pi/180.0
-    e: 0.0007083
-    w: 340.8336*np.pi/180.0
-    m: 19.2594*np.pi/180.0
-    n: 14.5610940
+    i: 98.5062*np.pi/180.0
+    O: 22.7182*np.pi/180.0
+    e: 0.0008099
+    w: 30.5945*np.pi/180.0
+    m: 329.5723*np.pi/180.0
+    n: 14.56041441
 
 chaser:
   kep:
-    a: target.abs_state.a - 60.0
-    e: 0.0005
-    i: target.abs_state.i + 0.5 * np.pi / 180.0
-    w: target.abs_state.w + 15.0 * np.pi / 180.0
-    O: target.abs_state.O + 1.0 * np.pi / 180.0
-    v: 0.0
+    a: target.abs_state.a - 35.0
+    e: (target.abs_state.a * target.abs_state.e) / self.abs_state.a
+    i: target.abs_state.i + 1e-2
+    w: target.abs_state.w + 2e-2
+    O: target.abs_state.O + 1e-2
+    v: (target.abs_state.v - np.pi/2.0) % (2.0 * np.pi)
+
+#chaser:
+#  tle:
+#    i: 96.5062*np.pi/180.0
+#    O: 22.7182*np.pi/180.0
+#    e: 0.0008099
+#    w: 30.5945*np.pi/180.0
+#    m: 300.9750*np.pi/180.0
+#    n: 14.56041441

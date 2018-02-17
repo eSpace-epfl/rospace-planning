@@ -17,12 +17,12 @@ class Manoeuvre(object):
     """
         Base class that contains the definition of a manoeuvre.
 
-        Attributes:
-            dV (np.array): Amount of delta-v needed to execute the burn. Given in kilometers per second with respect
-                to TEME reference frame.
-            duration (float64): Waiting time from last manoeuvre to the next one, given in seconds. (TO BE REVIEWED - Maybe useless)
-            abs_state (KepOrbElem): Absolute state at which the manoeuvre has to be executed.
-            description (string): Brief description of the manoeuvre.
+    Attributes:
+        dV (np.array): Amount of delta-v needed to execute the burn. Given in kilometers per second with respect
+            to TEME reference frame.
+        duration (float64): Waiting time from last manoeuvre to the next one, given in seconds. (TO BE REVIEWED - Maybe useless)
+        abs_state (KepOrbElem): Absolute state at which the manoeuvre has to be executed.
+        description (string): Brief description of the manoeuvre.
     """
 
     def __init__(self):
@@ -62,8 +62,8 @@ class RelativeMan(Manoeuvre):
     """
         Extended class for manoeuvres in relative navigation.
 
-        Attributes:
-            rel_state (CartesianLVLH): Relative state at which manoeuvre should occur given in LVLH frame.
+    Attributes:
+        rel_state (CartesianLVLH): Relative state at which manoeuvre should occur given in LVLH frame.
     """
 
     def __init__(self):
