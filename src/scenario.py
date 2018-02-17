@@ -53,7 +53,7 @@ class Scenario(object):
         path_idx = abs_path.find('cso_path_planner')
         abs_path = abs_path[0:path_idx + 16]
 
-        scenario_path = abs_path + '/src/scenario.pickle'
+        scenario_path = abs_path + '/example/scenario.pickle'
 
         # Try to import the file
         try:
@@ -128,6 +128,7 @@ class Scenario(object):
         # Assign initial conditions, assuming target in tle and chaser in keplerian
         self.target.set_abs_state_from_tle(target_ic['tle'])
         self.chaser.set_abs_state(chaser_ic['kep'], self.target)
+        self.chaser.set_rel_state_from_abs_state(self.target)
 
         # Extract CheckPoints
         for i in xrange(0, len(checkpoints)):

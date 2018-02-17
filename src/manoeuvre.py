@@ -11,6 +11,7 @@
 import numpy as np
 
 from space_tf import KepOrbElem, CartesianLVLH
+from threading import RLock
 
 
 class Manoeuvre(object):
@@ -56,6 +57,12 @@ class Manoeuvre(object):
         """
         # TODO
         del self.abs_state._lock
+
+    def add_lock(self):
+        """
+            Re create the lock attribute.
+        """
+        self.abs_state._lock = RLock()
 
 
 class RelativeMan(Manoeuvre):
