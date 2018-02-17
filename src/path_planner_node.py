@@ -30,9 +30,9 @@ if __name__=='__main__':
     rate = rospy.Rate(0.1)
     deltaV = Vector3Stamped()
     while not rospy.is_shutdown():
-        deltaV.vector.x = controller.active_manoeuvre.deltaV_C[0]
-        deltaV.vector.y = controller.active_manoeuvre.deltaV_C[1]
-        deltaV.vector.z = controller.active_manoeuvre.deltaV_C[2]
+        deltaV.vector.x = controller.active_manoeuvre.dV[0]
+        deltaV.vector.y = controller.active_manoeuvre.dV[1]
+        deltaV.vector.z = controller.active_manoeuvre.dV[2]
 
         if controller.sleep_flag:
             pub_deltaV.publish(deltaV)
