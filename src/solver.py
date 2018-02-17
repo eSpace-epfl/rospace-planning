@@ -119,6 +119,8 @@ class Solver(object):
                 checkpoint_new_rel.rel_state.R = checkpoint.rel_state.R
                 checkpoint_new_rel.rel_state.V = checkpoint.rel_state.V
 
+                checkpoint_new_rel.error_ellipsoid = checkpoint.error_ellipsoid
+
                 k = (dv_at_perigee / n_drift - np.pi * np.sqrt(
                     checkpoint_new_abs.abs_state.a ** 3 / mu_earth) - t_limit) / np.sqrt(chaser.abs_state.a ** 3 / mu_earth)
 
@@ -135,7 +137,7 @@ class Solver(object):
 
             if t_est is None and np.linalg.norm(chaser.rel_state.R) <= 20.0:
                 # Distance from the target is below 20.0 km => use CW-solver
-                # self.clohessy_wiltshire_solver(chaser, chaser_next, target)
+                # self.clohessy_wiltshire_solver(chaser, checkpoint, target)
                 self.multi_lambert(chaser, checkpoint, target)
 
             # Check if the drift time is below a certain limit
@@ -151,10 +153,7 @@ class Solver(object):
                 c.description = 'Drift for ' + str(t_est) + ' seconds'
                 self.manoeuvre_plan.append(c)
 
-                # self._save_result(chaser, target, len(self.manoeuvre_plan), True)
-
                 self._propagator(chaser, target, t_est)
-                # self.print_state(chaser, target)
 
             elif t_est is not None and t_est > t_limit:
                 # Resync manoeuvre
@@ -446,15 +445,21 @@ class Solver(object):
         B_Lf = np.arcsin(np.sqrt(np.cos(i_f)**2 * np.sin(i_i)**2 * np.sin(dO)**2 /
                                  (np.sin(alpha)**2 - np.sin(i_i)**2 * np.sin(i_f)**2 * np.sin(dO)**2)))
 
-        if i_f > np.pi/2.0:
-            phi = O_f - B_Lf
+        if (i_f > np.pi / 2.0 > i_i) or (i_i > np.pi / 2.0 > i_f):
+            B_Lf *= -np.sign(dO)
+        elif (i_f > i_i > np.pi / 2.0) or (i_i > i_f > np.pi / 2.0):
+            B_Lf *= -np.sign(dO) * np.sign(di)
         else:
-            phi = O_f + B_Lf
+            B_Lf *= np.sign(dO) * np.sign(di)
 
-        psi = np.arcsin(np.sin(i_i) * np.sin(i_f) * np.sin(dO) / np.sin(alpha))
+        phi = O_f + B_Lf
+
+        psi = np.sign(dO) * abs(np.arcsin(np.sin(i_i) * np.sin(i_f) * np.sin(dO) / np.sin(alpha)))
 
         if i_i > i_f:
             psi *= -1.0
+
+        A_Li = -abs(A_Li) * np.sign(psi)
 
         # Two possible positions where the burn can occur
         theta_1 = (2.0 * np.pi - A_Li - chaser.abs_state.w) % (2.0 * np.pi)
@@ -484,7 +489,7 @@ class Solver(object):
         cy = np.cos(psi) * np.sin(phi)
         cz = np.sin(psi)
 
-        if di < 0.0 and i_i > np.pi/2.0 and i_f > np.pi/2.0:
+        if i_i > i_f:
             cx *= -1.0
             cy *= -1.0
             cz *= -1.0
@@ -623,6 +628,9 @@ class Solver(object):
         best_deltaV = 1e12
         best_dt = 0
 
+        # Minimum deltaV deliverable -> 5 mm/s
+        min_deltaV = 5e-6
+
         # Check all the possible transfers time from tmin to tmax (seconds)
         tmin = 10
         tmax = 30000
@@ -654,11 +662,15 @@ class Solver(object):
                 deltaV_2 = V_C_f - np.array(sol.get_v2()[i])
                 deltaV_tot = np.linalg.norm(deltaV_1) + np.linalg.norm(deltaV_2)
 
-                if deltaV_tot < best_deltaV:
-                    best_deltaV = deltaV_tot
-                    best_deltaV_1 = deltaV_1
-                    best_deltaV_2 = deltaV_2
-                    best_dt = dt
+                # Check if the deltaV is above the minimum deliverable by thrusters
+                if np.linalg.norm(deltaV_1) > min_deltaV and np.linalg.norm(deltaV_2) > min_deltaV:
+                    # Check if the new deltaV is less than previous
+                    if deltaV_tot < best_deltaV:
+                        # Check if the trajectory is safe
+                        best_deltaV = deltaV_tot
+                        best_deltaV_1 = deltaV_1
+                        best_deltaV_2 = deltaV_2
+                        best_dt = dt
 
         c1 = RelativeMan()
         c1.dV = best_deltaV_1

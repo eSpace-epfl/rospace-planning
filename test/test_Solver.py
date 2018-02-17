@@ -10,7 +10,8 @@ sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)) + "/../src/")  # 
 from solver import Solver
 from space_tf import KepOrbElem
 from scenario import Scenario
-from state import State
+from state import Satellite
+from checkpoint import AbsoluteCP
 
 class SolverTest(unittest.TestCase):
 
@@ -134,7 +135,7 @@ class SolverTest(unittest.TestCase):
 
         solver = Solver()
 
-        num_tests = int(1e4)
+        num_tests = int(1e3)
 
         a_min = 6700
         a_max = 90000
@@ -171,20 +172,49 @@ class SolverTest(unittest.TestCase):
             OE_f.i = OE_i.i + np.random.random()*np.pi/18.0 - np.pi/36.0
             OE_f.v = random_vector[5]
 
-            chaser_i = State()
-            chaser_i.kep = OE_i
-            chaser_i.update_target_from_keporb()
+            if OE_f.i > np.pi:
+                OE_f.i = np.pi - 1e-2
 
-            chaser_f = State()
-            chaser_f.kep = OE_f
-            chaser_f.update_target_from_keporb()
+            if OE_f.i < 0.0:
+                OE_f.i = 1e-2
 
-            solver.plane_correction(chaser_i, chaser_f, None, False)
+            if OE_f.O > 2.0 * np.pi:
+                OE_f.O = 2.0 * np.pi - 1e-2
 
-            self.assertAlmostEqual(chaser_i.kep.i, chaser_f.kep.i, 6)
-            self.assertAlmostEqual(chaser_i.kep.O, chaser_f.kep.O, 6)
-            self.assertAlmostEqual(chaser_i.kep.a, OE_f.a, 6)
-            self.assertAlmostEqual(chaser_i.kep.e, OE_f.e, 6)
+            if OE_f.O < 0.0:
+                OE_f.O = 1e-2
+
+            chaser = Satellite()
+            chaser.set_abs_state(OE_i)
+
+            print "Chaser state: "
+            print " >> Kep: "
+            print "      a :     " + str(OE_i.a)
+            print "      e :     " + str(OE_i.e)
+            print "      i :     " + str(OE_i.i)
+            print "      O :     " + str(OE_i.O)
+            print "      w :     " + str(OE_i.w)
+            print "      v :     " + str(OE_i.v)
+
+            print "Checkpoint state: "
+            print " >> Kep: "
+            print "      a :     " + str(OE_f.a)
+            print "      e :     " + str(OE_f.e)
+            print "      i :     " + str(OE_f.i)
+            print "      O :     " + str(OE_f.O)
+            print "      w :     " + str(OE_f.w)
+            print "      v :     " + str(OE_f.v)
+
+
+            checkpoint = AbsoluteCP()
+            checkpoint.set_abs_state(OE_f)
+
+            solver.plane_correction(chaser, checkpoint, None)
+
+            self.assertAlmostEqual(chaser.abs_state.i, checkpoint.abs_state.i, 0)
+            self.assertAlmostEqual(chaser.abs_state.O, checkpoint.abs_state.O, 0)
+            self.assertAlmostEqual(chaser.abs_state.a, OE_f.a, 0)
+            self.assertAlmostEqual(chaser.abs_state.e, OE_f.e, 0)
             # self.assertAlmostEqual(chaser_i.kep.w, OE_f.w, 6)
 
 if __name__ == '__main__':
