@@ -53,11 +53,10 @@ class Solver(object):
 
         # Start solving scenario by popping positions from position list
         for checkpoint in checkpoints:
+            self.print_state(chaser, target)
             self.to_next_checkpoint(chaser, checkpoint, target)
 
         tot_dV, tot_dt = self.print_result()
-
-        self.print_state(chaser, target)
 
         print "Final achieved relative position:     " + str(chaser.rel_state.R)
 
@@ -223,7 +222,7 @@ class Solver(object):
         # Check if the orbits intersect
         t = (a_f*(1-e_f**2) - a_i*(1-e_i**2))/(a_i*e_f*(1-e_i)**2 - a_f*e_i*(1-e_f**2))
 
-        if abs(t) <= 1:
+        if abs(t) <= 0.995:
             # Orbits intersects, burn at the intersection (theoretically it's a situation that we want to avoid)
 
             # Choose the closest intersection with respect to the actual position
@@ -529,7 +528,7 @@ class Solver(object):
         self._propagator(chaser, target, c.duration)
         self._propagator(chaser, target, 1e-3, deltaV_C)
 
-    def drift_to(self, chaser, checkpoint, target):
+    def drift_to_old(self, chaser, checkpoint, target):
         """
             Algorithm that tries to drift to the next checkpoint, staying within a certain error ellipsoid.
 
@@ -584,6 +583,188 @@ class Solver(object):
 
             t_est_old = t_est
             t_est *= 1.0 + dr_next/(np.linalg.norm(chaser_old.abs_state.a)*k)
+
+            # Assuming to stay on the same plane
+            if abs(checkpoint.rel_state.R[0] - chaser_old.rel_state.R[0]) <= checkpoint.error_ellipsoid[0] and \
+                abs(checkpoint.rel_state.R[1] - chaser_old.rel_state.R[1]) <= checkpoint.error_ellipsoid[1]:
+                # We have reached the error ellipsoid, can break
+                ellipsoid_flag = True
+
+            chaser_old.set_from_other_satellite(chaser)
+            target_old.set_from_other_satellite(target)
+
+        if ellipsoid_flag:
+            # With the estimated time, we are in the error-ellipsoid
+            return t_est
+        else:
+            return None
+
+    def drift_to_old_2(self, chaser, checkpoint, target):
+        """
+            Algorithm that tries to drift to the next checkpoint, staying within a certain error ellipsoid.
+
+        Args:
+            chaser (Chaser): Chaser state.
+            checkpoint (AbsoluteCP or RelativeCP): Next checkpoint.
+            target (Satellite): Target state.
+        """
+        # Calculate the cartesian coordinates of target and chaser
+        chaser_cart = Cartesian()
+        target_cart = Cartesian()
+
+        chaser_cart.from_keporb(chaser.abs_state)
+        target_cart.from_keporb(target.abs_state)
+
+        r_C = chaser.abs_state.a * (1.0 - chaser.abs_state.e ** 2) / (1.0 + chaser.abs_state.e * np.cos(chaser.abs_state.v))
+        r_T = target.abs_state.a * (1.0 - target.abs_state.e ** 2) / (1.0 + target.abs_state.e * np.cos(chaser.abs_state.v))
+
+        # Assuming that if we enter that point we are on a coelliptic orbit, we can directly say:
+        if abs(checkpoint.rel_state.R[0] - r_C + r_T) >= checkpoint.error_ellipsoid[0]:
+            return None
+
+        chaser_old = Chaser()
+        chaser_old.set_from_other_satellite(chaser)
+        target_old = Satellite()
+        target_old.set_from_other_satellite(target)
+
+        n_c = np.sqrt(mu_earth / chaser.abs_state.a ** 3)
+        n_t = np.sqrt(mu_earth / target.abs_state.a ** 3)
+
+        # If n_rel is below zero, we are moving slower than target. Otherwise faster.
+        n_rel = n_c - n_t
+
+        # Required dv at the end of the manoeuvre, estimation based on the relative position
+        dv_req = checkpoint.rel_state.R[1] / np.linalg.norm(chaser_old.abs_state.a)
+
+        # Check if a drift to the wanted position is possible, if yes check if it can be done under a certain time,
+        # if not try to resync
+        actual_dv = (chaser.abs_state.v + chaser.abs_state.w) % (2.0*np.pi) - (target.abs_state.v + target.abs_state.w) % (2.0*np.pi)
+
+        # Define a function F for the angle calculation
+        F = lambda dv_req, dv, n: int((dv - dv_req) / n > 0.0) * np.sign(n)
+
+        t_est = 0.0
+        t_est_old = 0.0
+        t_new = (2.0 * np.pi * F(dv_req, actual_dv, n_rel) + dv_req - actual_dv) / n_rel
+
+        dr_next_old = None
+
+        ellipsoid_flag = False
+        tol = 1e-3         # Millisecond tolerance
+        k = np.floor(np.log10(t_new))       # Scaling factor
+        while abs(t_new - t_est) > tol:
+            t_est = t_new
+            self._propagator(chaser_old, target_old, t_new)
+
+            dr_next = chaser_old.rel_state.R[1] - checkpoint.rel_state.R[1]
+            dv_next = abs(dr_next / np.linalg.norm(chaser_old.abs_state.a))
+
+            if dr_next < 0.0 and dr_next_old is None:
+                # Still behind, t_est has to be increased
+                t_new = t_est + dv_next / n_rel
+            elif dr_next < 0.0 and dr_next_old is not None:
+                if dr_next_old > 0.0:
+                    t_new = (t_est + t_est_old) / 2.0
+                else:
+                    t_new = t_est + dv_next / n_rel
+
+            if dr_next > 0.0 and dr_next_old is None:
+                # In front of the target
+                t_new = t_est + dv_next / n_rel
+            elif dr_next > 0.0 and dr_next_old is not None:
+                if dr_next_old < 0.0:
+                    t_new = (t_est + t_est_old) / 2.0
+                else:
+                    t_new = t_est + dv_next / n_rel
+
+            t_est_old = t_est
+            dr_next_old = dr_next
+
+            # Assuming to stay on the same plane
+            if abs(checkpoint.rel_state.R[0] - chaser_old.rel_state.R[0]) <= checkpoint.error_ellipsoid[0] and \
+                abs(checkpoint.rel_state.R[1] - chaser_old.rel_state.R[1]) <= checkpoint.error_ellipsoid[1]:
+                # We have reached the error ellipsoid, can break
+                ellipsoid_flag = True
+
+            chaser_old.set_from_other_satellite(chaser)
+            target_old.set_from_other_satellite(target)
+
+        if ellipsoid_flag:
+            # With the estimated time, we are in the error-ellipsoid
+            return t_est
+        else:
+            return None
+
+    def drift_to(self, chaser, checkpoint, target):
+        """
+            Algorithm that tries to drift to the next checkpoint, staying within a certain error ellipsoid.
+
+        Args:
+            chaser (Chaser): Chaser state.
+            checkpoint (AbsoluteCP or RelativeCP): Next checkpoint.
+            target (Satellite): Target state.
+        """
+        # Calculate the cartesian coordinates of target and chaser
+        chaser_cart = Cartesian()
+        target_cart = Cartesian()
+
+        chaser_cart.from_keporb(chaser.abs_state)
+        target_cart.from_keporb(target.abs_state)
+
+        r_C = chaser.abs_state.a * (1.0 - chaser.abs_state.e ** 2) / (1.0 + chaser.abs_state.e * np.cos(chaser.abs_state.v))
+        r_T = target.abs_state.a * (1.0 - target.abs_state.e ** 2) / (1.0 + target.abs_state.e * np.cos(chaser.abs_state.v))
+
+        # Assuming that if we enter that point we are on a coelliptic orbit, we can directly say:
+        if abs(checkpoint.rel_state.R[0] - r_C + r_T) >= checkpoint.error_ellipsoid[0] or abs(chaser.abs_state.a - target.abs_state.a) < 2e-1:
+            return None
+
+        chaser_old = Chaser()
+        chaser_old.set_from_other_satellite(chaser)
+        target_old = Satellite()
+        target_old.set_from_other_satellite(target)
+
+        n_c = np.sqrt(mu_earth / chaser.abs_state.a ** 3)
+        n_t = np.sqrt(mu_earth / target.abs_state.a ** 3)
+
+        # If n_rel is below zero, we are moving slower than target. Otherwise faster.
+        n_rel = n_c - n_t
+
+        # Required dv at the end of the manoeuvre, estimation based on the relative position
+        dv_req = np.sign(checkpoint.rel_state.R[1]) * np.linalg.norm(checkpoint.rel_state.R) / R_earth
+
+        # Check if a drift to the wanted position is possible, if yes check if it can be done under a certain time,
+        # if not try to resync
+        actual_dv = (chaser.abs_state.v + chaser.abs_state.w) % (2.0*np.pi) - (target.abs_state.v + target.abs_state.w) % (2.0*np.pi)
+
+        # Define a function F for the angle calculation
+        F = lambda dv_req, dv, n: int((dv - dv_req) / n > 0.0) * np.sign(n)
+
+        t_est = (2.0 * np.pi * F(dv_req, actual_dv, n_rel) + dv_req - actual_dv) / n_rel
+        t_est_old = 0.0
+        t_old = 0.0
+        ellipsoid_flag = False
+        tol = 1e-3         # Millisecond tolerance
+        dt = 100.0
+        dr_next_old = 0.0
+        while abs(t_est - t_old) > tol:
+            self._propagator(chaser_old, target_old, t_est)
+            dr_next = chaser_old.rel_state.R[1] - checkpoint.rel_state.R[1]
+
+            t_old = t_est
+
+            if dr_next <= 0.0 and dr_next_old <= 0.0:
+                t_est_old = t_est
+                t_est += dt
+            elif dr_next >= 0.0 and dr_next_old >= 0.0:
+                t_est_old = t_est
+                t_est -= dt
+            elif (dr_next <= 0.0 and dr_next_old >= 0.0) or (dr_next >= 0.0 and dr_next_old <= 0.0):
+                t_est = (t_est_old + t_est) / 2.0
+                t_est_old = t_old
+                dt /= 10.0
+
+
+            dr_next_old = dr_next
 
             # Assuming to stay on the same plane
             if abs(checkpoint.rel_state.R[0] - chaser_old.rel_state.R[0]) <= checkpoint.error_ellipsoid[0] and \
