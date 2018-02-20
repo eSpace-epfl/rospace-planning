@@ -26,6 +26,7 @@ class Scenario(object):
             checkpoints (list): A list containing all the checkpoints that has to be executed in the right order.
             chaser (Chaser): Chaser state.
             target (Satellite): Target state.
+            koz_r (float64): Radius of Keep-Out Zone drawn around the target [km]
     """
 
     def __init__(self):
@@ -39,6 +40,9 @@ class Scenario(object):
         # Chaser and target actual state
         self.chaser = Chaser()
         self.target = Satellite()
+
+        # Target Keep-Out Zone
+        self.koz_r = 0.3
 
     def import_solved_scenario(self):
         """
