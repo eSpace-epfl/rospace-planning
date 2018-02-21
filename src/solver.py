@@ -222,122 +222,66 @@ class Solver(object):
         a_f = checkpoint.abs_state.a
         e_f = checkpoint.abs_state.e
 
-        # Check if the orbits intersect
-        t = (a_f*(1-e_f**2) - a_i*(1-e_i**2))/(a_i*e_f*(1-e_i)**2 - a_f*e_i*(1-e_f**2))
+        r_p_i = a_i * (1.0 - e_i)
+        r_p_f = a_f * (1.0 - e_f)
 
-        if abs(t) <= 0.995:
-            # Orbits intersects, burn at the intersection (theoretically it's a situation that we want to avoid)
+        r_a_i = a_i * (1.0 + e_i)
+        r_a_f = a_f * (1.0 + e_f)
 
-            # Choose the closest intersection with respect to the actual position
-            theta_i_1 = np.arccos(t)
-            theta_i_2 = 2.0 * np.pi - theta_i_1
+        if a_f > a_i:
+            # Calculate intermediate orbital elements
+            a_int = (r_a_f + r_p_i) / 2.0
+            e_int = 1.0 - r_p_i / a_int
 
-            if theta_i_1 < chaser.abs_state.v:
-                dv1 = 2*np.pi + theta_i_1 - chaser.abs_state.v
-            else:
-                dv1 = theta_i_1 - chaser.abs_state.v
-
-            if theta_i_2 < chaser.abs_state.v:
-                dv2 = 2*np.pi + theta_i_2 - chaser.abs_state.v
-            else:
-                dv2 = theta_i_2 - chaser.abs_state.v
-
-            if dv1 > dv2:
-                theta_i = theta_i_2
-            else:
-                theta_i = theta_i_1
-
-            # Initial velocity at the intersection
-            V_PERI_i = np.sqrt(mu_earth / (a_i * (1.0 - e_i**2))) * np.array([-np.sin(theta_i), e_i + np.cos(theta_i), 0.0])
-            V_TEM_i = np.linalg.inv(chaser.abs_state.get_pof()).dot(V_PERI_i)
-
-            # Final velocity at the intersection
-            V_PERI_f = np.sqrt(mu_earth / (a_f * (1.0 - e_f**2))) * np.array([-np.sin(theta_i), e_f + np.cos(theta_i), 0.0])
-            V_TEM_f = np.linalg.inv(checkpoint.abs_state.get_pof()).dot(V_PERI_f)
-
-            # Evaluate delta-V
-            deltaV_C = V_TEM_f - V_TEM_i
-
-            # Create command
-            c = Manoeuvre()
-            c.dV = deltaV_C
-            c.set_abs_state(chaser.abs_state)
-            c.abs_state.v = theta_i
-            c.duration = self.travel_time(chaser, chaser.abs_state.v, theta_i)
-            c.description = 'Apogee/Perigee raise (intersecating orbits)'
-            self.manoeuvre_plan.append(c)
-
-            # Propagate chaser and target
-            self._propagator(chaser, target, c.duration)
-            self._propagator(chaser, target, 1e-3, deltaV_C)
-
+            # First burn at perigee, then apogee
+            theta_1 = 0.0
+            theta_2 = np.pi
         else:
-            # Orbits do not intersect
-            if a_f > a_i:
-                r_a_f = a_f * (1.0 + e_f)
-                r_p_i = a_i * (1.0 - e_i)
+            # Calculate intermediate orbital elements
+            a_int = (r_a_i + r_p_f) / 2.0
+            e_int = 1.0 - r_p_f / a_int
 
-                # Calculate intermediate orbital elements
-                a_int = (r_a_f + r_p_i) / 2.0
-                e_int = 1.0 - r_p_i / a_int
+            # First burn at apogee, then perigee
+            theta_1 = np.pi
+            theta_2 = 0.0
 
-                # First burn at perigee, then apogee
-                theta_1 = 0.0
-                theta_2 = np.pi
-            else:
-                r_a_i = a_i * (1.0 + e_i)
-                r_p_f = a_f * (1.0 - e_f)
+        # Calculate delta-V's in perifocal frame of reference
+        # First burn
+        V_PERI_i_1 = np.sqrt(mu_earth / (a_i * (1.0 - e_i**2))) * np.array([-np.sin(theta_1), e_i + np.cos(theta_1), 0.0])
+        V_PERI_f_1 = np.sqrt(mu_earth / (a_int * (1.0 - e_int**2))) * np.array([-np.sin(theta_1), e_int + np.cos(theta_1), 0.0])
 
-                # Calculate intermediate orbital elements
-                a_int = (r_a_i + r_p_f) / 2.0
-                e_int = 1.0 - r_p_f / a_int
+        deltaV_C_1 = np.linalg.inv(chaser.abs_state.get_pof()).dot(V_PERI_f_1 - V_PERI_i_1)
 
-                # First burn at apogee, then perigee
-                theta_1 = np.pi
-                theta_2 = 0.0
+        # Second burn
+        V_PERI_i_2 = np.sqrt(mu_earth / (a_int * (1.0 - e_int ** 2))) * np.array([-np.sin(theta_2), e_int + np.cos(theta_2), 0.0])
+        V_PERI_f_2 = np.sqrt(mu_earth / (a_f * (1.0 - e_f ** 2))) * np.array([-np.sin(theta_2), e_f + np.cos(theta_2), 0.0])
 
-            # Calculate delta-V's in perifocal frame of reference
-            # First burn
-            V_PERI_i_1 = np.sqrt(mu_earth / (a_i * (1.0 - e_i**2))) * np.array([-np.sin(theta_1), e_i + np.cos(theta_1), 0.0])
-            V_TEM_i_1 = np.linalg.inv(chaser.abs_state.get_pof()).dot(V_PERI_i_1)
+        deltaV_C_2 = np.linalg.inv(chaser.abs_state.get_pof()).dot(V_PERI_f_2 - V_PERI_i_2)
 
-            V_PERI_f_1 = np.sqrt(mu_earth / (a_int * (1.0 - e_int**2))) * np.array([-np.sin(theta_1), e_int + np.cos(theta_1), 0.0])
-            V_TEM_f_1 = np.linalg.inv(chaser.abs_state.get_pof()).dot(V_PERI_f_1)
+        # Create commands
+        c1 = Manoeuvre()
+        c1.dV = deltaV_C_1
+        c1.set_abs_state(chaser.abs_state)
+        c1.abs_state.v = theta_1
+        c1.duration = self.travel_time(chaser, chaser.abs_state.v, theta_1)
+        c1.description = 'Apogee/Perigee raise'
+        self.manoeuvre_plan.append(c1)
 
-            deltaV_C_1 = V_TEM_f_1 - V_TEM_i_1
+        # Propagate chaser and target
+        self._propagator(chaser, target, c1.duration)
+        self._propagator(chaser, target, 1e-3, deltaV_C_1)
 
-            # Second burn
-            V_PERI_i_2 = np.sqrt(mu_earth / (a_int * (1.0 - e_int ** 2))) * np.array([-np.sin(theta_2), e_int + np.cos(theta_2), 0.0])
-            V_TEM_i_2 = np.linalg.inv(chaser.abs_state.get_pof()).dot(V_PERI_i_2)
-            V_PERI_f_2 = np.sqrt(mu_earth / (a_f * (1.0 - e_f ** 2))) * np.array([-np.sin(theta_2), e_f + np.cos(theta_2), 0.0])
-            V_TEM_f_2 = np.linalg.inv(chaser.abs_state.get_pof()).dot(V_PERI_f_2)
+        c2 = Manoeuvre()
+        c2.dV = deltaV_C_2
+        c2.set_abs_state(chaser.abs_state)
+        c2.abs_state.v = theta_2
+        c2.duration = np.pi * np.sqrt(a_int**3 / mu_earth)
+        c2.description = 'Apogee/Perigee raise'
+        self.manoeuvre_plan.append(c2)
 
-            deltaV_C_2 = V_TEM_f_2 - V_TEM_i_2
-
-            # Create commands
-            c1 = Manoeuvre()
-            c1.dV = deltaV_C_1
-            c1.set_abs_state(chaser.abs_state)
-            c1.abs_state.v = theta_1
-            c1.duration = self.travel_time(chaser, chaser.abs_state.v, theta_1)
-            c1.description = 'Apogee/Perigee raise'
-            self.manoeuvre_plan.append(c1)
-
-            # Propagate chaser and target
-            self._propagator(chaser, target, c1.duration)
-            self._propagator(chaser, target, 1e-3, deltaV_C_1)
-
-            c2 = Manoeuvre()
-            c2.dV = deltaV_C_2
-            c2.set_abs_state(chaser.abs_state)
-            c2.abs_state.v = theta_2
-            c2.duration = np.pi * np.sqrt(a_int**3 / mu_earth)
-            c2.description = 'Apogee/Perigee raise'
-            self.manoeuvre_plan.append(c2)
-
-            # Propagate chaser and target
-            self._propagator(chaser, target, c2.duration)
-            self._propagator(chaser, target, 1e-3, deltaV_C_2)
+        # Propagate chaser and target
+        self._propagator(chaser, target, c2.duration)
+        self._propagator(chaser, target, 1e-3, deltaV_C_2)
 
     def adjust_perigee(self, chaser, checkpoint, target):
         """
@@ -807,7 +751,7 @@ class Solver(object):
         c1.description = 'CW approach'
 
         # Propagate chaser and target
-        self._propagator(chaser, target, 1e-3, deltaV_C_1)
+        self._propagator(chaser, target, 1e-5, deltaV_C_1)
 
         self._propagator(chaser, target, delta_T)
 
@@ -829,7 +773,7 @@ class Solver(object):
         c2.description = 'CW approach'
 
         # Propagate chaser and target to evaluate all the future commands properly
-        self._propagator(chaser, target, 1e-3, deltaV_C_2)
+        self._propagator(chaser, target, 1e-5, deltaV_C_2)
 
         self.print_state(chaser, target)
 
