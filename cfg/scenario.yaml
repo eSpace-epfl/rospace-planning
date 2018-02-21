@@ -59,35 +59,3 @@ scenario:
         lvlh:
           R: 0, -2.0, 0
       error_ellipsoid: [0.1, 0.3, 0.1]
-
-#    S6:
-#      id: 6
-#      position:
-#        lvlh:
-#          R: 0, -5, 0
-#
-#      error_ellipsoid: [0.0, 0.0, 0.0]
-#
-#    S7:
-#      id: 7
-#      position:
-#        lvlh:
-#          R: 0, -1, 0
-#
-#      error_ellipsoid: [0.0, 0.0, 0.0]
-#
-#    S8:
-#      id: 7
-#      position:
-#        lvlh:
-#          R: 0, -0.1, 0
-#
-#      error_ellipsoid: [0.0, 0.0, 0.0]
-#
-#    S9:
-#      id: 7
-#      position:
-#        lvlh:
-#          R: 0, -0.01, 0
-#
-#      error_ellipsoid: [0.0, 0.0, 0.0]
