@@ -7,6 +7,10 @@ scenario:
               3. Drift to S0 \n
               4. Do ARM1 to move on target's orbit \n"
 
+  keep_out_zone: 0.2
+
+  approach_ellipsoid: [0.5, 1.5, 0.5]
+
   CheckPoints:
     S0:
       id: 0
@@ -36,26 +40,34 @@ scenario:
       id: 3
       position:
         lvlh:
-          R: -4.0, -10.0, 0.0
+          R: [-4.0, -10.0, 0.0]
       error_ellipsoid: [0.2, 1.0, 0.2]
 
     S4:
       id: 4
       position:
         lvlh:
-          R: -4.0, 8.0, 0.0
+          R: [-4.0, 8.0, 0.0]
       error_ellipsoid: [0.2, 1.0, 0.2]
 
     S5:
       id: 5
       position:
         lvlh:
-          R: 0.0, 18.0, 0.0
+          R: [0.0, 18.0, 0.0]
       error_ellipsoid: [0.2, 1.0, 0.2]
 
     S6:
       id: 6
       position:
         lvlh:
-          R: 0, -2.0, 0
+          R: [0.0, -2.0, 0.0]
       error_ellipsoid: [0.1, 0.3, 0.1]
+
+    S7:
+      id: 7
+      position:
+        lvlh:
+          R: [0.0, -1.0, 0.0]
+      error_ellipsoid: [0.05, 0.15, 0.05]
+      manoeuvre: radial

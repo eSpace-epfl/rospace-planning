@@ -6,11 +6,10 @@
 # See the LICENSE.md file in the root of this repository
 # for complete details.
 
-"""Main file for the offline path planner."""
+"""Main file to solve a scenario offline."""
 
 from scenario import Scenario
 from solver import Solver
-
 
 def main():
     # Import scenario and initial conditions
@@ -24,6 +23,6 @@ def main():
     # Save manoeuvre plan
     scenario.export_solved_scenario(solver.manoeuvre_plan)
 
-
 if __name__ == "__main__":
     main()
+
