@@ -1,7 +1,3 @@
-# TODO: Define a template with the measure units of the inputs
-
-name: "Scenario_CSO"
-
 scenario:
   name: 'Scenario CSO'
 

@@ -16,17 +16,18 @@ from checkpoint import AbsoluteCP
 class SolverTest(unittest.TestCase):
 
     def test_perigee_correction(self):
-        """ Test perigee correction manoeuvre.
+        """
+            Test perigee correction manoeuvre.
         """
 
         solver = Solver()
 
-        num_tests = int(1e4)
+        num_tests = int(1e2)
 
         a_min = 6700
         a_max = 90000
         e_min = 0.0
-        e_max = -20
+        e_max = -10.0
         rad_min = 0.0
         rad_max = np.pi*1.999
 
@@ -58,32 +59,42 @@ class SolverTest(unittest.TestCase):
             OE_f.i = OE_i.i
             OE_f.v = random_vector[5]
 
-            chaser_i = State()
-            chaser_i.kep = OE_i
+            chaser_i = Satellite()
+            chaser_i.abs_state = OE_i
 
-            chaser_f = State()
-            chaser_f.kep = OE_f
+            chaser_f = Satellite()
+            chaser_f.abs_state = OE_f
+
+            print OE_i.a
+            print OE_i.e
+            print OE_i.i
+            print OE_i.O
+            print OE_i.w
+            print OE_i.v
+            print OE_f.a
+            print OE_f.e
 
             solver.adjust_perigee(chaser_i, chaser_f, None)
 
-            self.assertAlmostEqual(chaser_i.kep.i, chaser_f.kep.i, 3)
-            self.assertAlmostEqual(chaser_i.kep.O, chaser_f.kep.O, 3)
-            self.assertAlmostEqual(chaser_i.kep.a, chaser_f.kep.a, 2)
-            self.assertAlmostEqual(chaser_i.kep.e, chaser_f.kep.e, 3)
-            self.assertAlmostEqual(chaser_i.kep.w, chaser_f.kep.w, 3)
+            self.assertAlmostEqual(chaser_i.abs_state.i, chaser_f.abs_state.i, 3)
+            self.assertAlmostEqual(chaser_i.abs_state.O, chaser_f.abs_state.O, 3)
+            self.assertAlmostEqual(chaser_i.abs_state.a, chaser_f.abs_state.a, 2)
+            self.assertAlmostEqual(chaser_i.abs_state.e, chaser_f.abs_state.e, 3)
+            self.assertAlmostEqual(chaser_i.abs_state.w, chaser_f.abs_state.w, 3)
 
     def test_apoapsis_periapsis_correction(self):
-        """ Test apoapsis/periapsis correction manoeuvres.
+        """
+            Test apoapsis/periapsis correction manoeuvres.
         """
 
         solver = Solver()
 
-        num_tests = int(1e4)
+        num_tests = int(1e2)
 
         a_min = 6700
         a_max = 90000
         e_min = 0.0
-        e_max = -20
+        e_max = -10.0
         rad_min = 0.0
         rad_max = np.pi*1.999
 
@@ -115,32 +126,43 @@ class SolverTest(unittest.TestCase):
             OE_f.i = OE_i.i
             OE_f.v = random_vector[5]
 
-            chaser_i = State()
-            chaser_i.kep = OE_i
+            chaser_i = Satellite()
+            chaser_i.abs_state = OE_i
 
-            chaser_f = State()
-            chaser_f.kep = OE_f
+            chaser_f = Satellite()
+            chaser_f.abs_state = OE_f
+
+            print OE_i.a
+            print OE_i.e
+            print OE_i.i
+            print OE_i.O
+            print OE_i.w
+            print OE_i.v
+            print OE_f.a
+            print OE_f.e
+
 
             solver.adjust_eccentricity_semimajoraxis(chaser_i, chaser_f, None)
 
-            self.assertAlmostEqual(chaser_i.kep.i, chaser_f.kep.i, 3)
-            self.assertAlmostEqual(chaser_i.kep.O, chaser_f.kep.O, 3)
-            self.assertAlmostEqual(chaser_i.kep.a, chaser_f.kep.a, 2)
-            self.assertAlmostEqual(chaser_i.kep.e, chaser_f.kep.e, 3)
-            self.assertAlmostEqual(chaser_i.kep.w, chaser_f.kep.w, 3)
+            self.assertAlmostEqual(chaser_i.abs_state.i, chaser_f.abs_state.i, 3)
+            self.assertAlmostEqual(chaser_i.abs_state.O, chaser_f.abs_state.O, 3)
+            self.assertAlmostEqual(chaser_i.abs_state.a, chaser_f.abs_state.a, 2)
+            self.assertAlmostEqual(chaser_i.abs_state.e, chaser_f.abs_state.e, 3)
+            self.assertAlmostEqual(chaser_i.abs_state.w, chaser_f.abs_state.w, 2)
 
     def test_plane_correction(self):
-        """ Test plane correction manoeuvre.
+        """
+            Test plane correction manoeuvre.
         """
 
         solver = Solver()
 
-        num_tests = int(1e3)
+        num_tests = int(1e2)
 
         a_min = 6700
         a_max = 90000
         e_min = 0.0
-        e_max = -20
+        e_max = -10.0
         rad_min = 0.0
         rad_max = np.pi*1.999
 
@@ -211,11 +233,11 @@ class SolverTest(unittest.TestCase):
 
             solver.plane_correction(chaser, checkpoint, None)
 
-            self.assertAlmostEqual(chaser.abs_state.i, checkpoint.abs_state.i, 0)
-            self.assertAlmostEqual(chaser.abs_state.O, checkpoint.abs_state.O, 0)
-            self.assertAlmostEqual(chaser.abs_state.a, OE_f.a, 0)
-            self.assertAlmostEqual(chaser.abs_state.e, OE_f.e, 0)
-            # self.assertAlmostEqual(chaser_i.kep.w, OE_f.w, 6)
+            self.assertAlmostEqual(chaser.abs_state.i, checkpoint.abs_state.i, 2)
+            self.assertAlmostEqual(chaser.abs_state.O, checkpoint.abs_state.O, 2)
+            self.assertAlmostEqual(chaser.abs_state.a, OE_f.a, 2)
+            self.assertAlmostEqual(chaser.abs_state.e, OE_f.e, 2)
+            # self.assertAlmostEqual(chaser.abs_state.w, OE_f.w, 1)
 
 if __name__ == '__main__':
     unittest.main()
