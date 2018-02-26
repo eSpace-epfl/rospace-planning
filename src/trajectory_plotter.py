@@ -95,7 +95,8 @@ def plot_result(manoeuvre_plan, scenario):
 
         # Saving in .mat file
         sio.savemat('/home/dfrey/polybox/manoeuvre/manoeuvre_' + str(i) + '.mat',
-                    mdict={'abs_state_c': R_chaser, 'rel_state_c': R_chaser_lvlh, 'abs_state_t': R_target})
+                    mdict={'abs_state_c': R_chaser, 'rel_state_c': R_chaser_lvlh, 'abs_state_t': R_target,
+                           'deltaV': man.dV})
 
     print "\nManoeuvre saved."
 
