@@ -9,16 +9,13 @@
 """Class holding the definition of the Solver, which outputs a manoeuvre plan given a scenario."""
 
 import numpy as np
-import scipy.io as sio
 import pykep as pk
-import os
 
 from space_tf import Cartesian, mu_earth, R_earth
 from manoeuvre import Manoeuvre, RelativeMan
 from state import Satellite, Chaser
 from checkpoint import RelativeCP, AbsoluteCP
 
-import matplotlib.pyplot as plt
 
 class Solver(object):
     """
@@ -60,6 +57,7 @@ class Solver(object):
 
         # Start solving scenario by popping positions from position list
         for checkpoint in checkpoints:
+            print " > Going to checkpoint nr. " + str(checkpoint.id)
             self.print_state(chaser, target)
             self.to_next_checkpoint(chaser, checkpoint, target, approach_ellipsoid)
 
@@ -83,133 +81,12 @@ class Solver(object):
             approach_ellipsoid: Approach ellipsoid to be avoided during manoeuvres
         """
 
-        t_limit = 604800
-
         if hasattr(checkpoint, 'rel_state'):
             # Relative navigation
-
-            if checkpoint.manoeuvre_type == 'standard':
-                # Calculate cartesian coordinates
-                chaser_cart = Cartesian()
-                target_cart = Cartesian()
-
-                target_cart.from_keporb(target.abs_state)
-                chaser_cart.from_lvlh_frame(target_cart, chaser.rel_state)
-
-                # Drift allowed for this point
-                t_est = self.drift_to(chaser, checkpoint, target)
-
-                # Time needed from actual position to perigee
-                t_to_perigee = self.travel_time(chaser, chaser.abs_state.v, 2.0 * np.pi)
-
-                # If the target cannot drift easily to the wanted position, move to a better coelliptic orbit
-                if t_est is None and np.linalg.norm(chaser.rel_state.R) > 20.0:
-                    # Assume chaser always below target
-                    n_drift = np.sqrt(mu_earth / chaser.abs_state.a**3) - np.sqrt(mu_earth / target.abs_state.a**3)
-                    t_drift = (target.abs_state.v - chaser.abs_state.v) % (2.0 * np.pi) / n_drift
-
-                    dv_act = target.abs_state.v - chaser.abs_state.v
-                    dv_at_perigee = dv_act - n_drift * t_to_perigee
-
-                    # Chaser cannot drift to the wanted position, has to be adjusted to another orbit to be able to drift
-                    # Evaluate wanted radius difference to move to a coelliptic orbit with that difference
-                    r_diff = checkpoint.rel_state.R[0]
-
-                    # Create new checkpoint
-                    checkpoint_new_abs = AbsoluteCP()
-                    checkpoint_new_rel = RelativeCP()
-
-                    checkpoint_new_abs.set_abs_state(chaser.abs_state)
-                    checkpoint_new_abs.abs_state.a = target.abs_state.a + r_diff
-                    checkpoint_new_abs.abs_state.e = target.abs_state.a * target.abs_state.e / checkpoint_new_abs.abs_state.a
-
-                    checkpoint_new_rel.rel_state.R = checkpoint.rel_state.R
-                    checkpoint_new_rel.rel_state.V = checkpoint.rel_state.V
-
-                    checkpoint_new_rel.error_ellipsoid = checkpoint.error_ellipsoid
-
-                    k = (dv_at_perigee / n_drift - np.pi * np.sqrt(
-                        checkpoint_new_abs.abs_state.a ** 3 / mu_earth) - t_limit) / np.sqrt(chaser.abs_state.a ** 3 / mu_earth)
-
-                    if k > 0.0:
-                        # Wait np.ceil(k) revolutions to ensure we will be below t_limit after the semimajoraxis correction
-                        self._propagator(chaser, target, np.ceil(k) * np.sqrt(chaser.abs_state.a ** 3 / mu_earth))
-
-                    # Adjust orbit though a standard manoeuvre
-                    self.adjust_eccentricity_semimajoraxis(chaser, checkpoint_new_abs, target)
-                    self.print_state(chaser, target)
-
-                    # Evaluate the new drift time
-                    t_est = self.drift_to(chaser, checkpoint_new_rel, target)
-
-                if t_est is None and np.linalg.norm(chaser.rel_state.R) <= 20.0:
-                    # Distance from the target is below 20.0 km => use CW-solver
-                    # self.clohessy_wiltshire_solver(chaser, checkpoint, target)
-                    self.multi_lambert(chaser, checkpoint, target, approach_ellipsoid)
-
-                # Check if the drift time is below a certain limit
-                # FOR NOW: drift in any case, just does not care about a time limit
-                if t_est is not None:
-                    # Drift, propagate chaser and target for t_est
-                    # Add drift command to the command line
-                    c = RelativeMan()
-                    c.dV = np.array([0.0, 0.0, 0.0])
-                    c.set_abs_state(chaser.abs_state)
-                    c.set_rel_state(chaser.rel_state)
-                    c.duration = t_est
-                    c.description = 'Drift for ' + str(t_est) + ' seconds'
-                    self.manoeuvre_plan.append(c)
-
-                    self._propagator(chaser, target, t_est)
-
-                elif t_est is not None and t_est > t_limit:
-                    # Resync manoeuvre
-                    n_mean_T = np.sqrt(mu_earth / target.kep.a**3)
-                    n_mean_C = np.sqrt(mu_earth / chaser.kep.a**3)
-                    n_rel_mean = n_mean_C - n_mean_T
-
-                    dv_act = target.kep.v - chaser.kep.v
-                    dv_at_perigee = dv_act - n_rel_mean * t_to_perigee
-
-                    a_min = (mu_earth / (dv_act / t_limit + n_mean_T)**2)**(1.0/3.0)
-                    e_min = 1.0 - chaser.kep.a / a_min * (1.0 - chaser.kep.e)
-                    pass
-            elif checkpoint.manoeuvre_type == 'radial':
-                # Manoeuvre type is radial -> deltaT is calculated from CW-equations -> solved with multi-lambert
-                a = target.abs_state.a
-                dt = np.pi / np.sqrt(mu_earth/a**3.0)
-
-
-
+            self.relative_solver(chaser, checkpoint, target, approach_ellipsoid)
         else:
             # Absolute navigation
-            # Define tolerances, if we get deviations greater than ~1 km then correct
-            tol_i = 1.0 / chaser.abs_state.a
-            tol_O = 1.0 / chaser.abs_state.a
-            tol_w = 1.0 / chaser.abs_state.a
-            tol_a = 0.2
-            tol_e = 1.0 / chaser.abs_state.a
-
-            # Correct for the plane angles,
-            # Inclination and RAAN
-            di = checkpoint.abs_state.i - chaser.abs_state.i
-            dO = checkpoint.abs_state.O - chaser.abs_state.O
-            if abs(di) > tol_i or abs(dO) > tol_O:
-                self.plane_correction(chaser, checkpoint, target)
-                self.print_state(chaser, target)
-
-            # Argument of Perigee
-            dw = checkpoint.abs_state.w - chaser.abs_state.w
-            if abs(dw) > tol_w:
-                self.adjust_perigee(chaser, checkpoint, target)
-                self.print_state(chaser, target)
-
-            # Eccentricity and Semi-Major Axis
-            da = checkpoint.abs_state.a - chaser.abs_state.a
-            de = checkpoint.abs_state.e - chaser.abs_state.e
-            if abs(da) > tol_a or abs(de) > tol_e:
-                self.adjust_eccentricity_semimajoraxis(chaser, checkpoint, target)
-                self.print_state(chaser, target)
+            self.absolute_solver(chaser, checkpoint, target)
 
     def adjust_eccentricity_semimajoraxis(self, chaser, checkpoint, target):
         """
@@ -605,6 +482,7 @@ class Solver(object):
 
         # Create temporary target that will keep the initial conditions
         target_ic = Cartesian()
+        chaser_ic = Cartesian()
         target_ic.R = R_T_i
         target_ic.V = V_T_i
 
@@ -648,7 +526,9 @@ class Solver(object):
                     # Check if the new deltaV is less than previous
                     if dV_tot < best_dV:
                         # Check if the trajectory is safe
-                        if self.is_trajectory_safe(chaser_cart, target_cart, dt, approach_ellipsoid):
+                        chaser_ic.R = R_C_i
+                        chaser_ic.V = np.array(sol.get_v1()[i])
+                        if self.is_trajectory_safe(chaser_ic, target_ic, dt, approach_ellipsoid):
                             best_dV = dV_tot
                             best_dV_1 = dV_1
                             best_dV_2 = dV_2
@@ -911,22 +791,35 @@ class Solver(object):
 
         return tot_dv, tot_dt
 
-    def is_trajectory_safe(self, chaser_cart, target_cart, dt, approach_ellipsoid):
+    def is_trajectory_safe(self, chaser_cart, target_cart, t, approach_ellipsoid):
+        """
+            Check if a trajectory is safe.
 
-        d_SF = 0.1
-        t_SF = 36000.0
+        Args:
+            chaser_cart:
+            target_cart:
+            dt:
+            approach_ellipsoid:
+        """
 
-        T = np.arange(0.0, dt + t_SF, 10.0)
+        t_SF = 7200.0
+        dt = 10.0
+
+        T = np.arange(0.0, t + t_SF, dt)
+
+        target_new = Cartesian()
 
         r = chaser_cart.R
         v = chaser_cart.V
 
         r_t = target_cart.R
         v_t = target_cart.V
+        target_new.R = r_t
+        target_new.V = v_t
 
         for t in T:
-            r, v = pk.propagate_lagrangian(r, v, 10.0, mu_earth)
-            r_t, v_t = pk.propagate_lagrangian(r_t, v_t, 10.0, mu_earth)
+            r, v = pk.propagate_lagrangian(r, v, dt, mu_earth)
+            r_t, v_t = pk.propagate_lagrangian(r_t, v_t, dt, mu_earth)
 
             r = np.array(r)
             v = np.array(v)
@@ -934,11 +827,152 @@ class Solver(object):
             r_t = np.array(r_t)
             v_t = np.array(v_t)
 
-            is_inside = (r[0] - r_t[0])**2 / approach_ellipsoid[0]**2 + (r[1] - r_t[1])**2 / approach_ellipsoid[1]**2 + \
-                        (r[2] - r_t[2])**2 / approach_ellipsoid[2]**2 <= 1
+            target_new.R = r_t
+            target_new.V = v_t
+
+            # Calculate relative position in LVLH frame
+            dr_TEME = r - r_t
+            dr_LVLH = target_new.get_lof().dot(dr_TEME)
+
+            is_inside = (dr_LVLH[0]**2 / approach_ellipsoid[0]**2 + dr_LVLH[1]**2 / approach_ellipsoid[1]**2 + \
+                        dr_LVLH[2]**2 / approach_ellipsoid[2]**2) <= 1.0
 
             if is_inside:
                 return False
 
         return True
 
+    def absolute_solver(self, chaser, checkpoint, target):
+        """
+            Absolute solver. Calculate the manoeuvre needed to go from an absolute position to another.
+
+        Args:
+             chaser (Chaser):
+             checkpoint (AbsoluteCP):
+             target (Satellite):
+        """
+
+        # Define tolerances, if we get deviations greater than ~1 km then correct
+        tol_i = 1.0 / chaser.abs_state.a
+        tol_O = 1.0 / chaser.abs_state.a
+        tol_w = 1.0 / chaser.abs_state.a
+        tol_a = 0.2
+        tol_e = 1.0 / chaser.abs_state.a
+
+        # Evaluate differences
+        di = checkpoint.abs_state.i - chaser.abs_state.i
+        dO = checkpoint.abs_state.O - chaser.abs_state.O
+        dw = checkpoint.abs_state.w - chaser.abs_state.w
+        da = checkpoint.abs_state.a - chaser.abs_state.a
+        de = checkpoint.abs_state.e - chaser.abs_state.e
+
+        # Inclination and RAAN
+        if abs(di) > tol_i or abs(dO) > tol_O:
+            self.plane_correction(chaser, checkpoint, target)
+
+        # Argument of Perigee
+        if abs(dw) > tol_w:
+            self.adjust_perigee(chaser, checkpoint, target)
+
+        # Eccentricity and Semi-Major Axis
+        if abs(da) > tol_a or abs(de) > tol_e:
+            self.adjust_eccentricity_semimajoraxis(chaser, checkpoint, target)
+
+    def relative_solver(self, chaser, checkpoint, target, approach_ellipsoid):
+
+        # TODO: Check also that during drifting we are on a lower orbit, otherwise it won't work!!
+
+        t_limit = 604800
+
+        if checkpoint.manoeuvre_type == 'standard':
+            # Calculate cartesian coordinates
+            chaser_cart = Cartesian()
+            target_cart = Cartesian()
+
+            target_cart.from_keporb(target.abs_state)
+            chaser_cart.from_lvlh_frame(target_cart, chaser.rel_state)
+
+            # Drift allowed for this point
+            t_est = self.drift_to(chaser, checkpoint, target)
+
+            # Time needed from actual position to perigee
+            t_to_perigee = self.travel_time(chaser, chaser.abs_state.v, 2.0 * np.pi)
+
+            # If the target cannot drift easily to the wanted position, move to a better coelliptic orbit
+            if t_est is None and np.linalg.norm(chaser.rel_state.R) > 20.0:
+                # Assume chaser always below target
+                n_drift = np.sqrt(mu_earth / chaser.abs_state.a ** 3) - np.sqrt(mu_earth / target.abs_state.a ** 3)
+                t_drift = (target.abs_state.v - chaser.abs_state.v) % (2.0 * np.pi) / n_drift
+
+                dv_act = target.abs_state.v - chaser.abs_state.v
+                dv_at_perigee = dv_act - n_drift * t_to_perigee
+
+                # Chaser cannot drift to the wanted position, has to be adjusted to another orbit to be able to drift
+                # Evaluate wanted radius difference to move to a coelliptic orbit with that difference
+                r_diff = checkpoint.rel_state.R[0]
+
+                # Create new checkpoint
+                checkpoint_new_abs = AbsoluteCP()
+                checkpoint_new_rel = RelativeCP()
+
+                checkpoint_new_abs.set_abs_state(chaser.abs_state)
+                checkpoint_new_abs.abs_state.a = target.abs_state.a + r_diff
+                checkpoint_new_abs.abs_state.e = target.abs_state.a * target.abs_state.e / checkpoint_new_abs.abs_state.a
+
+                checkpoint_new_rel.rel_state.R = checkpoint.rel_state.R
+                checkpoint_new_rel.rel_state.V = checkpoint.rel_state.V
+
+                checkpoint_new_rel.error_ellipsoid = checkpoint.error_ellipsoid
+
+                k = (dv_at_perigee / n_drift - np.pi * np.sqrt(
+                    checkpoint_new_abs.abs_state.a ** 3 / mu_earth) - t_limit) / np.sqrt(
+                    chaser.abs_state.a ** 3 / mu_earth)
+
+                if k > 0.0:
+                    # Wait np.ceil(k) revolutions to ensure we will be below t_limit after the semimajoraxis correction
+                    self._propagator(chaser, target, np.ceil(k) * np.sqrt(chaser.abs_state.a ** 3 / mu_earth))
+
+                # Adjust orbit though a standard manoeuvre
+                self.adjust_eccentricity_semimajoraxis(chaser, checkpoint_new_abs, target)
+                self.print_state(chaser, target)
+
+                # Evaluate the new drift time
+                t_est = self.drift_to(chaser, checkpoint_new_rel, target)
+
+            if t_est is None and np.linalg.norm(chaser.rel_state.R) <= 20.0:
+                # Distance from the target is below 20.0 km => use CW-solver
+                # self.clohessy_wiltshire_solver(chaser, checkpoint, target)
+                self.multi_lambert(chaser, checkpoint, target, approach_ellipsoid)
+
+            # Check if the drift time is below a certain limit
+            # FOR NOW: drift in any case, just does not care about a time limit
+            if t_est is not None:
+                # Drift, propagate chaser and target for t_est
+                # Add drift command to the command line
+                c = RelativeMan()
+                c.dV = np.array([0.0, 0.0, 0.0])
+                c.set_abs_state(chaser.abs_state)
+                c.set_rel_state(chaser.rel_state)
+                c.duration = t_est
+                c.description = 'Drift for ' + str(t_est) + ' seconds'
+                self.manoeuvre_plan.append(c)
+
+                self._propagator(chaser, target, t_est)
+
+            elif t_est is not None and t_est > t_limit:
+                # Resync manoeuvre
+                n_mean_T = np.sqrt(mu_earth / target.kep.a ** 3)
+                n_mean_C = np.sqrt(mu_earth / chaser.kep.a ** 3)
+                n_rel_mean = n_mean_C - n_mean_T
+
+                dv_act = target.kep.v - chaser.kep.v
+                dv_at_perigee = dv_act - n_rel_mean * t_to_perigee
+
+                a_min = (mu_earth / (dv_act / t_limit + n_mean_T) ** 2) ** (1.0 / 3.0)
+                e_min = 1.0 - chaser.kep.a / a_min * (1.0 - chaser.kep.e)
+                pass
+
+        elif checkpoint.manoeuvre_type == 'radial':
+            # Manoeuvre type is radial -> deltaT is calculated from CW-equations -> solved with multi-lambert
+            a = target.abs_state.a
+            dt = np.pi / np.sqrt(mu_earth / a ** 3.0)
