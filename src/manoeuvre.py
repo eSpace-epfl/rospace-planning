@@ -55,7 +55,6 @@ class Manoeuvre(object):
         """
             Remove thread lock from the KepOrbElem to be able to save it in a pickle file.
         """
-        # TODO
         del self.abs_state._lock
 
     def add_lock(self):
