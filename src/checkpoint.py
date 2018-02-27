@@ -11,6 +11,7 @@
 import numpy as np
 
 from space_tf import KepOrbElem, CartesianLVLH
+from threading import RLock
 
 
 class CheckPoint(object):
@@ -28,9 +29,14 @@ class CheckPoint(object):
         """
             Remove thread lock from the KepOrbElem to be able to save it using pickle.
         """
-        # TODO
         if hasattr(self, 'abs_state'):
             del self.abs_state._lock
+
+    def add_lock(self):
+        """
+            Re create the lock attribute.
+        """
+        self.abs_state._lock = RLock()
 
 
 class RelativeCP(CheckPoint):
