@@ -6,8 +6,6 @@ from solver import Solver
 from manoeuvre import Manoeuvre
 from state import Satellite, Chaser
 
-epoch = epoch_clock.Epoch()
-
 
 class TrajectoryController:
 

@@ -11,6 +11,7 @@
 import numpy as np
 
 from space_tf import KepOrbElem, CartesianLVLH
+from threading import RLock
 
 
 class CheckPoint(object):
@@ -28,9 +29,14 @@ class CheckPoint(object):
         """
             Remove thread lock from the KepOrbElem to be able to save it using pickle.
         """
-        # TODO
         if hasattr(self, 'abs_state'):
             del self.abs_state._lock
+
+    def add_lock(self):
+        """
+            Re create the lock attribute.
+        """
+        self.abs_state._lock = RLock()
 
 
 class RelativeCP(CheckPoint):
@@ -43,6 +49,9 @@ class RelativeCP(CheckPoint):
             error_ellipsoid (np.array): Define an imaginary ellipsoid around the checkpoint, in which the manoeuvre is
                 still performable. Measures are in km and goes according to the LVLH frame, i.e:
                 [error(R-bar), error(V-bar), error(H-bar)]
+            manoeuvre_type (str): Forced manoeuvre, defined on the database.
+            t_min (float64): Minimum time allowed to execute the manoeuvre [s], standard is 1.0 second.
+            t_max (float64): Maximum time allowed to execute the manoeuvre [s], standard is 10 hours.
     """
 
     def __init__(self):
@@ -50,6 +59,11 @@ class RelativeCP(CheckPoint):
 
         self.rel_state = CartesianLVLH()
         self.error_ellipsoid = [0.0, 0.0, 0.0]
+        self.manoeuvre_type = 'standard'
+
+        # Allowed times to execute the manoeuvre
+        self.t_min = 1.0
+        self.t_max = 36000.0
 
     def set_rel_state(self, rel_state, chaser=None, target=None):
         """
@@ -66,8 +80,8 @@ class RelativeCP(CheckPoint):
         # name both in this function and in the scenario.yaml file.
 
         if type(rel_state) == dict:
-            self.rel_state.R = eval(rel_state['R']) if 'R' in rel_state.keys() else np.array([0.0, 0.0, 0.0])
-            self.rel_state.V = eval(rel_state['V']) if 'V' in rel_state.keys() else np.array([0.0, 0.0, 0.0])
+            self.rel_state.R = np.array(rel_state['R']) if 'R' in rel_state.keys() else np.array([0.0, 0.0, 0.0])
+            self.rel_state.V = np.array(rel_state['V']) if 'V' in rel_state.keys() else np.array([0.0, 0.0, 0.0])
         else:
             raise TypeError
 

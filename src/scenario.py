@@ -26,7 +26,8 @@ class Scenario(object):
             checkpoints (list): A list containing all the checkpoints that has to be executed in the right order.
             chaser (Chaser): Chaser state.
             target (Satellite): Target state.
-            koz_r (float64): Radius of Keep-Out Zone drawn around the target [km]
+            approach_ellipsoid (np.array): Axis of the approach ellipsoid around the target [km].
+            koz_r (float64): Radius of Keep-Out Zone drawn around the target [km].
     """
 
     def __init__(self):
@@ -38,11 +39,12 @@ class Scenario(object):
         self.checkpoints = []
 
         # Chaser and target actual state
-        self.chaser = Chaser()
-        self.target = Satellite()
+        self.chaser_ic = Chaser()
+        self.target_ic = Satellite()
 
-        # Target Keep-Out Zone
-        self.koz_r = 0.3
+        # Target Keep-Out Zones
+        self.approach_ellipsoid = np.array([0.0, 0.0, 0.0])
+        self.koz_r = 0.0
 
     def import_solved_scenario(self):
         """
@@ -64,6 +66,9 @@ class Scenario(object):
             with open(scenario_path, 'rb') as file:
                 obj = pickle.load(file)
                 if obj['scenario_name'] == self.name:
+
+                    self.checkpoints = obj['checkpoints']
+
                     print "\n ----> Offline solution loaded! <---- \n"
                     return obj['manoeuvre_plan']
                 else:
@@ -94,7 +99,11 @@ class Scenario(object):
             for chkp in self.checkpoints:
                 chkp.remove_lock()
 
-            obj = {'scenario_name': self.name, 'checkpoints': self.checkpoints, 'manoeuvre_plan': manoeuvre_plan}
+            self.chaser_ic.remove_lock()
+            self.target_ic.remove_lock()
+
+            obj = {'scenario_name': self.name, 'checkpoints': self.checkpoints, 'manoeuvre_plan': manoeuvre_plan,
+                   'chaser_ic': self.chaser_ic, 'target_ic': self.target_ic}
 
             pickle.dump(obj, file, protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -128,11 +137,13 @@ class Scenario(object):
         # Assign variables
         self.name = scenario['name']
         self.overview = scenario['overview']
+        self.koz_r = scenario['keep_out_zone']
+        self.approach_ellipsoid = scenario['approach_ellipsoid']
 
         # Assign initial conditions, assuming target in tle and chaser in keplerian
-        self.target.set_abs_state_from_tle(target_ic['tle'])
-        self.chaser.set_abs_state(chaser_ic['kep'], self.target)
-        self.chaser.set_rel_state_from_abs_state(self.target)
+        self.target_ic.set_abs_state_from_tle(target_ic['tle'])
+        self.chaser_ic.set_abs_state(chaser_ic['kep'], self.target_ic)
+        self.chaser_ic.set_rel_state_from_abs_state(self.target_ic)
 
         # Extract CheckPoints
         for i in xrange(0, len(checkpoints)):
@@ -143,11 +154,17 @@ class Scenario(object):
 
             if ref_frame == 'lvlh':
                 checkpoint = RelativeCP()
-                checkpoint.set_rel_state(pos[ref_frame], self.chaser, self.target)
+                checkpoint.set_rel_state(pos[ref_frame], self.chaser_ic, self.target_ic)
                 checkpoint.error_ellipsoid = checkpoints['S' + str(i)]['error_ellipsoid']
+                if 'manoeuvre' in checkpoints['S' + str(i)].keys():
+                    checkpoint.manoeuvre_type = checkpoints['S' + str(i)]['manoeuvre']
+                if 't_min' in checkpoints['S' + str(i)].keys():
+                    checkpoint.t_min = checkpoints['S' + str(i)]['t_min']
+                if 't_max' in checkpoints['S' + str(i)].keys():
+                    checkpoint.t_max = checkpoints['S' + str(i)]['t_max']
             elif ref_frame == 'kep':
                 checkpoint = AbsoluteCP(prev)
-                checkpoint.set_abs_state(pos[ref_frame], self.chaser, self.target)
+                checkpoint.set_abs_state(pos[ref_frame], self.chaser_ic, self.target_ic)
 
             checkpoint.id = checkpoints['S' + str(i)]['id']
 
