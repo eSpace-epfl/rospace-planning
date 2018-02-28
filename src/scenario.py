@@ -15,17 +15,24 @@ import sys
 
 from state import Satellite, Chaser
 from checkpoint import RelativeCP, AbsoluteCP
+from propagator.OrekitPropagator import OrekitPropagator
+from datetime import datetime
+
 
 class Scenario(object):
     """
         Base class defining a scenario.
+        In there the chaser and target initial conditions are stored, as well as the checkpoints of the missions and
+        the some missions constraints.
 
         Attributes:
             name (str): Scenario name.
             overview (str): Brief scenario overview, explaining all the steps.
             checkpoints (list): A list containing all the checkpoints that has to be executed in the right order.
-            chaser (Chaser): Chaser state.
-            target (Satellite): Target state.
+            chaser_ic (Chaser): Chaser initial state.
+            target_ic (Satellite): Target initial state.
+            prop_chaser (OrekitPropagator): Chaser propagator.
+            prop_target (OrekitPropagator): Target propagator.
             approach_ellipsoid (np.array): Axis of the approach ellipsoid around the target [km].
             koz_r (float64): Radius of Keep-Out Zone drawn around the target [km].
     """
@@ -41,6 +48,12 @@ class Scenario(object):
         # Chaser and target actual state
         self.chaser_ic = Chaser()
         self.target_ic = Satellite()
+
+        # Propagators
+        OrekitPropagator.init_jvm()
+        self.prop_chaser = OrekitPropagator()
+        self.prop_target = OrekitPropagator()
+        self.date = datetime.utcnow()
 
         # Target Keep-Out Zones
         self.approach_ellipsoid = np.array([0.0, 0.0, 0.0])
@@ -145,6 +158,9 @@ class Scenario(object):
         self.chaser_ic.set_abs_state(chaser_ic['kep'], self.target_ic)
         self.chaser_ic.set_rel_state_from_abs_state(self.target_ic)
 
+        # Initialize propagators
+        self.initialize_propagators(self.chaser_ic.abs_state, self.target_ic.abs_state, self.date)
+
         # Extract CheckPoints
         for i in xrange(0, len(checkpoints)):
             pos = checkpoints['S' + str(i)]['position']
@@ -169,3 +185,38 @@ class Scenario(object):
             checkpoint.id = checkpoints['S' + str(i)]['id']
 
             self.checkpoints.append(checkpoint)
+
+    def initialize_propagators(self, chaser_ic, target_ic, date):
+        """
+            Initialize orekit propagators given initial conditions.
+
+        Args:
+            chaser_ic (KepOrbElem): Initial conditions of chaser given in KepOrbElem.
+            target_ic (KepOrbElem): Initial conditions of target given in KepOrbElem.
+            epoch (datetime): Initialization date.
+        """
+
+        # Actual path
+        abs_path = sys.argv[0]
+        path_idx = abs_path.find('nodes')
+        abs_path = abs_path[0:path_idx]
+
+        chaser_settings_path = abs_path + 'simulator/cso_gnc_sim/cfg/chaser.yaml'
+        target_settings_path = abs_path + 'simulator/cso_gnc_sim/cfg/target.yaml'
+
+        chaser_settings = file(chaser_settings_path, 'r')
+        target_settings = file(target_settings_path, 'r')
+
+        propSettings = yaml.load(chaser_settings)
+        propSettings = propSettings['propagator_settings']
+
+        self.prop_chaser.initialize(propSettings,
+                               chaser_ic,
+                               date)
+
+        propSettings = yaml.load(target_settings)
+        propSettings = propSettings['propagator_settings']
+
+        self.prop_target.initialize(propSettings,
+                               target_ic,
+                               date)

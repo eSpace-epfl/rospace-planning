@@ -18,7 +18,8 @@ def main():
 
     # Solve scenario
     solver = Solver()
-    solver.solve_scenario(scenario)
+    solver.set_ic(scenario)
+    solver.solve_scenario()
 
     # Save manoeuvre plan
     scenario.export_solved_scenario(solver.manoeuvre_plan)

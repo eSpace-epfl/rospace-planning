@@ -1,11 +1,11 @@
 scenario:
   name: 'Scenario Camille'
 
-  overview:  "0. Starting from -35km below the target do ARM1. \n
-              1. Do ARM2 and CAM2. \n
-              2. Do ARM3 to go 4km below the target \n
-              3. Drift to S0 \n
-              4. Do ARM1 to move on target's orbit \n"
+  overview:  " 0. Starting from -35km below the target do ARM1.\n
+              1. Do ARM2 and CAM2.\n
+              2. Do ARM3 to go 4km below the target.\n
+              3. Drift to S0.\n
+              4. Do ARM1 to move on target's orbit.\n"
 
   keep_out_zone: 0.2
 
@@ -16,8 +16,8 @@ scenario:
       id: 0
       position:
         kep:
-          a: chaser.abs_state.a + 8.5
-          e: 1.0 - (chaser.abs_state.a * (1.0 - chaser.abs_state.e)) / self.abs_state.a
+          a: target.abs_state.a - 47.0
+          e: target.abs_state.a * target.abs_state.e / self.abs_state.a
           i: target.abs_state.i
           w: target.abs_state.w
           O: target.abs_state.O
@@ -26,52 +26,45 @@ scenario:
       id: 1
       position:
         kep:
-          a: chaser.abs_state.a + 21.0
-          e: 1.0 - (chaser.abs_state.a * (1.0 - chaser.abs_state.e) + 17.0) / self.abs_state.a
+          a: target.abs_state.a - 16.0
+          e: target.abs_state.a * target.abs_state.e / self.abs_state.a
 
     S2:
       id: 2
       position:
-        kep:
-          a: target.abs_state.a - 4.0
-          e: target.abs_state.a * target.abs_state.e / self.abs_state.a
-
-    S3:
-      id: 3
-      position:
         lvlh:
           R: [-4.0, -10.0, 0.0]
       error_ellipsoid: [0.2, 1.0, 0.2]
-
-    S4:
-      id: 4
-      position:
-        lvlh:
-          R: [-4.0, 8.0, 0.0]
-      error_ellipsoid: [0.2, 1.0, 0.2]
-
-    S5:
-      id: 5
-      position:
-        lvlh:
-          R: [0.0, 18.0, 0.0]
-      error_ellipsoid: [0.2, 1.0, 0.2]
-      t_min: 3000
-      t_max: 3100
-
-    S6:
-      id: 6
-      position:
-        lvlh:
-          R: [0.0, -2.0, 0.0]
-      error_ellipsoid: [0.1, 0.3, 0.1]
-      t_min: 29000
-      t_max: 30000
-
-    S7:
-      id: 7
-      position:
-        lvlh:
-          R: [0.0, -1.0, 0.0]
-      error_ellipsoid: [0.05, 0.15, 0.05]
-      manoeuvre: radial
+#
+#    S4:
+#      id: 4
+#      position:
+#        lvlh:
+#          R: [-4.0, 8.0, 0.0]
+#      error_ellipsoid: [0.2, 1.0, 0.2]
+#
+#    S5:
+#      id: 5
+#      position:
+#        lvlh:
+#          R: [0.0, 18.0, 0.0]
+#      error_ellipsoid: [0.2, 1.0, 0.2]
+#      t_min: 3000
+#      t_max: 3100
+#
+#    S6:
+#      id: 6
+#      position:
+#        lvlh:
+#          R: [0.0, -2.0, 0.0]
+#      error_ellipsoid: [0.1, 0.3, 0.1]
+#      t_min: 29000
+#      t_max: 30000
+#
+#    S7:
+#      id: 7
+#      position:
+#        lvlh:
+#          R: [0.0, -1.0, 0.0]
+#      error_ellipsoid: [0.05, 0.15, 0.05]
+#      manoeuvre: radial

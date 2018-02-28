@@ -10,7 +10,7 @@ target:
 
 chaser:
   kep:
-    a: 7046.6
+    a: 7036.6
     e: (target.abs_state.a * target.abs_state.e) / self.abs_state.a
     i: target.abs_state.i
     w: target.abs_state.w
