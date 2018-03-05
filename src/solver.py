@@ -380,7 +380,7 @@ class Solver(object):
         # Propagate chaser and target
         self._propagator(c.duration, deltaV_C)
 
-    def drift_to_old(self, checkpoint):
+    def drift_to(self, checkpoint):
         """
             Algorithm that tries to drift to the next checkpoint, staying within a certain error ellipsoid.
 
@@ -419,18 +419,18 @@ class Solver(object):
         target_old = Satellite()
         target_old.set_from_other_satellite(self.target)
 
-        n_c = np.sqrt(mu_earth / self.chaser.abs_state.a ** 3)
-        n_t = np.sqrt(mu_earth / self.target.abs_state.a ** 3)
+        n_c = np.sqrt(mu_earth / chaser_mean.a ** 3)
+        n_t = np.sqrt(mu_earth / target_mean.a ** 3)
 
         # If n_rel is below zero, we are moving slower than target. Otherwise faster.
         n_rel = n_c - n_t
 
         # Required dv at the end of the manoeuvre, estimation based on the relative position
-        dv_req = np.sign(checkpoint.rel_state.R[1]) * np.linalg.norm(checkpoint.rel_state.R) / R_earth
+        dv_req = checkpoint.rel_state.R[1] / r_C
 
         # Check if a drift to the wanted position is possible, if yes check if it can be done under a certain time,
         # if not try to resync
-        actual_dv = (self.chaser.abs_state.v + self.chaser.abs_state.w) % (2.0*np.pi) - (self.target.abs_state.v + self.target.abs_state.w) % (2.0*np.pi)
+        actual_dv = (chaser_mean.v + chaser_mean.w) % (2.0*np.pi) - (target_mean.v + target_mean.w) % (2.0*np.pi)
 
         # Define a function F for the angle calculation
         F = lambda dv_req, dv, n: int((dv - dv_req) / n > 0.0) * np.sign(n)
@@ -477,7 +477,7 @@ class Solver(object):
         else:
             return None
 
-    def drift_to(self, checkpoint):
+    def drift_to_old(self, checkpoint):
         chaser_mean = KepOrbElem()
         chaser_mean.from_osc_elems(self.chaser.abs_state)
 
@@ -556,7 +556,6 @@ class Solver(object):
                 t += dt
 
             i += 1
-
 
     def multi_lambert(self, checkpoint, approach_ellipsoid, safety_flag):
         """
@@ -845,6 +844,20 @@ class Solver(object):
 
         target_mean = KepOrbElem()
         target_mean.from_osc_elems(self.target.abs_state)
+
+        # Check if plane needs to be corrected again
+        # TODO: Put as tolerance a number slightly bigger than the deviation of the estimation
+        tol_i = 1.0 / self.chaser.abs_state.a
+        tol_O = 1.0 / self.chaser.abs_state.a
+
+        # At this point, inclination and raan should match the one of the target
+        di = target_mean.i - chaser_mean.i
+        dO = target_mean.O - chaser_mean.O
+        if abs(di) > tol_i or abs(dO) > tol_O:
+            checkpoint_abs = AbsoluteCP()
+            checkpoint_abs.abs_state.i = target_mean.i
+            checkpoint_abs.abs_state.O = target_mean.O
+            self.plane_correction(checkpoint_abs)
 
         t_limit = 604800
 
