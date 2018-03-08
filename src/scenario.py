@@ -17,6 +17,7 @@ from state import Satellite, Chaser
 from checkpoint import RelativeCP, AbsoluteCP
 from propagator.OrekitPropagator import OrekitPropagator
 from datetime import datetime
+from space_tf import KepOrbElem
 
 
 class Scenario(object):
@@ -54,6 +55,7 @@ class Scenario(object):
         self.prop_chaser = OrekitPropagator()
         self.prop_target = OrekitPropagator()
         self.date = datetime.utcnow()
+        self.settings = 'real-world'
 
         # Target Keep-Out Zones
         self.approach_ellipsoid = np.array([0.0, 0.0, 0.0])
@@ -79,16 +81,27 @@ class Scenario(object):
             with open(scenario_path, 'rb') as file:
                 obj = pickle.load(file)
                 if obj['scenario_name'] == self.name:
+                    print "\n ----> Offline solution loaded! <---- \n"
 
                     self.checkpoints = obj['checkpoints']
+                    self.name = obj['scenario_name']
+                    self.chaser_ic = obj['chaser_ic']
+                    self.target_ic = obj['target_ic']
+                    self.date = obj['scenario_epoch']
 
-                    print "\n ----> Offline solution loaded! <---- \n"
+                    # Add lockers again
+                    for chkp in self.checkpoints:
+                        chkp.add_lock()
+
+                    self.chaser_ic.add_lock()
+                    self.target_ic.add_lock()
+
                     return obj['manoeuvre_plan']
                 else:
-                    print "Old scenario does not correspond to actual one."
+                    print "[WARNING]: Old scenario does not correspond to actual one."
                     sys.exit(1)
         except IOError:
-            print "\nScenario file not found."
+            print "\n[WARNING]: Scenario file not found."
             sys.exit(1)
 
     def export_solved_scenario(self, manoeuvre_plan):
@@ -116,7 +129,7 @@ class Scenario(object):
             self.target_ic.remove_lock()
 
             obj = {'scenario_name': self.name, 'checkpoints': self.checkpoints, 'manoeuvre_plan': manoeuvre_plan,
-                   'chaser_ic': self.chaser_ic, 'target_ic': self.target_ic}
+                   'chaser_ic': self.chaser_ic, 'target_ic': self.target_ic, 'scenario_epoch': self.date}
 
             pickle.dump(obj, file, protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -158,6 +171,12 @@ class Scenario(object):
         self.chaser_ic.set_abs_state(chaser_ic['kep'], self.target_ic)
         self.chaser_ic.set_rel_state_from_abs_state(self.target_ic)
 
+        # Evaluate mean orbital elements given initial conditions as osculating orbital elements
+        chaser_mean = KepOrbElem()
+        target_mean = KepOrbElem()
+        chaser_mean.from_osc_elems(self.chaser_ic.abs_state, self.settings)
+        target_mean.from_osc_elems(self.target_ic.abs_state, self.settings)
+
         # Initialize propagators
         self.initialize_propagators(self.chaser_ic.abs_state, self.target_ic.abs_state, self.date)
 
@@ -170,7 +189,7 @@ class Scenario(object):
 
             if ref_frame == 'lvlh':
                 checkpoint = RelativeCP()
-                checkpoint.set_rel_state(pos[ref_frame], self.chaser_ic, self.target_ic)
+                checkpoint.set_rel_state(pos[ref_frame], chaser_mean, target_mean)
                 checkpoint.error_ellipsoid = checkpoints['S' + str(i)]['error_ellipsoid']
                 if 'manoeuvre' in checkpoints['S' + str(i)].keys():
                     checkpoint.manoeuvre_type = checkpoints['S' + str(i)]['manoeuvre']
@@ -180,7 +199,7 @@ class Scenario(object):
                     checkpoint.t_max = checkpoints['S' + str(i)]['t_max']
             elif ref_frame == 'kep':
                 checkpoint = AbsoluteCP(prev)
-                checkpoint.set_abs_state(pos[ref_frame], self.chaser_ic, self.target_ic)
+                checkpoint.set_abs_state(pos[ref_frame], chaser_mean, target_mean)
 
             checkpoint.id = checkpoints['S' + str(i)]['id']
 
@@ -201,8 +220,13 @@ class Scenario(object):
         path_idx = abs_path.find('nodes')
         abs_path = abs_path[0:path_idx]
 
-        chaser_settings_path = abs_path + 'simulator/cso_gnc_sim/cfg/chaser.yaml'
-        target_settings_path = abs_path + 'simulator/cso_gnc_sim/cfg/target.yaml'
+        if self.settings == '2-body':
+            file_name = '_2body'
+        else:
+            file_name = ''
+
+        chaser_settings_path = abs_path + 'simulator/cso_gnc_sim/cfg/chaser' + file_name + '.yaml'
+        target_settings_path = abs_path + 'simulator/cso_gnc_sim/cfg/target' + file_name + '.yaml'
 
         chaser_settings = file(chaser_settings_path, 'r')
         target_settings = file(target_settings_path, 'r')
@@ -220,3 +244,10 @@ class Scenario(object):
         self.prop_target.initialize(propSettings,
                                target_ic,
                                date)
+
+    def set_propagator_type(self, name):
+
+        # 'real-world':     Every disturbance is activated
+        # '2-body':         Solve simple 2-body problem without any disturbance
+
+        self.settings = name

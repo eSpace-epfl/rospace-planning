@@ -14,6 +14,7 @@ from solver import Solver
 def main():
     # Import scenario and initial conditions
     scenario = Scenario()
+    # scenario.set_propagator_type('2-body')
     scenario.import_yaml_scenario()
 
     # Solve scenario
