@@ -15,20 +15,8 @@ import os
 
 from scenario import Scenario
 from state import Chaser, Satellite
-from space_tf import Cartesian, mu_earth
-
-def main():
-    # Import scenario and initial conditions
-    scenario = Scenario()
-    scenario.import_yaml_scenario()
-
-    # Import scenario solution
-    manoeuvre_plan = scenario.import_solved_scenario()
-
-    # Path where the files should be stored
-    save_path = '/home/dfrey/polybox/manoeuvre'
-
-    plot_result(manoeuvre_plan, scenario, save_path)
+from space_tf import Cartesian, mu_earth, KepOrbElem
+from datetime import timedelta
 
 def plot_result(manoeuvre_plan, scenario, save_path):
 
@@ -59,7 +47,9 @@ def plot_result(manoeuvre_plan, scenario, save_path):
     chaser_cart.from_keporb(chaser.abs_state)
     target_cart.from_keporb(target.abs_state)
 
-    extra_propagation = 10000
+    epoch = scenario.date
+
+    extra_propagation = 0
 
     L = len(manoeuvre_plan)
     for i in xrange(0, L):
@@ -78,13 +68,13 @@ def plot_result(manoeuvre_plan, scenario, save_path):
         v_T = target_cart.V
 
         for j in xrange(0, int(np.floor(man.duration))):
-            r_C, v_C = pk.propagate_lagrangian(r_C, v_C, 1.0, mu_earth)
-            chaser_cart.R = np.array(r_C)
-            chaser_cart.V = np.array(v_C)
+            chaser_prop = scenario.prop_chaser.propagate(epoch + timedelta(seconds=j+1))
+            target_prop = scenario.prop_target.propagate(epoch + timedelta(seconds=j+1))
 
-            r_T, v_T = pk.propagate_lagrangian(r_T, v_T, 1.0, mu_earth)
-            target_cart.R = np.array(r_T)
-            target_cart.V = np.array(v_T)
+            chaser_cart.R = chaser_prop[0].R
+            chaser_cart.V = chaser_prop[0].V
+            target_cart.R = target_prop[0].R
+            target_cart.V = target_prop[0].V
 
             chaser.rel_state.from_cartesian_pair(chaser_cart, target_cart)
 
@@ -92,55 +82,63 @@ def plot_result(manoeuvre_plan, scenario, save_path):
             R_target.append(target_cart.R)
             R_chaser_lvlh.append(chaser.rel_state.R)
 
-        r_C, v_C = pk.propagate_lagrangian(r_C, v_C, man.duration - np.floor(man.duration), mu_earth)
-        chaser_cart.R = np.array(r_C)
-        chaser_cart.V = np.array(v_C)
+        chaser_prop = scenario.prop_chaser.propagate(epoch + timedelta(seconds=man.duration))
+        target_prop = scenario.prop_target.propagate(epoch + timedelta(seconds=man.duration))
 
-        r_T, v_T = pk.propagate_lagrangian(r_T, v_T, man.duration - np.floor(man.duration), mu_earth)
-        target_cart.R = np.array(r_T)
-        target_cart.V = np.array(v_T)
+        chaser_cart.R = chaser_prop[0].R
+        chaser_cart.V = chaser_prop[0].V
+        target_cart.R = target_prop[0].R
+        target_cart.V = target_prop[0].V
 
         chaser.rel_state.from_cartesian_pair(chaser_cart, target_cart)
 
-        r_C_extra = np.array(r_C)
-        v_C_extra = np.array(v_C)
-        r_T_extra = np.array(r_T)
-        v_T_extra = np.array(v_T)
+        # Re-initialize propagators and update epoch
+        epoch += timedelta(seconds=man.duration)
+        chaser_cart.V += man.dV
 
-        chaser_cart_extra.R = np.array(r_C_extra)
-        chaser_cart_extra.V = np.array(v_C_extra)
-        target_cart_extra.R = np.array(r_T_extra)
-        target_cart_extra.V = np.array(v_T_extra)
+        # Osculating orbital elements
+        chaser_new_ic = KepOrbElem()
+        target_new_ic = KepOrbElem()
+        chaser_new_ic.from_cartesian(chaser_cart)
+        target_new_ic.from_cartesian(target_cart)
 
-        chaser_extra.rel_state.from_cartesian_pair(chaser_cart_extra, target_cart_extra)
+        scenario.initialize_propagators(chaser_new_ic, target_new_ic, epoch)
+
+
+        # EXTRA PROPAGATION TO CHECK TRAJECTORY SAFETY
+
+        # r_C_extra = chaser_cart.R
+        # v_C_extra = chaser_cart.V
+        # r_T_extra = target_cart.R
+        # v_T_extra = target_cart.V
+        #
+        # chaser_cart_extra.R = r_C_extra
+        # chaser_cart_extra.V = v_C_extra
+        #
+        # target_cart_extra.R = r_T_extra
+        # target_cart_extra.V = v_T_extra
+        #
+        # chaser_extra.rel_state.from_cartesian_pair(chaser_cart_extra, target_cart_extra)
+        #
         R_chaser_lvlh_extra = [chaser_extra.rel_state.R]
-
-        for j in xrange(0, extra_propagation):
-            r_C_extra, v_C_extra = pk.propagate_lagrangian(r_C_extra, v_C_extra, 1.0, mu_earth)
-            chaser_cart_extra.R = np.array(r_C_extra)
-            chaser_cart_extra.V = np.array(v_C_extra)
-
-            r_T_extra, v_T_extra = pk.propagate_lagrangian(r_T_extra, v_T_extra, 1.0, mu_earth)
-            target_cart_extra.R = np.array(r_T_extra)
-            target_cart_extra.V = np.array(v_T_extra)
-
-            chaser_extra.rel_state.from_cartesian_pair(chaser_cart_extra, target_cart_extra)
-
-            R_chaser_lvlh_extra.append(chaser_extra.rel_state.R)
-
-            r_C_extra = np.array(r_C_extra)
-            v_C_extra = np.array(v_C_extra)
-            r_T_extra = np.array(r_T_extra)
-            v_T_extra = np.array(v_T_extra)
-
-        # Apply dV
-        r_C, v_C = pk.propagate_lagrangian(r_C, v_C + man.dV, 1e-3, mu_earth)
-        chaser_cart.R = np.array(r_C)
-        chaser_cart.V = np.array(v_C)
-
-        r_T, v_T = pk.propagate_lagrangian(r_T, v_T, 1e-3, mu_earth)
-        target_cart.R = np.array(r_T)
-        target_cart.V = np.array(v_T)
+        #
+        # for j in xrange(0, extra_propagation):
+        #     r_C_extra, v_C_extra = pk.propagate_lagrangian(r_C_extra, v_C_extra, 1.0, mu_earth)
+        #     chaser_cart_extra.R = np.array(r_C_extra)
+        #     chaser_cart_extra.V = np.array(v_C_extra)
+        #
+        #     r_T_extra, v_T_extra = pk.propagate_lagrangian(r_T_extra, v_T_extra, 1.0, mu_earth)
+        #     target_cart_extra.R = np.array(r_T_extra)
+        #     target_cart_extra.V = np.array(v_T_extra)
+        #
+        #     chaser_extra.rel_state.from_cartesian_pair(chaser_cart_extra, target_cart_extra)
+        #
+        #     R_chaser_lvlh_extra.append(chaser_extra.rel_state.R)
+        #
+        #     r_C_extra = np.array(r_C_extra)
+        #     v_C_extra = np.array(v_C_extra)
+        #     r_T_extra = np.array(r_T_extra)
+        #     v_T_extra = np.array(v_T_extra)
 
         # Saving in .mat file
         sio.savemat(save_path + '/test_' + str(last + 1) + '/manoeuvre_' + str(i) + '.mat',
@@ -149,5 +147,25 @@ def plot_result(manoeuvre_plan, scenario, save_path):
 
     print "\nManoeuvre saved."
 
+def main(prop):
+    # Import scenario and initial conditions
+    scenario = Scenario()
+    scenario.set_propagator_type(prop)
+    scenario.import_yaml_scenario()
+
+    # Import scenario solution
+    manoeuvre_plan = scenario.import_solved_scenario()
+
+    # Add lockers to manoeuvre plan
+    for man in manoeuvre_plan:
+        man.add_lock()
+
+    # Path where the files should be stored
+    save_path = '/home/dfrey/polybox/manoeuvre'
+
+    plot_result(manoeuvre_plan, scenario, save_path)
+
 if __name__ == "__main__":
-    main()
+    # prop = '2-body'
+    prop = 'real-world'
+    main(prop)
