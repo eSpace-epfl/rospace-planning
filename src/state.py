@@ -19,7 +19,7 @@ class Satellite(object):
         Class that holds the basic information of a Satellite.
 
         Attributes:
-            abs_state (KepOrbElem): Keplerian orbital element of the satellite.
+            abs_state (KepOrbElem): Osculating orbital elements of the satellite.
     """
 
     def __init__(self):
@@ -124,7 +124,7 @@ class Chaser(Satellite):
 
     def set_rel_state_from_abs_state(self, target):
         """
-            Set relative state given target and chaser absolute state.
+            Set relative state given target and chaser osculating orbital elements.
 
         Args:
             target (Satellite): State of the target.

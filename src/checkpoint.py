@@ -36,7 +36,8 @@ class CheckPoint(object):
         """
             Re create the lock attribute.
         """
-        self.abs_state._lock = RLock()
+        if hasattr(self, 'abs_state'):
+            self.abs_state._lock = RLock()
 
 
 class RelativeCP(CheckPoint):
