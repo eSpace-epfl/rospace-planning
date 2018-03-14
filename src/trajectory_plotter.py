@@ -18,6 +18,14 @@ from state import Chaser, Satellite
 from space_tf import Cartesian, mu_earth, KepOrbElem
 from datetime import timedelta
 
+def print_state(kep):
+    print "      a :     " + str(kep.a)
+    print "      e :     " + str(kep.e)
+    print "      i :     " + str(kep.i)
+    print "      O :     " + str(kep.O)
+    print "      w :     " + str(kep.w)
+    print "      v :     " + str(kep.v)
+
 def plot_result(manoeuvre_plan, scenario, save_path):
 
     dir_list = os.listdir(save_path)
@@ -51,9 +59,29 @@ def plot_result(manoeuvre_plan, scenario, save_path):
 
     extra_propagation = 0
 
+    print "--------------------Chaser initial state-------------------"
+    print " >> Osc Elements:"
+    print_state(chaser.abs_state)
+    print "\n >> Mean Elements:"
+    chaser_mean = KepOrbElem()
+    chaser_mean.from_osc_elems(chaser.abs_state, scenario.settings)
+    print_state(chaser_mean)
+    print "\n >> LVLH:"
+    print "     R: " + str(chaser.rel_state.R)
+    print "     V: " + str(chaser.rel_state.V)
+    print "\n--------------------Target initial state-------------------"
+    print " >> Osc Elements:"
+    print_state(target.abs_state)
+    print "\n >> Mean Elements:"
+    target_mean = KepOrbElem()
+    target_mean.from_osc_elems(target.abs_state, scenario.settings)
+    print_state(target_mean)
+    print "------------------------------------------------------------\n"
+
     L = len(manoeuvre_plan)
     for i in xrange(0, L):
         print " --> Simulating manoeuvre " + str(i)
+        print "     Start pos: " + str(chaser.rel_state.R)
 
         # Creating list of radius of target and chaser
         R_target = [target_cart.R]
@@ -67,7 +95,7 @@ def plot_result(manoeuvre_plan, scenario, save_path):
         r_T = target_cart.R
         v_T = target_cart.V
 
-        for j in xrange(0, int(np.floor(man.duration))):
+        for j in xrange(0, int(np.floor(man.duration)), 10):
             chaser_prop = scenario.prop_chaser.propagate(epoch + timedelta(seconds=j+1))
             target_prop = scenario.prop_target.propagate(epoch + timedelta(seconds=j+1))
 
@@ -104,6 +132,7 @@ def plot_result(manoeuvre_plan, scenario, save_path):
 
         scenario.initialize_propagators(chaser_new_ic, target_new_ic, epoch)
 
+        print "     End pos: " + str(chaser.rel_state.R)
 
         # EXTRA PROPAGATION TO CHECK TRAJECTORY SAFETY
 

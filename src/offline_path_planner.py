@@ -19,7 +19,7 @@ def main():
 
     # Solve scenario
     solver = Solver()
-    solver.set_ic(scenario)
+    solver.set_solver(scenario)
     solver.solve_scenario()
 
     # Save manoeuvre plan
