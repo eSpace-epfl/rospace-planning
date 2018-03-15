@@ -238,6 +238,14 @@ def calc_v_from_E(E, e):
 
     return v
 
+def print_state(kep):
+    print "      a :     " + str(kep.a)
+    print "      e :     " + str(kep.e)
+    print "      i :     " + str(kep.i)
+    print "      O :     " + str(kep.O)
+    print "      w :     " + str(kep.w)
+    print "      v :     " + str(kep.v)
+
 start_date = datetime.utcnow()
 
 init_state_ch = KepOrbElem()
@@ -263,36 +271,40 @@ init_state_ta.v = 4.67845
 target_cart.from_keporb(init_state_ta)
 target_mean.from_osc_elems(init_state_ta, 'real-world')
 
-R_LVLH_TEME = target_cart.get_lof()
-R_TEME_LVLH = np.linalg.inv(R_LVLH_TEME)
+print "----------------------------------------------------------"
+print "Initial target cartesian position: "
+print " >>> R: " + str(target_cart.R)
+print " >>> V: " + str(target_cart.V)
+print "----------------------------------------------------------\n"
+print "----------------------------------------------------------"
+print "Initial target osculating orbital elements: "
+print_state(init_state_ta)
+print "----------------------------------------------------------\n"
 
 # Initial relative position
 init_lvlh_ch = CartesianLVLH()
 init_lvlh_ch.R = np.array([-3.84647216, 7.99996761, 0.03330542])
 init_lvlh_ch.V = np.array([1.67308709e-4, 6.11002933e-3, 4.20827334e-5])
-
 chaser_cart.from_lvlh_frame(target_cart, init_lvlh_ch)
-
 init_state_ch.from_cartesian(chaser_cart)
 
-print "Initial mean anomaly chaser:   " + str(init_state_ch.m)
+print "----------------------------------------------------------"
+print "Initial chaser cartesian position: "
+print " >>> R: " + str(chaser_cart.R)
+print " >>> V: " + str(chaser_cart.V)
+print "----------------------------------------------------------\n"
 
-# Final wanted position
-state_final = np.array([0.0, 0.0, 0.0, 0.0, 18.0, 0.0])
+print "----------------------------------------------------------"
+print "Initial chaser relative position: "
+print " >>> R: " + str(init_lvlh_ch.R)
+print " >>> V: " + str(init_lvlh_ch.V)
+print "----------------------------------------------------------\n"
 
-tau = 3000.0
-vn = find_v(tau, target_mean.a, target_mean.e, target_mean.i, init_state_ta.m, init_state_ta.e)
+print "----------------------------------------------------------"
+print "Initial chaser osculating orbital elements: "
+print_state(init_state_ch)
+print "----------------------------------------------------------\n"
 
-v = vn[0]
-N_orb = vn[1]
-
-st = linearized_including_J2(init_state_ta, 0.0, v, 1.0)
-
-phi = st[0]
-tau = st[1]
-
-# Wanted initial relative orbital elements
-de0_wanted = np.linalg.inv(phi).dot(state_final)
 de0_initial = np.array([
     init_state_ch.a - init_state_ta.a,
     init_state_ch.e - init_state_ta.e,
@@ -302,8 +314,67 @@ de0_initial = np.array([
     init_state_ch.m - init_state_ta.m,
 ])
 
+print "----------------------------------------------------------"
+print "Initial osculating orbital elements difference: "
+print " >>> da: " + str(de0_initial[0])
+print " >>> de: " + str(de0_initial[1])
+print " >>> di: " + str(de0_initial[2])
+print " >>> dO: " + str(de0_initial[3])
+print " >>> dw: " + str(de0_initial[4])
+print " >>> dm: " + str(de0_initial[5])
+print "----------------------------------------------------------\n"
+
+# Final wanted position
+state_final = np.array([0.0, 0.0, 0.0, 0.0, 18.0, 0.0])
+
+tau = 3000.0
+vn = find_v(tau, target_mean.a, target_mean.e, target_mean.i, init_state_ta.m, init_state_ta.e)
+
+v = init_state_ta.v
+N_orb = 0.0
+
+st_0 = linearized_including_J2(init_state_ta, 0.0, v, N_orb)
+
+phi_0 = st_0[0]
+
+v = vn[0]
+N_orb = 1.0
+
+st = linearized_including_J2(init_state_ta, 0.0, v, N_orb)
+
+phi = st[0]
+tau = st[1]
+
+phi_comb = np.array([
+    phi_0[0:6][3],
+    phi_0[0:6][4],
+    phi_0[0:6][5],
+    phi[0:6][3],
+    phi[0:6][4],
+    phi[0:6][5]
+])
+
+state_comb = np.array([init_lvlh_ch.R[0], init_lvlh_ch.R[1], init_lvlh_ch.R[2], 0.0, 18.0, 0.0])
+
+print "Phi comb"
+print phi_comb
+
+print "----------------------------------------------------------"
+print "Model test with true anomaly = initial anomaly: "
+print " >>> R: " + str(phi.dot(de0_initial)[3:6])
+print " >>> V: " + str(phi.dot(de0_initial)[0:3])
+print "----------------------------------------------------------\n"
+
+print "----------------------------------------------------------"
+print "Initial error in relative position: "
+print " >>> dR: " + str(abs(phi.dot(de0_initial)[3:6] - init_lvlh_ch.R) * 1e3) + " [m]"
+print " >>> dV: " + str(abs(phi.dot(de0_initial)[0:3] - init_lvlh_ch.V) * 1e3) + " [m/s]"
+print "----------------------------------------------------------\n"
+
+# Wanted initial relative orbital elements
+de0_wanted = np.linalg.inv(phi_comb).dot(state_comb)
+
 print de0_wanted
-print de0_initial
 
 de0_diff = de0_wanted - de0_initial
 print "\n Difference in initial delta orbital elements"
@@ -328,7 +399,6 @@ chaser_kep_wanted.i = de_chaser_wanted[2]
 chaser_kep_wanted.O = de_chaser_wanted[3]
 chaser_kep_wanted.w = de_chaser_wanted[4]
 chaser_kep_wanted.m = de_chaser_wanted[5]
-chaser_kep_wanted.m = init_state_ch.m               # TODO M has to be recalculated according to the new orbit
 
 R_chaser_initial = chaser_cart.R
 V_chaser_initial = chaser_cart.V
@@ -350,18 +420,13 @@ print "\n "
 print "LVLH initial:    " + str(init_lvlh_ch.R)
 print "LVLH calculated: " + str(chaser_LVLH.R)
 
+print "\n "
+print "Delta-V: " + str(V_chaser_initial_wanted - V_chaser_initial)
 
+chaser_cart.R = R_chaser_initial_wanted
+chaser_cart.V = V_chaser_initial_wanted
 
-st = linearized_including_J2(init_state_ta, 0.0, init_state_ta.v, 0.0)
-
-phi_0 = st[0]
-tau_0 = st[1]
-
-state_0 = phi_0.dot(de0_initial)
-
-print state_0
-
-
+chaser_kep.from_cartesian(chaser_cart)
 
 # Propagate target by tau
 settings_path = '/home/dfrey/cso_ws/src/rdv-cap-sim/simulator/cso_gnc_sim/cfg/chaser.yaml'
@@ -373,9 +438,8 @@ OrekitPropagator.init_jvm()
 prop_chaser = OrekitPropagator()
 # get settings from yaml file
 prop_chaser.initialize(propSettings,
-                       init_state_ch,
+                       chaser_kep,
                        start_date)
-
 
 settings_path = '/home/dfrey/cso_ws/src/rdv-cap-sim/simulator/cso_gnc_sim/cfg/target.yaml'
 settings_file = file(settings_path, 'r')
@@ -387,122 +451,35 @@ prop_target.initialize(propSettings,
                        init_state_ta,
                        start_date)
 
+target_init = prop_target.propagate(start_date)
+chaser_init = prop_chaser.propagate(start_date)
+
+print "----------------------------------------------------------"
+print "Initial target cartesian position from propagator: "
+print " >>> R: " + str(target_init[0].R)
+print " >>> V: " + str(target_init[0].V)
+print "----------------------------------------------------------"
+
+print "----------------------------------------------------------"
+print "Initial chaser cartesian position from propagator: "
+print " >>> R: " + str(chaser_init[0].R)
+print " >>> V: " + str(chaser_init[0].V)
+print "----------------------------------------------------------"
+
 target = prop_target.propagate(start_date + timedelta(seconds=tau))
+chaser = prop_chaser.propagate(start_date + timedelta(seconds=tau))
 
 target_cart.R = target[0].R
 target_cart.V = target[0].V
 
-target_kep.from_cartesian(target_cart)
+chaser_cart.R = chaser[0].R
+chaser_cart.V = chaser[0].V
 
-# init_state_ch.a = 7071.443
-# init_state_ch.e = (init_state_ta.a * init_state_ta.e+0.12) / init_state_ch.a
-# init_state_ch.i = 1.727
-# init_state_ch.O = 0.74234
-# init_state_ch.w = 1.628
-# init_state_ch.v = 4.67076
-#
-# init_state_ta.a = 1.1*R_earth
-# init_state_ta.e = 0.05
-# init_state_ta.i = np.pi/4.0
-# init_state_ta.O = 0.1
-# init_state_ta.w = 0.1
-# init_state_ta.m = 0.1
-
-# init_state_ch.a = 1.1 * R_earth
-# init_state_ch.e = 0.05 + 0.0001
-# init_state_ch.i = np.pi / 4.0 + 0.0001
-# init_state_ch.O = 0.1 - 0.0001
-# init_state_ch.w = 0.1 - 0.0001
-# init_state_ch.m = 0.1 + 0.0001
-#
-#
-# de0 = np.array([
-#     init_state_ch.a - init_state_ta.a,
-#     init_state_ch.e - init_state_ta.e,
-#     init_state_ch.i - init_state_ta.i,
-#     init_state_ch.O - init_state_ta.O,
-#     init_state_ch.w - init_state_ta.w,
-#     init_state_ch.m - init_state_ta.m,
-# ])
-#
-# N_orb = 0
-# v_i = 0.20792
-# v_i = init_state_ta.v
-
-
-# v_i = init_state_ch.v
-#
-# st = linearized_including_J2(init_state_ta, de0, v_i, N_orb)
-#
-# print "R: " + str(st[3:6])
-# print "V: " + str(st[0:3])
-# print "\n"
-
-# target_mean = KepOrbElem()
-# target_mean.from_osc_elems(init_state_ta, 'real-world')
-#
-# st = linearized_including_J2(init_state_ta, de0, target_mean.v + 0.1, N_orb)
-#
-# print "R: " + str(st[3:6])
-# print "V: " + str(st[0:3])
-# print "\n"
-#
-# chaser_mean = KepOrbElem()
-# chaser_mean.from_osc_elems(init_state_ch, 'real-world')
-#
-# print linearized_including_J2(init_state_ta, de0, chaser_mean.v, N_orb)
-# print "\n
-
-chaser_cart.from_keporb(init_state_ch)
-target_cart.from_keporb(init_state_ta)
-
-print "--------------------------------------"
-print "Cart from osc_orbit: "
-print "   >> R_C: " + str(chaser_cart.R)
-print "   >> V_C: " + str(chaser_cart.V)
-print "   >> R_T: " + str(target_cart.R)
-print "   >> V_T: " + str(target_cart.V)
-print "--------------------------------------"
-#
-# r_t_i = target_cart.R
-# v_t_i = target_cart.V
-# r_i = chaser_cart.R
-# v_i = chaser_cart.V
-#
-# chaser_LVLH.from_cartesian_pair(chaser_cart, target_cart)
-#
-# print "Chaser R: " + str(chaser_LVLH.R)
-# print "Chaser V: " + str(chaser_LVLH.V)
-#
-#
-# print "\nError: "
-# print " dR: " + str(1e3*abs(st[3:6] - chaser_LVLH.R))
-# print " dV: " + str(1e3*abs(st[0:3] - chaser_LVLH.V))
-
-chaser = prop_chaser.propagate(start_date + timedelta(seconds=81.8))
-target = prop_target.propagate(start_date + timedelta(seconds=81.8))
-
-chaser_cart = chaser[0]
-target_cart = target[0]
-
-print "Cart from propagator: "
-print "   >> R_C: " + str(chaser_cart.R)
-print "   >> V_C: " + str(chaser_cart.V)
-print "   >> R_T: " + str(target_cart.R)
-print "   >> V_T: " + str(target_cart.V)
-print "--------------------------------------"
 chaser_LVLH.from_cartesian_pair(chaser_cart, target_cart)
-
-chaser_kep.from_cartesian(chaser_cart)
-print chaser_kep.v
 
 print "Chaser R: " + str(chaser_LVLH.R)
 print "Chaser V: " + str(chaser_LVLH.V)
 
-
-print "\nError: "
-print " dR: " + str(1e3*abs(st[3:6] - chaser_LVLH.R))
-print " dV: " + str(1e3*abs(st[0:3] - chaser_LVLH.V))
 
 e = []
 e_mean = []
