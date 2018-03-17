@@ -55,7 +55,7 @@ class Scenario(object):
         self.prop_chaser = OrekitPropagator()
         self.prop_target = OrekitPropagator()
         self.date = datetime.utcnow()
-        self.settings = 'real-world'
+        self.prop_type = 'real-world'
 
         # Target Keep-Out Zones
         self.approach_ellipsoid = np.array([0.0, 0.0, 0.0])
@@ -165,7 +165,7 @@ class Scenario(object):
         self.overview = scenario['overview']
         self.koz_r = scenario['keep_out_zone']
         self.approach_ellipsoid = scenario['approach_ellipsoid']
-        prop_type = scenario['prop_type']
+        self.prop_type = scenario['prop_type']
 
         # Assign initial conditions, assuming target in tle and chaser in keplerian
         self.target_ic.set_abs_state_from_tle(target_ic['tle'])
@@ -175,11 +175,11 @@ class Scenario(object):
         # Evaluate mean orbital elements given initial conditions as osculating orbital elements
         chaser_mean = KepOrbElem()
         target_mean = KepOrbElem()
-        chaser_mean.from_osc_elems(self.chaser_ic.abs_state, self.settings)
-        target_mean.from_osc_elems(self.target_ic.abs_state, self.settings)
+        chaser_mean.from_osc_elems(self.chaser_ic.abs_state, self.prop_type)
+        target_mean.from_osc_elems(self.target_ic.abs_state, self.prop_type)
 
         # Initialize propagators
-        self.initialize_propagators(self.chaser_ic.abs_state, self.target_ic.abs_state, self.date, prop_type)
+        self.initialize_propagators(self.chaser_ic.abs_state, self.target_ic.abs_state, self.date, self.prop_type)
 
         # Extract CheckPoints
         for i in xrange(0, len(checkpoints)):
