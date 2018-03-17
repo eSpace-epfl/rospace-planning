@@ -18,6 +18,14 @@ from checkpoint import RelativeCP, AbsoluteCP
 from scenario import Scenario
 from datetime import timedelta, datetime
 
+from org.orekit.propagation import SpacecraftState
+from org.orekit.frames import FramesFactory
+from org.orekit.orbits import CartesianOrbit
+from org.orekit.utils import PVCoordinates
+from org.orekit.utils import Constants as Cst
+from org.hipparchus.geometry.euclidean.threed import Vector3D
+from org.orekit.time import AbsoluteDate, TimeScalesFactory
+
 
 class Solver(object):
     """
@@ -725,7 +733,8 @@ class Solver(object):
                 self.chaser.rel_state.from_cartesian_pair(chaser_prop[0], target_prop[0])
 
                 # Re-initialize propagators
-                self.scenario.initialize_propagators(self.chaser.abs_state, self.target.abs_state, self.epoch)
+                self._change_propagator_ic(self.scenario.prop_chaser, chaser_prop[0], self.epoch, self.chaser.mass)
+                self._change_propagator_ic(self.scenario.prop_target, target_prop[0], self.epoch, self.target.mass)
 
                 dr_next = self.chaser.rel_state.R[1] - checkpoint.rel_state.R[1]
 
@@ -789,7 +798,14 @@ class Solver(object):
                     self.chaser.set_from_other_satellite(chaser_tmp)
                     self.target.set_from_other_satellite(target_tmp)
                     self.epoch = epoch_tmp
-                    self.scenario.initialize_propagators(self.chaser.abs_state, self.target.abs_state, self.epoch)
+
+                    chaser_cart_tmp = Cartesian()
+                    target_cart_tmp = Cartesian()
+                    chaser_cart_tmp.from_keporb(chaser_tmp.abs_state)
+                    target_cart_tmp.from_keporb(target_tmp.abs_state)
+
+                    self._change_propagator_ic(self.scenario.prop_chaser, chaser_cart_tmp, self.epoch, chaser_tmp.mass)
+                    self._change_propagator_ic(self.scenario.prop_target, target_cart_tmp, self.epoch, target_tmp.mass)
                     # dr_next_old should be the same as the one at the beginning
                     dr_next = dr_next_tmp
 
@@ -820,7 +836,13 @@ class Solver(object):
 
                 self.epoch = epoch_old
 
-                self.scenario.initialize_propagators(self.chaser.abs_state, self.target.abs_state, self.epoch)
+                chaser_cart_old = Cartesian()
+                target_cart_old = Cartesian()
+                chaser_cart_old.from_keporb(chaser_old.abs_state)
+                target_cart_old.from_keporb(target_old.abs_state)
+
+                self._change_propagator_ic(self.scenario.prop_chaser, chaser_cart_old, self.epoch, chaser_old.mass)
+                self._change_propagator_ic(self.scenario.prop_target, target_cart_old, self.epoch, target_old.mass)
 
                 self.manoeuvre_plan = manoeuvre_plan_old
 
@@ -918,7 +940,7 @@ class Solver(object):
                         # Check if the trajectory is safe
                         chaser_ic.R = R_C_i
                         chaser_ic.V = np.array(sol.get_v1()[i])
-                        if self.is_trajectory_safe(chaser_ic, target_ic, dt, approach_ellipsoid):
+                        if self.is_trajectory_safe(dt, approach_ellipsoid):
                             best_dV = dV_tot
                             best_dV_1 = dV_1
                             best_dV_2 = dV_2
@@ -1180,8 +1202,9 @@ class Solver(object):
         self.target.abs_state.from_cartesian(target_cart)
         self.chaser.rel_state.from_cartesian_pair(chaser_cart, target_cart)
 
-        # Initialize propagator
-        self.scenario.initialize_propagators(self.chaser.abs_state, self.target.abs_state, self.epoch)
+        # Update propagator initial conditions
+        self._change_propagator_ic(self.scenario.prop_chaser, chaser_cart, self.epoch, self.chaser.mass)
+        self._change_propagator_ic(self.scenario.prop_target, target_cart, self.epoch, self.target.mass)
 
     def travel_time(self, chaser, theta0, theta1):
         """
@@ -1220,53 +1243,40 @@ class Solver(object):
 
         return dt
 
-    def is_trajectory_safe(self, chaser_cart, target_cart, t, approach_ellipsoid):
+    def is_trajectory_safe(self, t_man, keep_out_zone):
         """
-            Check if a trajectory is safe.
+            Check if a trajectory is safe, i.e if it never violates a given keep-out zone.
 
         Args:
-            chaser_cart:
-            target_cart:
-            dt:
-            approach_ellipsoid:
+            t_man: Duration of the manoeuvre.
+            keep_out_zone: Zone around the target that the trajectory should not cross. Given as an array representing
+                            the 3 axis of an imaginary ellipsoid drawn around the target (with respect to LVLH frame).
+                            ex: np.array([0.5,0.5,0.5]) is a sphere of radius 500 meter.
         """
 
+        # Safety time, propagation continues up to t + t_SF to see if the trajectory is safe also afterwards
         t_SF = 7200.0
+
+        # Time step of propagation
         dt = 10.0
 
-        T = np.arange(0.0, t + t_SF, dt)
+        # Time vector
+        T = np.arange(0.0, t_man + t_SF, dt)
 
-        target_new = Cartesian()
-
-        r = chaser_cart.R
-        v = chaser_cart.V
-
-        r_t = target_cart.R
-        v_t = target_cart.V
-        target_new.R = r_t
-        target_new.V = v_t
+        # Extract propagators
+        prop_chaser = self.scenario.prop_chaser
+        prop_target = self.scenario.prop_target
 
         for t in T:
-            r, v = pk.propagate_lagrangian(r, v, dt, mu_earth)
-            r_t, v_t = pk.propagate_lagrangian(r_t, v_t, dt, mu_earth)
-
-            r = np.array(r)
-            v = np.array(v)
-
-            r_t = np.array(r_t)
-            v_t = np.array(v_t)
-
-            target_new.R = r_t
-            target_new.V = v_t
+            chaser = prop_chaser.propagate(self.epoch + timedelta(seconds=t))
+            target = prop_target.propagate(self.epoch + timedelta(seconds=t))
 
             # Calculate relative position in LVLH frame
-            dr_TEME = r - r_t
-            dr_LVLH = target_new.get_lof().dot(dr_TEME)
+            dr_TEME = chaser[0].R - target[0].R
+            dr_LVLH = target[0].get_lof().dot(dr_TEME)
 
-            is_inside = (dr_LVLH[0]**2 / approach_ellipsoid[0]**2 + dr_LVLH[1]**2 / approach_ellipsoid[1]**2 + \
-                        dr_LVLH[2]**2 / approach_ellipsoid[2]**2) <= 1.0
-
-            if is_inside:
+            if (dr_LVLH[0]**2 / keep_out_zone[0]**2 + dr_LVLH[1]**2 / keep_out_zone[1]**2 +
+                dr_LVLH[2]**2 / keep_out_zone[2]**2) <= 1.0:
                 return False
 
         return True
@@ -1294,7 +1304,7 @@ class Solver(object):
 
         return tot_dv, tot_dt
 
-    def linearized_including_J2(target, de0, v_f, N_orb):
+    def linearized_including_J2(self, target, de0, v_f, N_orb):
         # Initial reference osculatin orbit
         a_0 = target.a
         e_0 = target.e
@@ -1501,3 +1511,42 @@ class Solver(object):
         print "TAU: " + str(tau(v_f))
 
         return state
+
+    def _change_propagator_ic(self, propagator, initial_state, epoch, mass):
+        """
+            Allows to change the initial conditions given to the propagator without initializing it again.
+
+        Args:
+            propagator (OrekitPropagator): The propagator that has to be changed.
+            initial_state (Cartesian): New cartesian coordinates of the initial state.
+            epoch (datetime): New starting epoch.
+            mass (float64): Satellite mass.
+        """
+
+        # Create position and velocity vectors as Vector3D
+        p = Vector3D(float(initial_state.R[0]) * 1e3, float(initial_state.R[1]) * 1e3,
+                     float(initial_state.R[2]) * 1e3)
+        v = Vector3D(float(initial_state.V[0]) * 1e3, float(initial_state.V[1]) * 1e3,
+                     float(initial_state.V[2]) * 1e3)
+
+        # Initialize orekit date
+        seconds = float(epoch.second) + float(epoch.microsecond) / 1e6
+        orekit_date = AbsoluteDate(epoch.year,
+                                   epoch.month,
+                                   epoch.day,
+                                   epoch.hour,
+                                   epoch.minute,
+                                   seconds,
+                                   TimeScalesFactory.getUTC())
+
+        # Extract frame
+        inertialFrame = FramesFactory.getEME2000()
+
+        # Evaluate new initial orbit
+        initialOrbit = CartesianOrbit(PVCoordinates(p, v), inertialFrame, orekit_date, Cst.WGS84_EARTH_MU)
+
+        # Create new spacecraft state
+        newSpacecraftState = SpacecraftState(initialOrbit, mass)
+
+        # Rewrite propagator initial conditions
+        propagator._propagator_num.setInitialState(newSpacecraftState)

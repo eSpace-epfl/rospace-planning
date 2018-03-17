@@ -165,6 +165,7 @@ class Scenario(object):
         self.overview = scenario['overview']
         self.koz_r = scenario['keep_out_zone']
         self.approach_ellipsoid = scenario['approach_ellipsoid']
+        prop_type = scenario['prop_type']
 
         # Assign initial conditions, assuming target in tle and chaser in keplerian
         self.target_ic.set_abs_state_from_tle(target_ic['tle'])
@@ -178,7 +179,7 @@ class Scenario(object):
         target_mean.from_osc_elems(self.target_ic.abs_state, self.settings)
 
         # Initialize propagators
-        self.initialize_propagators(self.chaser_ic.abs_state, self.target_ic.abs_state, self.date)
+        self.initialize_propagators(self.chaser_ic.abs_state, self.target_ic.abs_state, self.date, prop_type)
 
         # Extract CheckPoints
         for i in xrange(0, len(checkpoints)):
@@ -205,14 +206,17 @@ class Scenario(object):
 
             self.checkpoints.append(checkpoint)
 
-    def initialize_propagators(self, chaser_ic, target_ic, date):
+    def initialize_propagators(self, chaser_ic, target_ic, date, prop_type):
         """
-            Initialize orekit propagators given initial conditions.
+            Initialize orekit propagators and satellite masses.
 
         Args:
             chaser_ic (KepOrbElem): Initial conditions of chaser given in KepOrbElem.
             target_ic (KepOrbElem): Initial conditions of target given in KepOrbElem.
             epoch (datetime): Initialization date.
+            prop_type (string): Propagator that has to be used. Now there are two possibilities:
+                                - '2-body': Use the simple 2-body propagator without any kind of disturbance
+                                - 'real-world': Use the complete propagator with all the disturbances activated
         """
 
         # Actual path
@@ -220,7 +224,7 @@ class Scenario(object):
         path_idx = abs_path.find('nodes')
         abs_path = abs_path[0:path_idx]
 
-        if self.settings == '2-body':
+        if prop_type == '2-body':
             file_name = '_2body'
         else:
             file_name = ''
@@ -233,6 +237,7 @@ class Scenario(object):
 
         propSettings = yaml.load(chaser_settings)
         propSettings = propSettings['propagator_settings']
+        self.chaser_ic.mass = propSettings['orbitProp']['State']['settings']['mass']
 
         self.prop_chaser.initialize(propSettings,
                                chaser_ic,
@@ -240,14 +245,8 @@ class Scenario(object):
 
         propSettings = yaml.load(target_settings)
         propSettings = propSettings['propagator_settings']
+        self.target_ic.mass = propSettings['orbitProp']['State']['settings']['mass']
 
         self.prop_target.initialize(propSettings,
                                target_ic,
                                date)
-
-    def set_propagator_type(self, name):
-
-        # 'real-world':     Every disturbance is activated
-        # '2-body':         Solve simple 2-body problem without any disturbance
-
-        self.settings = name
