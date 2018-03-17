@@ -76,7 +76,7 @@ class Solver(object):
         self.print_state(self.chaser.abs_state)
         print "\n >> Mean Elements:"
         chaser_mean = KepOrbElem()
-        chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.settings)
+        chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.prop_type)
         self.print_state(chaser_mean)
         print "\n >> LVLH:"
         print "     R: " + str(self.chaser.rel_state.R)
@@ -86,7 +86,7 @@ class Solver(object):
         self.print_state(self.target.abs_state)
         print "\n >> Mean Elements:"
         target_mean = KepOrbElem()
-        target_mean.from_osc_elems(self.target.abs_state, self.scenario.settings)
+        target_mean.from_osc_elems(self.target.abs_state, self.scenario.prop_type)
         self.print_state(target_mean)
         print "------------------------------------------------------------\n"
 
@@ -113,7 +113,7 @@ class Solver(object):
                 self.absolute_solver(checkpoint)
             print "[REACHED STATE]:"
             chaser_mean = KepOrbElem()
-            chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.settings)
+            chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.prop_type)
             print " >> Kep:"
             self.print_state(chaser_mean)
             print "\n >> LVLH:"
@@ -146,7 +146,7 @@ class Solver(object):
         """
         # Evaluating mean orbital elements
         chaser_mean = KepOrbElem()
-        chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.settings)
+        chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.prop_type)
 
         # Extract initial and final semi-major axis and eccentricities
         a_i = chaser_mean.a
@@ -202,7 +202,7 @@ class Solver(object):
         # Propagate chaser and target
         self._propagator(c1.duration, deltaV_C_1)
 
-        chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.settings)
+        chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.prop_type)
 
         c2 = Manoeuvre()
         c2.dV = deltaV_C_2
@@ -215,7 +215,7 @@ class Solver(object):
         # Propagate chaser and target
         self._propagator(c2.duration, deltaV_C_2)
 
-        chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.settings)
+        chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.prop_type)
 
     def adjust_perigee(self, checkpoint):
         """
@@ -232,7 +232,7 @@ class Solver(object):
         """
         # Mean orbital elements
         chaser_mean = KepOrbElem()
-        chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.settings)
+        chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.prop_type)
 
         # Extract constants
         a = chaser_mean.a
@@ -303,7 +303,7 @@ class Solver(object):
         """
         # Mean orbital elements
         chaser_mean = KepOrbElem()
-        chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.settings)
+        chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.prop_type)
 
         # Extract semi-major axis and eccentricity
         a = chaser_mean.a
@@ -412,111 +412,6 @@ class Solver(object):
             Algorithm that tries to drift to the next checkpoint, staying within a certain error ellipsoid.
 
         Args:
-            chaser (Chaser): Chaser state.
-            checkpoint (AbsoluteCP or RelativeCP): Next checkpoint.
-            target (Satellite): Target state.
-
-        Return:
-            t_est (float64): Drifting time to reach the next checkpoint (in seconds). If not reachable, return None.
-        """
-        # Calculate the mean altitude difference
-        chaser_mean = KepOrbElem()
-        chaser_mean.from_osc_elems(self.chaser.abs_state)
-
-        target_mean = KepOrbElem()
-        target_mean.from_osc_elems(self.target.abs_state)
-
-        chaser_cart = Cartesian()
-        target_cart = Cartesian()
-
-        chaser_cart.from_keporb(chaser_mean)
-        target_cart.from_keporb(target_mean)
-
-        r_C = np.linalg.norm(chaser_cart.R)
-        r_T = np.linalg.norm(target_cart.R)
-
-        # Assuming we are on a coelliptic orbit, check if the distance allows us to drift or if we are not really
-        # close to the target's orbit
-        # if abs(checkpoint.rel_state.R[0] - r_C + r_T) >= checkpoint.error_ellipsoid[0] or \
-        #                 abs(self.chaser.abs_state.a - self.target.abs_state.a) < 2e-1:
-        #     return None
-
-        chaser_old = Chaser()
-        chaser_old.set_from_other_satellite(self.chaser)
-        target_old = Satellite()
-        target_old.set_from_other_satellite(self.target)
-
-        n_c = np.sqrt(mu_earth / chaser_mean.a ** 3)
-        n_t = np.sqrt(mu_earth / target_mean.a ** 3)
-
-        # If n_rel is below zero, we are moving slower than target. Otherwise faster.
-        n_rel = n_c - n_t
-
-        # Required dv at the end of the manoeuvre, estimation based on the relative position
-        dv_req = checkpoint.rel_state.R[1] / r_C
-
-        # Check if a drift to the wanted position is possible, if yes check if it can be done under a certain time,
-        # if not try to resync
-        actual_dv = (chaser_mean.v + chaser_mean.w) % (2.0*np.pi) - (target_mean.v + target_mean.w) % (2.0*np.pi)
-
-        # Define a function F for the angle calculation
-        F = lambda dv_req, dv, n: int((dv - dv_req) / n > 0.0) * np.sign(n)
-
-        t_est = (2.0 * np.pi * F(dv_req, actual_dv, n_rel) + dv_req - actual_dv) / n_rel
-        t_est_old = 0.0
-        t_old = 0.0
-        ellipsoid_flag = False
-        tol = 1e-3         # Millisecond tolerance
-        dt = 10000.0
-        dr_next_old = 0.0
-        while abs(t_est - t_old) > tol:
-            chaser_prop = self.scenario.prop_chaser.propagate(self.epoch + timedelta(seconds=t_est))
-            target_prop = self.scenario.prop_target.propagate(self.epoch + timedelta(seconds=t_est))
-
-            chaser_cart = chaser_prop[0]
-            target_cart = target_prop[0]
-
-            chaser_old.abs_state.from_cartesian(chaser_cart)
-            target_old.abs_state.from_cartesian(target_cart)
-            chaser_old.rel_state.from_cartesian_pair(chaser_cart, target_cart)
-
-            dr_next = chaser_old.rel_state.R[1] - checkpoint.rel_state.R[1]
-
-            t_old = t_est
-
-            if dr_next <= 0.0 and dr_next_old <= 0.0:
-                t_est_old = t_est
-                t_est += dt
-            elif dr_next >= 0.0 and dr_next_old >= 0.0:
-                t_est_old = t_est
-                t_est -= dt
-            elif (dr_next <= 0.0 and dr_next_old >= 0.0) or (dr_next >= 0.0 and dr_next_old <= 0.0):
-                t_est = (t_est_old + t_est) / 2.0
-                t_est_old = t_old
-                dt /= 10.0
-
-            dr_next_old = dr_next
-
-            # Assuming to stay on the same plane
-            if abs(checkpoint.rel_state.R[0] - chaser_old.rel_state.R[0]) <= checkpoint.error_ellipsoid[0] and \
-                abs(checkpoint.rel_state.R[1] - chaser_old.rel_state.R[1]) <= checkpoint.error_ellipsoid[1]:
-                # We have reached the error ellipsoid, can break
-                ellipsoid_flag = True
-
-            chaser_old.set_from_other_satellite(self.chaser)
-            target_old.set_from_other_satellite(self.target)
-
-        if ellipsoid_flag:
-            # With the estimated time, we are in the error-ellipsoid
-            return t_est
-        else:
-            return None
-
-    def drift_to_new(self, checkpoint):
-        """
-            Algorithm that tries to drift to the next checkpoint, staying within a certain error ellipsoid.
-
-        Args:
             checkpoint (AbsoluteCP or RelativeCP): Next checkpoint.
 
         Return:
@@ -540,140 +435,8 @@ class Solver(object):
         # Correct altitude at every loop until drifting is possible
         while 1:
             # Assign mean values from osculating
-            chaser_mean.from_osc_elems(self.chaser.abs_state)
-            target_mean.from_osc_elems(self.target.abs_state)
-
-            # Assign cartesian coordinates from mean-orbital (mean orbital radius needed)
-            chaser_cart.from_keporb(chaser_mean)
-            target_cart.from_keporb(target_mean)
-
-            # Assign information to the new chaser and target objects
-            chaser_old.set_from_other_satellite(self.chaser)
-            target_old.set_from_other_satellite(self.target)
-
-            # Evaluate relative mean angular velocity. If it's below zero chaser moves slower than target,
-            # otherwise faster
-            n_c = np.sqrt(mu_earth / chaser_mean.a ** 3)
-            n_t = np.sqrt(mu_earth / target_mean.a ** 3)
-            n_rel = n_c - n_t
-
-            # Required true anomaly difference at the end of the manoeuvre, estimation assuming circular
-            # orbit
-            r_C = np.linalg.norm(chaser_cart.R)
-            dv_req = checkpoint.rel_state.R[1] / r_C
-
-            # Evaluate the actual true anomaly difference
-            actual_dv = (chaser_mean.v + chaser_mean.w) % (2.0 * np.pi) - (target_mean.v + target_mean.w) % (
-            2.0 * np.pi)
-
-            # Millisecond tolerance to exit the loop
-            tol = 1e-3
-
-            t_est = 10**np.floor(np.log10((2.0 * np.pi * F(dv_req, actual_dv, n_rel) + dv_req - actual_dv) / n_rel))
-            t_est_old = 0.0
-            t_old = 0.0
-            ellipsoid_flag = False
-            dt = t_est
-            dr_next_old = 0.0
-            while abs(t_est - t_old) > tol:
-                chaser_prop = self.scenario.prop_chaser.propagate(self.epoch + timedelta(seconds=t_est))
-                target_prop = self.scenario.prop_target.propagate(self.epoch + timedelta(seconds=t_est))
-
-                chaser_cart = chaser_prop[0]
-                target_cart = target_prop[0]
-
-                self.chaser.abs_state.from_cartesian(chaser_cart)
-                self.target.abs_state.from_cartesian(target_cart)
-                self.chaser.rel_state.from_cartesian_pair(chaser_cart, target_cart)
-
-                # Correct plane in the middle of the drifting
-                tol_i = 1.0 / self.chaser.abs_state.a
-                tol_O = 1.0 / self.chaser.abs_state.a
-
-                # At this point, inclination and raan should match the one of the target
-                di = target_mean.i - chaser_mean.i
-                dO = target_mean.O - chaser_mean.O
-                if abs(di) > tol_i or abs(dO) > tol_O:
-                    checkpoint_abs = AbsoluteCP()
-                    checkpoint_abs.abs_state.i = target_mean.i
-                    checkpoint_abs.abs_state.O = target_mean.O
-                    self.plane_correction(checkpoint_abs)
-
-                dr_next = self.chaser.rel_state.R[1] - checkpoint.rel_state.R[1]
-
-                t_old = t_est
-
-                if dr_next <= 0.0 and dr_next_old <= 0.0:
-                    t_est_old = t_est
-                    t_est += dt
-                elif dr_next >= 0.0 and dr_next_old >= 0.0:
-                    t_est_old = t_est
-                    t_est -= dt
-                elif (dr_next <= 0.0 and dr_next_old >= 0.0) or (dr_next >= 0.0 and dr_next_old <= 0.0):
-                    t_est = (t_est_old + t_est) / 2.0
-                    t_est_old = t_old
-                    dt /= 10.0
-
-                dr_next_old = dr_next
-
-                if abs(checkpoint.rel_state.R[1] - self.chaser.rel_state.R[1]) <= checkpoint.error_ellipsoid[1]:
-                    # Almost in line with the checkpoint
-                    if abs(checkpoint.rel_state.R[0] - self.chaser.rel_state.R[0]) <= checkpoint.error_ellipsoid[0]:
-                        # Inside the tolerance, the point may be reached by drifting
-                        ellipsoid_flag = True
-                    else:
-                        # Outside tolerance, point may not be reached!
-                        break
-
-                self.chaser.set_from_other_satellite(chaser_old)
-                self.target.set_from_other_satellite(target_old)
-
-            if ellipsoid_flag:
-                # It is possible to drift in t_est
-                return t_est
-            else:
-                # Drift is not possible, drop a warning and correct altitude!
-                print "\n[WARNING]: Drifting to checkpoint nr. " + str(checkpoint.id) + " not possible!"
-                print "           Correcting altitude automatically...\n"
-
-                # Create new checkpoint
-                checkpoint_new_abs = AbsoluteCP()
-                checkpoint_new_abs.set_abs_state(chaser_mean)
-                checkpoint_new_abs.abs_state.a = target_mean.a + checkpoint.rel_state.R[0]
-                checkpoint_new_abs.abs_state.e = target_mean.a * target_mean.e / checkpoint_new_abs.abs_state.a
-
-                self.adjust_eccentricity_semimajoraxis(checkpoint_new_abs)
-
-    def drift_to_new2(self, checkpoint):
-        """
-            Algorithm that tries to drift to the next checkpoint, staying within a certain error ellipsoid.
-
-        Args:
-            checkpoint (AbsoluteCP or RelativeCP): Next checkpoint.
-
-        Return:
-            t_est (float64): Drifting time to reach the next checkpoint (in seconds). If not reachable, return None.
-        """
-        # Creating mean orbital elements
-        chaser_mean = KepOrbElem()
-        target_mean = KepOrbElem()
-
-        # Creating cartesian coordinates
-        chaser_cart = Cartesian()
-        target_cart = Cartesian()
-
-        # Creating old chaser and target objects to store their temporary value
-        chaser_old = Chaser()
-        target_old = Satellite()
-
-        # Define a function F for the angle calculation
-        F = lambda dv_req, dv, n: int((dv - dv_req) / n > 0.0) * np.sign(n)
-
-        # Correct altitude at every loop until drifting is possible
-        while 1:
-            # Assign mean values from osculating
-            chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.settings)
-            target_mean.from_osc_elems(self.target.abs_state, self.scenario.settings)
+            chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.prop_type)
+            target_mean.from_osc_elems(self.target.abs_state, self.scenario.prop_type)
 
             # Assign cartesian coordinates from mean-orbital (mean orbital radius needed)
             chaser_cart.from_keporb(chaser_mean)
@@ -743,8 +506,8 @@ class Solver(object):
                     tol_i = 0.5 / self.chaser.abs_state.a
                     tol_O = 0.5 / self.chaser.abs_state.a
 
-                    chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.settings)
-                    target_mean.from_osc_elems(self.target.abs_state, self.scenario.settings)
+                    chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.prop_type)
+                    target_mean.from_osc_elems(self.target.abs_state, self.scenario.prop_type)
 
                     # At this point, inclination and raan should match the one of the target
                     di = target_mean.i - chaser_mean.i
@@ -831,8 +594,8 @@ class Solver(object):
                 self.chaser.set_from_other_satellite(chaser_old)
                 self.target.set_from_other_satellite(target_old)
 
-                chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.settings)
-                target_mean.from_osc_elems(self.target.abs_state, self.scenario.settings)
+                chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.prop_type)
+                target_mean.from_osc_elems(self.target.abs_state, self.scenario.prop_type)
 
                 self.epoch = epoch_old
 
@@ -968,128 +731,6 @@ class Solver(object):
 
         self._propagator(best_dt, best_dV_2)
 
-    def clohessy_wiltshire(self, checkpoint):
-        """
-            Solve Hill's Equation to get the amount of DeltaV needed to go to the next checkpoint.
-
-        References:
-            David A. Vallado, Fundamentals of Astrodynamics and Applications, Second Edition, Algorithm 47 (p. 382)
-
-        Args:
-            chaser (Chaser): Chaser state.
-            checkpoint (RelativeCP): Next checkpoint.
-            target (Satellite): Target state.
-        """
-
-        # TODO: Apply correction according to the new definition of objects
-        # TODO: Consider thruster accuracy
-
-        print ">>>> Solving CW-equations\n"
-
-        a = target.abs_state.a
-        max_time = int(2*np.pi * np.sqrt(a**3 / mu_earth))
-
-        r_rel_c_0 = chaser.rel_state.R
-        v_rel_c_0 = chaser.rel_state.V
-
-        r_rel_c_n = checkpoint.rel_state.R
-        v_rel_c_n = [0, 0, 0]
-
-        n = np.sqrt(mu_earth/a**3.0)
-
-        phi_rr = lambda t: np.array([
-            [4.0 - 3.0 * np.cos(n*t), 0.0, 0.0],
-            [6.0*(np.sin(n*t) - n*t), 1.0, 0.0],
-            [0.0, 0.0, np.cos(n*t)]
-        ])
-
-        phi_rv = lambda t: np.array([
-            [1.0/n * np.sin(n*t), 2.0/n * (1 - np.cos(n*t)), 0.0],
-            [2.0/n * (np.cos(n*t) - 1.0), 1.0 / n * (4.0 * np.sin(n*t) - 3.0*n*t), 0.0],
-            [0.0, 0.0, 1.0 / n * np.sin(n*t)]
-        ])
-
-        phi_vr = lambda t: np.array([
-            [3.0 * n * np.sin(n*t), 0.0, 0.0],
-            [6.0 * n * (np.cos(n*t) - 1), 0.0, 0.0],
-            [0.0, 0.0, -n * np.sin(n*t)]
-        ])
-
-        phi_vv = lambda t: np.array([
-            [np.cos(n*t), 2.0 * np.sin(n*t), 0.0],
-            [-2.0 * np.sin(n*t), 4.0 * np.cos(n*t) - 3.0, 0.0],
-            [0.0, 0.0, np.cos(n*t)]
-        ])
-
-        best_deltaV = 1e12
-        delta_T = 0
-
-        for t_ in xrange(1, max_time):
-            rv_t = phi_rv(t_)
-            deltaV_1 = np.linalg.inv(rv_t).dot(r_rel_c_n - np.dot(phi_rr(t_), r_rel_c_0)) - v_rel_c_0
-            deltaV_2 = np.dot(phi_vr(t_), r_rel_c_0) + np.dot(phi_vv(t_), v_rel_c_0 + deltaV_1) - v_rel_c_n
-
-            deltaV_tot = np.linalg.norm(deltaV_1) + np.linalg.norm(deltaV_2)
-
-            if best_deltaV > deltaV_tot:
-                # Check if the keep out zone is invaded and if we are not approaching it
-                # if id != 1:
-                #     for t_test in xrange(0, t_ + 1):
-                #         r_test = np.dot(phi_rr(t_test), r_rel_c_0) + np.dot(phi_rv(t_test), v_rel_c_0 + deltaV_1)
-                #         if all(abs(r_test[i]) >= ko_zone for i in range(0, 3)):
-                #             best_deltaV = deltaV_tot
-                #             best_deltaV_1 = deltaV_1
-                #             best_deltaV_2 = deltaV_2
-                #             delta_T = t_
-                best_deltaV = deltaV_tot
-                best_deltaV_1 = deltaV_1
-                best_deltaV_2 = deltaV_2
-                delta_T = t_
-
-        target_cart = Cartesian()
-        target_cart.from_keporb(target.abs_state)
-
-        # Change frame of reference of deltaV. From LVLH to Earth-Inertial
-        B = target_cart.get_lof()
-        deltaV_C_1 = np.linalg.inv(B).dot(best_deltaV_1)
-
-        # Create command
-        c1 = RelativeMan()
-        c1.dV = deltaV_C_1
-        c1.set_abs_state(chaser.abs_state)
-        c1.set_rel_state(chaser.rel_state)
-        c1.duration = 0
-        c1.description = 'CW approach'
-
-        # Propagate chaser and target
-        self._propagator(chaser, target, 1e-5, deltaV_C_1)
-
-        self._propagator(chaser, target, delta_T)
-
-        self.print_state(chaser, target)
-
-        self.manoeuvre_plan.append(c1)
-
-        target_cart.from_keporb(target.abs_state)
-
-        R = target_cart.get_lof()
-        deltaV_C_2 = np.linalg.inv(R).dot(best_deltaV_2)
-
-        # Create command
-        c2 = RelativeMan()
-        c2.dV = deltaV_C_2
-        c2.set_abs_state(chaser.abs_state)
-        c2.set_rel_state(chaser.rel_state)
-        c2.duration = delta_T
-        c2.description = 'CW approach'
-
-        # Propagate chaser and target to evaluate all the future commands properly
-        self._propagator(chaser, target, 1e-5, deltaV_C_2)
-
-        self.print_state(chaser, target)
-
-        self.manoeuvre_plan.append(c2)
-
     def absolute_solver(self, checkpoint):
         """
             Absolute solver. Calculate the manoeuvre needed to go from an absolute position to another.
@@ -1101,7 +742,7 @@ class Solver(object):
         """
         # Define mean orbital elements
         chaser_mean = KepOrbElem()
-        chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.settings)
+        chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.prop_type)
 
         # Define tolerances, if we get deviations greater than ~1 km then correct
         tol_i = 1.0 / self.chaser.abs_state.a
@@ -1133,10 +774,10 @@ class Solver(object):
 
         # Mean orbital elements
         chaser_mean = KepOrbElem()
-        chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.settings)
+        chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.prop_type)
 
         target_mean = KepOrbElem()
-        target_mean.from_osc_elems(self.target.abs_state, self.scenario.settings)
+        target_mean.from_osc_elems(self.target.abs_state, self.scenario.prop_type)
 
         # Check if plane needs to be corrected again
         # TODO: Put as tolerance a number slightly bigger than the deviation of the estimation
@@ -1155,7 +796,8 @@ class Solver(object):
         t_limit = 604800
 
         if checkpoint.manoeuvre_type == 'standard':
-            self.multi_lambert(checkpoint, approach_ellipsoid, False)
+            # self.multi_lambert(checkpoint, approach_ellipsoid, False)
+            self.linearized_including_J2(checkpoint, approach_ellipsoid)
 
         elif checkpoint.manoeuvre_type == 'radial':
             # Manoeuvre type is radial -> deltaT is calculated from CW-equations -> solved with multi-lambert
@@ -1165,10 +807,11 @@ class Solver(object):
             checkpoint.t_min = dt
             checkpoint.t_max = dt + 1.0
 
-            self.multi_lambert(checkpoint, approach_ellipsoid, True)
+            # self.multi_lambert(checkpoint, approach_ellipsoid, True)
+            self.linearized_including_J2(checkpoint, approach_ellipsoid)
 
         elif checkpoint.manoeuvre_type == 'drift':
-            self.drift_to_new2(checkpoint)
+            self.drift_to(checkpoint)
 
     def _propagator(self, dt, dv=np.array([0, 0, 0])):
         """
@@ -1206,25 +849,25 @@ class Solver(object):
         self._change_propagator_ic(self.scenario.prop_chaser, chaser_cart, self.epoch, self.chaser.mass)
         self._change_propagator_ic(self.scenario.prop_target, target_cart, self.epoch, self.target.mass)
 
-    def travel_time(self, chaser, theta0, theta1):
+    def travel_time(self, state, theta0, theta1):
         """
-            Evaluate the travel time from a starting true anomaly theta0 to an end anomaly theta1.
+            Evaluate the travel time of a satellite from a starting true anomaly theta0 to an end anomaly theta1.
 
         Reference:
             Exercise of Nicollier's Lecture.
             David A. Vallado, Fundamentals of Astrodynamics and Applications, Second Edition, Algorithm 11 (p. 133)
 
         Args:
-            chaser (Position): Position structure of the chaser
-            theta0 (rad): Starting true anomaly
-            theta1 (rad): Ending true anomaly
+            state (KepOrbElem): Satellite state in keplerian orbital elements.
+            theta0 (rad): Starting true anomaly.
+            theta1 (rad): Ending true anomaly.
 
         Return:
             Travel time (seconds)
         """
 
-        a = chaser.a
-        e = chaser.e
+        a = state.a
+        e = state.e
 
         T = 2.0 * np.pi * np.sqrt(a**3 / mu_earth)
 
@@ -1304,17 +947,36 @@ class Solver(object):
 
         return tot_dv, tot_dt
 
-    def linearized_including_J2(self, target, de0, v_f, N_orb):
-        # Initial reference osculatin orbit
-        a_0 = target.a
-        e_0 = target.e
-        i_0 = target.i
-        w_0 = target.w
-        M_0 = target.m
-        v_0 = target.v
+    def linearized_including_J2(self, checkpoint, approach_ellipsoid):
+        """
+            Using the linearized solution including J2 and elliptical orbits to estimate the deltaV needed.
 
-        print "v_0: " + str(v_0)
-        print "v_f: " + str(v_f)
+        Args:
+            checkpoint (Checkpoint):
+        """
+
+        # Initial reference osculatin orbit
+        a_0 = self.target.abs_state.a
+        e_0 = self.target.abs_state.e
+        i_0 = self.target.abs_state.i
+        O_0 = self.target.abs_state.O
+        w_0 = self.target.abs_state.w
+        M_0 = self.target.abs_state.m
+        v_0 = self.target.abs_state.v
+
+        # Initial relative orbital elements
+        de0_initial = np.array([
+            self.chaser.abs_state.a - a_0,
+            self.chaser.abs_state.e - e_0,
+            self.chaser.abs_state.i - i_0,
+            self.chaser.abs_state.O - O_0,
+            self.chaser.abs_state.w - w_0,
+            self.chaser.abs_state.m - M_0
+        ])
+
+        # Chaser cartesian initial state
+        chaser_cart = Cartesian()
+        chaser_cart.from_keporb(self.chaser.abs_state)
 
         eta_0 = np.sqrt(1.0 - e_0 ** 2)
         p_0 = a_0 * (1.0 - e_0 ** 2)
@@ -1322,7 +984,7 @@ class Solver(object):
 
         # Initial reference mean orbit
         target_mean = KepOrbElem()
-        target_mean.from_osc_elems(target, 'real-world')
+        target_mean.from_osc_elems(self.target.abs_state, 'real-world')
 
         a_mean = target_mean.a
         i_mean = target_mean.i
@@ -1331,17 +993,14 @@ class Solver(object):
         eta_mean = np.sqrt(1.0 - e_mean ** 2)
         p_mean = a_mean * (1.0 - e_mean ** 2)
         n_mean = np.sqrt(mu_earth / a_mean ** 3)
+        T_mean = 2.0 * np.pi / n_mean
 
         # Mean orbital element drift
-        a_mean_dot = 0.0
-        e_mean_dot = 0.0
-        i_mean_dot = 0.0
-        O_mean_dot = -1.5 * J_2 * n_mean * (R_earth / p_mean) ** 2 * np.cos(i_mean)
         w_mean_dot = 0.75 * J_2 * n_mean * (R_earth / p_mean) ** 2 * (5.0 * np.cos(i_mean) ** 2 - 1.0)
         M_mean_dot = n_mean + 0.75 * J_2 * n_mean * (R_earth / p_mean) ** 2 * eta_mean * \
                      (3.0 * np.cos(i_mean) ** 2 - 1.0)
 
-        # Epsilon_a partial derivatives: TODO: v_0 or v???
+        # Epsilon_a partial derivatives
         gamma_2 = -0.5 * J_2 * (R_earth / a_0) ** 2
 
         depsda = 1.0 - gamma_2 * ((3.0 * np.cos(i_0) ** 2 - 1.0) * ((a_0 / r_0) ** 3 - 1.0 / eta_0 ** 3) +
@@ -1362,7 +1021,7 @@ class Solver(object):
                   (6.0 - 6.0 * np.cos(i_0) ** 2) * (1.0 + e_0 * np.cos(v_0)) * np.sin(2.0 * w_0 + 2.0 * v_0))
 
         # Mean elements partial derivatives
-        C = J_2 * n_mean * R_earth ** 2 / (4.0 * p_mean ** 2)  # TODO: p or p_mean?
+        C = J_2 * n_mean * R_earth ** 2 / (4.0 * p_mean ** 2)
         dOda = 21.0 / a_mean * C * np.cos(i_mean)
         dOde = 24.0 * e_mean / eta_mean ** 2 * C * np.cos(i_mean)
         dOdi = 6.0 * C * np.sin(i_mean)
@@ -1373,144 +1032,241 @@ class Solver(object):
         dMde = 9.0 * e_mean * C * (3.0 * np.cos(i_mean) ** 2 - 1.0) / eta_mean
         dMdi = -9.0 * eta_mean * C * np.sin(2.0 * i_mean)
 
-        # Estimate flight time
-        # N_orb = ...
-        E = lambda v: 2.0 * np.arctan(np.sqrt((1.0 - e_0) / (1.0 + e_0)) * np.tan(v / 2.0))
-        M = lambda v: (E(v) - e_0 * np.sin(E(v))) % (2.0 * np.pi)
+        # Initialize best dV and dt
+        best_dV = 1e12
+        best_dt = 0.0
 
-        print M_mean_dot
-        print M(v_f)
-        print M_0
+        # Minimum deltaV deliverable -> 5 mm/s
+        dV_min = 5e-6
 
-        tau = lambda v: (2.0 * np.pi * N_orb + M(v) - M_0) / M_mean_dot
+        # Check all the possible transfers time from tmin to tmax (seconds)
+        t_min = int(checkpoint.t_min)
+        t_max = int(checkpoint.t_max)
 
-        # Position
-        r = lambda v: p_0 / (1.0 + e_0 * np.cos(v))
+        t_min = 3005
+        t_max = 3006
 
-        # Position and true anomaly derivatives         # TODO: CHECK IF divided by eta_0 or eta?
-        r_dot = lambda v: a_0 * e_0 * np.sin(v) / eta_0 * M_mean_dot
-        v_dot = lambda v: (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3 * M_mean_dot
+        for dt in xrange(t_min, t_max):
+            # Estimate flight time
+            N_orb = np.floor(dt / T_mean) + int((self.travel_time(self.target.abs_state, v_0, 0.0) < dt) and (dt / T_mean < 1.0))
+            E = lambda v: 2.0 * np.arctan(np.sqrt((1.0 - e_0) / (1.0 + e_0)) * np.tan(v / 2.0))
+            M = lambda v: (E(v) - e_0 * np.sin(E(v))) % (2.0 * np.pi)
 
-        # Phi_1
-        k_x_dot = lambda v: a_0 * e_0 * v_dot(v) * np.cos(v) / eta_0
-        phi_11 = lambda v: r_dot(v) / a_0 + (k_x_dot(v) * tau(v) + a_0 * e_0 * np.sin(v) / eta_0) * dMda
-        phi_12 = lambda v: a_0 * v_dot(v) * np.sin(v) + (k_x_dot(v) * tau(v) + a_0 * e_0 * np.sin(v) / eta_0) * \
-                           (dMde + dMda * depsde + dMda * depsdv * np.sin(v_0) / eta_0 ** 2 * (2.0 + e_0 * np.cos(e_0)))
-        phi_13 = lambda v: (k_x_dot(v) * tau(v) + a_0 * e_0 * np.sin(v) / eta_0) * (dMda * depsdi + dMdi)
-        phi_14 = 0.0
-        phi_15 = lambda v: (k_x_dot(v) * tau(v) + a_0 * e_0 * np.sin(v) / eta_0) * dMda * depsdw
-        phi_16 = lambda v: k_x_dot(v) + (k_x_dot(v) * tau(v) + a_0 * e_0 * np.sin(v) / eta_0) * dMda * depsdv * \
-                           (1.0 + e_0 * np.cos(v_0)) ** 2 / eta_0 ** 3
+            # tau = lambda v: (2.0 * np.pi * N_orb + M(v) - M_0) / M_mean_dot
 
-        # Phi 2
-        k_y_dot = lambda v: r_dot(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3 - 2.0 * e_0 * v_dot(v) * np.sin(v) * (
-                    1.0 + e_0 * np.cos(v)) / eta_0 ** 3
-        phi_21 = lambda v: (r_dot(v) * np.cos(i_0) * tau(v) + r(v) * np.cos(i_0)) * dOda + (
-                    r_dot(v) * tau(v) + r(v)) * dwda + \
-                           (k_y_dot(v) * tau(v) + r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3) * dMda
-        phi_22 = lambda v: 1.0 / eta_0 ** 2 * (
-                    r(v) * v_dot(v) * np.cos(v) * (2.0 + e_0 * np.cos(v)) - r(v) * e_0 * v_dot(v) * np.sin(v) ** 2 +
-                    r_dot(v) * np.sin(v) * (2.0 + e_0 * np.cos(v))) + (
-                                       r_dot(v) * np.cos(i_0) * tau(v) + r(v) * np.cos(i_0)) * \
-                           (dOda * depsde + dOda * depsdv * np.sin(v_0) / eta_0 ** 2 * (
-                                       2.0 + e_0 * np.cos(e_0)) + dOde) + \
-                           (r_dot(v) * tau(v) + r(v)) * (dwda * depsde + dwda * depsdv * np.sin(v_0) / eta_0 ** 2 * (
-                    2.0 + e_0 * np.cos(e_0)) + dwde) + \
-                           (k_y_dot(v) * tau(v) + r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3) * \
-                           (dMda * depsde + dMda * depsdv * np.sin(v_0) * (2.0 + e_0 * np.cos(e_0)) / eta_0 ** 2 + dMde)
-        phi_23 = lambda v: (r_dot(v) * np.cos(i_0) * tau(v) + r(v) * np.cos(i_0)) * (dOda * depsdi + dOdi) + \
-                           (r_dot(v) * tau(v) + r(v)) * (dwda * depsdi + dwdi) + \
-                           (k_y_dot(v) * tau(v) + r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3) * (
-                                       dMda * depsdi + dMdi)
-        phi_24 = lambda v: r_dot(v) * np.cos(i_0)
-        phi_25 = lambda v: r_dot(v) + (r_dot(v) * np.cos(i_0) * tau(v) + r(v) * np.cos(i_0)) * dOda * depsdw + \
-                           (r_dot(v) * tau(v) + r(v)) * dwda * depsdw + (k_y_dot(v) * tau(v) + r(v) * (
-                    1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3) * dMda * depsdw
-        phi_26 = lambda v: k_y_dot(v) + (r_dot(v) * np.cos(i_0) * tau(v) + r(v) * np.cos(i_0)) * dOda * depsdv * (
-                    1.0 + e_0 * np.cos(v_0)) ** 2 / eta_0 ** 3 + \
-                           (r_dot(v) * tau(v) + r(v)) * dwda * depsdv * (1.0 + e_0 * np.cos(v_0)) ** 2 / eta_0 ** 3 + \
-                           (k_y_dot(v) * tau(v) + r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3) * dOda * depsdv * \
-                           (1.0 + e_0 * np.cos(v_0)) ** 2 / eta_0 ** 3
+            tau = lambda v: dt
 
-        # Phi 3
-        k_z_dot = lambda v: -r_dot(v) * np.cos(v + w_0 + w_mean_dot * tau(v)) * np.sin(i_0) + \
-                            r(v) * np.sin(v + w_0 + w_mean_dot * tau(v)) * (v_dot(v) + w_mean_dot) * np.sin(i_0)
-        phi_31 = lambda v: (k_z_dot(v) * tau(v) - r(v) * np.cos(v + w_0 + w_mean_dot * tau(v)) * np.sin(i_0)) * dOda
-        phi_32 = lambda v: (k_z_dot(v) * tau(v) - r(v) * np.cos(v + w_0 + w_mean_dot * tau(v)) * np.sin(i_0)) * \
-                           (dOda * depsde + dOda * depsdv * np.sin(v_0) / eta_0 ** 2 * (2.0 + e_0 * np.cos(e_0)) + dOde)
-        phi_33 = lambda v: r_dot(v) * np.sin(v + w_0 + w_mean_dot * tau(v)) + r(v) * np.cos(
-            v + w_0 + w_mean_dot * tau(v)) * \
-                           (v_dot(v) + w_mean_dot) + (
-                                       k_z_dot(v) * tau(v) - r(v) * np.cos(v + w_0 + w_mean_dot * tau(v)) * np.sin(
-                                   i_0)) * dOda
-        phi_34 = lambda v: k_z_dot(v)
-        phi_35 = lambda v: (k_z_dot(v) * tau(v) - r(v) * np.cos(v + w_0 + w_mean_dot * tau(v)) * np.sin(
-            i_0)) * dOda * depsdw
-        phi_36 = lambda v: (k_z_dot(v) * tau(v) - r(v) * np.cos(v + w_0 + w_mean_dot * tau(v)) * np.sin(
-            i_0)) * dOda * depsdv * \
-                           (1.0 + e_0 * np.cos(e_0)) ** 2 / eta_0 ** 3
+            M_f = (tau(v_0) * M_mean_dot) + M_0 - 2.0 * np.pi * N_orb
+            E_f = self._calc_E_from_m(e_0, M_f)
+            v_f = 2.0 * np.arctan(np.sqrt((1.0 + e_0) / (1.0 - e_0)) * np.tan(E_f / 2.0))
 
-        # Phi 4
-        phi_41 = lambda v: r(v) / a_0 + a_0 * e_0 * np.sin(v) / eta_0 * dMda * tau(v)
-        phi_42 = lambda v: a_0 * e_0 * np.sin(v) / eta_0 * (
-                    dMda * depsde + dMda * depsdv * np.sin(v_0) / eta_0 ** 2 * (2.0 + e_0 * np.cos(e_0)) +
-                    dMde) * tau(v) - a_0 * np.cos(v)
-        phi_43 = lambda v: a_0 * e_0 * np.sin(v) / eta_0 * (dMda * depsdi + dMdi) * tau(v)
-        phi_44 = 0.0
-        phi_45 = lambda v: a_0 * e_0 * np.sin(v) / eta_0 * dMda * depsdw * tau(v)
-        phi_46 = lambda v: a_0 * e_0 * np.sin(v) / eta_0 + a_0 * e_0 * np.sin(v) / eta_0 * dMda * depsdw * \
-                           (1.0 + e_0 * np.cos(v_0)) ** 2 / eta_0 ** 3 * tau(v)
+            # Position
+            r = lambda v: p_0 / (1.0 + e_0 * np.cos(v))
 
-        # Phi 5
-        phi_51 = lambda v: r(v) * np.cos(i_0) * dOda * tau(v) + r(v) * dwda * tau(v) + r(v) * (
-                    1.0 + e_0 * np.cos(v)) ** 2 \
-                           / eta_0 ** 3 * dMda * tau(v)
-        phi_52 = lambda v: r(v) * np.sin(v) / eta_0 ** 2 * (2.0 + e_0 * np.cos(v)) + r(v) * np.cos(i_0) * \
-                           (dOda * depsde + dOda * depsdv * np.sin(v_0) / eta_0 ** 2 * (
-                                       2.0 + e_0 * np.cos(e_0)) + dOde) * tau(v) + \
-                           r(v) * (dwda * depsde + dwda * depsdv * np.sin(v_0) / eta_0 ** 2 * (
-                    2.0 + e_0 * np.cos(e_0)) + dwde) * tau(v) + \
-                           r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3 * \
-                           (dMda * depsde + dMda * depsdv * np.sin(v_0) / eta_0 ** 2 * (
-                                       2.0 + e_0 * np.cos(e_0)) + dMde) * tau(v)
-        phi_53 = lambda v: r(v) * np.cos(i_0) * (dOda * depsdi + dOdi) * tau(v) + r(v) * (dwda * depsdi + dwdi) * tau(
-            v) + \
-                           r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3 * (dMda * depsdi + dMdi) * tau(v)
-        phi_54 = lambda v: r(v) * np.cos(i_0)
-        phi_55 = lambda v: r(v) + r(v) * np.cos(i_0) * dOda * depsdw * tau(v) + r(v) * dwda * depsdw * tau(v) + \
-                           r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3 * dMda * depsdw * tau(v)
-        phi_56 = lambda v: r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3 + r(v) * np.cos(i_0) * dOda * depsdv * \
-                           (1.0 + e_0 * np.cos(v_0)) ** 2 / eta_0 ** 3 * tau(v) + r(v) * dwda * depsdv * (
-                                       1.0 + e_0 * np.cos(v_0)) ** 2 / eta_0 ** 3 * tau(v) + \
-                           r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3 * dMda * depsdv * (
-                                       1.0 + e_0 * np.cos(v_0)) ** 2 / eta_0 ** 3 * tau(v)
+            # Position and true anomaly derivatives
+            r_dot = lambda v: a_0 * e_0 * np.sin(v) / eta_0 * M_mean_dot
+            v_dot = lambda v: (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3 * M_mean_dot
 
-        # Phi 6
-        phi_61 = lambda v: -r(v) * np.cos(v + w_0 + w_mean_dot * tau(v)) * np.sin(i_0) * dOda * tau(v)
-        phi_62 = lambda v: -r(v) * np.cos(v + w_0 + w_mean_dot * tau(v)) * np.sin(i_0) * (
-                    dOda * depsde + dOda * depsdv * np.sin(v_0) /
-                    eta_0 ** 2 * (2.0 + e_0 * np.cos(e_0)) + dOde) * tau(v)
-        phi_63 = lambda v: r(v) * np.sin(v + w_0 + w_mean_dot * tau(v)) - r(v) * np.cos(
-            v + w_0 + w_mean_dot * tau(v)) * np.sin(i_0) * (dOda * depsdi + dOdi) * tau(v)
-        phi_64 = lambda v: -r(v) * np.cos(v + w_0 + w_mean_dot * tau(v)) * np.sin(i_0)
-        phi_65 = lambda v: -r(v) * np.cos(v + w_0 + w_mean_dot * tau(v)) * np.sin(i_0) * dOda * depsdw * tau(v)
-        phi_66 = lambda v: -r(v) * np.cos(v + w_0 + w_mean_dot * tau(v)) * np.sin(i_0) * dOda * depsdv * (
-                    1.0 + e_0 * np.cos(v_0)) ** 2 / eta_0 ** 3 * tau(v)
+            # Phi_1
+            k_x_dot = lambda v: a_0 * e_0 * v_dot(v) * np.cos(v) / eta_0
+            phi_11 = lambda v: r_dot(v) / a_0 + (k_x_dot(v) * tau(v) + a_0 * e_0 * np.sin(v) / eta_0) * dMda
+            phi_12 = lambda v: a_0 * v_dot(v) * np.sin(v) + (k_x_dot(v) * tau(v) + a_0 * e_0 * np.sin(v) / eta_0) * \
+                               (dMde + dMda * depsde + dMda * depsdv * np.sin(v_0) / eta_0 ** 2 * (2.0 + e_0 * np.cos(e_0)))
+            phi_13 = lambda v: (k_x_dot(v) * tau(v) + a_0 * e_0 * np.sin(v) / eta_0) * (dMda * depsdi + dMdi)
+            phi_14 = 0.0
+            phi_15 = lambda v: (k_x_dot(v) * tau(v) + a_0 * e_0 * np.sin(v) / eta_0) * dMda * depsdw
+            phi_16 = lambda v: k_x_dot(v) + (k_x_dot(v) * tau(v) + a_0 * e_0 * np.sin(v) / eta_0) * dMda * depsdv * \
+                               (1.0 + e_0 * np.cos(v_0)) ** 2 / eta_0 ** 3
 
-        phi_ = np.array([
-            [phi_11(v_f), phi_12(v_f), phi_13(v_f), phi_14, phi_15(v_f), phi_16(v_f)],
-            [phi_21(v_f), phi_22(v_f), phi_23(v_f), phi_24(v_f), phi_25(v_f), phi_26(v_f)],
-            [phi_31(v_f), phi_32(v_f), phi_33(v_f), phi_34(v_f), phi_35(v_f), phi_36(v_f)],
-            [phi_41(v_f), phi_42(v_f), phi_43(v_f), phi_44, phi_45(v_f), phi_46(v_f)],
-            [phi_51(v_f), phi_52(v_f), phi_53(v_f), phi_54(v_f), phi_55(v_f), phi_56(v_f)],
-            [phi_61(v_f), phi_62(v_f), phi_63(v_f), phi_64(v_f), phi_65(v_f), phi_66(v_f)],
-        ])
+            # Phi 2
+            k_y_dot = lambda v: r_dot(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3 - 2.0 * e_0 * v_dot(v) * np.sin(v) * (
+                        1.0 + e_0 * np.cos(v)) / eta_0 ** 3
+            phi_21 = lambda v: (r_dot(v) * np.cos(i_0) * tau(v) + r(v) * np.cos(i_0)) * dOda + (
+                        r_dot(v) * tau(v) + r(v)) * dwda + \
+                               (k_y_dot(v) * tau(v) + r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3) * dMda
+            phi_22 = lambda v: 1.0 / eta_0 ** 2 * (
+                        r(v) * v_dot(v) * np.cos(v) * (2.0 + e_0 * np.cos(v)) - r(v) * e_0 * v_dot(v) * np.sin(v) ** 2 +
+                        r_dot(v) * np.sin(v) * (2.0 + e_0 * np.cos(v))) + (
+                                           r_dot(v) * np.cos(i_0) * tau(v) + r(v) * np.cos(i_0)) * \
+                               (dOda * depsde + dOda * depsdv * np.sin(v_0) / eta_0 ** 2 * (
+                                           2.0 + e_0 * np.cos(e_0)) + dOde) + \
+                               (r_dot(v) * tau(v) + r(v)) * (dwda * depsde + dwda * depsdv * np.sin(v_0) / eta_0 ** 2 * (
+                        2.0 + e_0 * np.cos(e_0)) + dwde) + \
+                               (k_y_dot(v) * tau(v) + r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3) * \
+                               (dMda * depsde + dMda * depsdv * np.sin(v_0) * (2.0 + e_0 * np.cos(e_0)) / eta_0 ** 2 + dMde)
+            phi_23 = lambda v: (r_dot(v) * np.cos(i_0) * tau(v) + r(v) * np.cos(i_0)) * (dOda * depsdi + dOdi) + \
+                               (r_dot(v) * tau(v) + r(v)) * (dwda * depsdi + dwdi) + \
+                               (k_y_dot(v) * tau(v) + r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3) * (
+                                           dMda * depsdi + dMdi)
+            phi_24 = lambda v: r_dot(v) * np.cos(i_0)
+            phi_25 = lambda v: r_dot(v) + (r_dot(v) * np.cos(i_0) * tau(v) + r(v) * np.cos(i_0)) * dOda * depsdw + \
+                               (r_dot(v) * tau(v) + r(v)) * dwda * depsdw + (k_y_dot(v) * tau(v) + r(v) * (
+                        1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3) * dMda * depsdw
+            phi_26 = lambda v: k_y_dot(v) + (r_dot(v) * np.cos(i_0) * tau(v) + r(v) * np.cos(i_0)) * dOda * depsdv * (
+                        1.0 + e_0 * np.cos(v_0)) ** 2 / eta_0 ** 3 + \
+                               (r_dot(v) * tau(v) + r(v)) * dwda * depsdv * (1.0 + e_0 * np.cos(v_0)) ** 2 / eta_0 ** 3 + \
+                               (k_y_dot(v) * tau(v) + r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3) * dOda * depsdv * \
+                               (1.0 + e_0 * np.cos(v_0)) ** 2 / eta_0 ** 3
 
-        state = phi_.dot(de0)
+            # Phi 3
+            k_z_dot = lambda v: -r_dot(v) * np.cos(v + w_0 + w_mean_dot * tau(v)) * np.sin(i_0) + \
+                                r(v) * np.sin(v + w_0 + w_mean_dot * tau(v)) * (v_dot(v) + w_mean_dot) * np.sin(i_0)
+            phi_31 = lambda v: (k_z_dot(v) * tau(v) - r(v) * np.cos(v + w_0 + w_mean_dot * tau(v)) * np.sin(i_0)) * dOda
+            phi_32 = lambda v: (k_z_dot(v) * tau(v) - r(v) * np.cos(v + w_0 + w_mean_dot * tau(v)) * np.sin(i_0)) * \
+                               (dOda * depsde + dOda * depsdv * np.sin(v_0) / eta_0 ** 2 * (2.0 + e_0 * np.cos(e_0)) + dOde)
+            phi_33 = lambda v: r_dot(v) * np.sin(v + w_0 + w_mean_dot * tau(v)) + r(v) * np.cos(
+                v + w_0 + w_mean_dot * tau(v)) * \
+                               (v_dot(v) + w_mean_dot) + (
+                                           k_z_dot(v) * tau(v) - r(v) * np.cos(v + w_0 + w_mean_dot * tau(v)) * np.sin(
+                                       i_0)) * dOda
+            phi_34 = lambda v: k_z_dot(v)
+            phi_35 = lambda v: (k_z_dot(v) * tau(v) - r(v) * np.cos(v + w_0 + w_mean_dot * tau(v)) * np.sin(
+                i_0)) * dOda * depsdw
+            phi_36 = lambda v: (k_z_dot(v) * tau(v) - r(v) * np.cos(v + w_0 + w_mean_dot * tau(v)) * np.sin(
+                i_0)) * dOda * depsdv * \
+                               (1.0 + e_0 * np.cos(e_0)) ** 2 / eta_0 ** 3
 
-        print "TAU: " + str(tau(v_f))
+            # Phi 4
+            phi_41 = lambda v: r(v) / a_0 + a_0 * e_0 * np.sin(v) / eta_0 * dMda * tau(v)
+            phi_42 = lambda v: a_0 * e_0 * np.sin(v) / eta_0 * (
+                        dMda * depsde + dMda * depsdv * np.sin(v_0) / eta_0 ** 2 * (2.0 + e_0 * np.cos(e_0)) +
+                        dMde) * tau(v) - a_0 * np.cos(v)
+            phi_43 = lambda v: a_0 * e_0 * np.sin(v) / eta_0 * (dMda * depsdi + dMdi) * tau(v)
+            phi_44 = 0.0
+            phi_45 = lambda v: a_0 * e_0 * np.sin(v) / eta_0 * dMda * depsdw * tau(v)
+            phi_46 = lambda v: a_0 * e_0 * np.sin(v) / eta_0 + a_0 * e_0 * np.sin(v) / eta_0 * dMda * depsdw * \
+                               (1.0 + e_0 * np.cos(v_0)) ** 2 / eta_0 ** 3 * tau(v)
 
-        return state
+            # Phi 5
+            phi_51 = lambda v: r(v) * np.cos(i_0) * dOda * tau(v) + r(v) * dwda * tau(v) + r(v) * (
+                        1.0 + e_0 * np.cos(v)) ** 2 \
+                               / eta_0 ** 3 * dMda * tau(v)
+            phi_52 = lambda v: r(v) * np.sin(v) / eta_0 ** 2 * (2.0 + e_0 * np.cos(v)) + r(v) * np.cos(i_0) * \
+                               (dOda * depsde + dOda * depsdv * np.sin(v_0) / eta_0 ** 2 * (
+                                           2.0 + e_0 * np.cos(e_0)) + dOde) * tau(v) + \
+                               r(v) * (dwda * depsde + dwda * depsdv * np.sin(v_0) / eta_0 ** 2 * (
+                        2.0 + e_0 * np.cos(e_0)) + dwde) * tau(v) + \
+                               r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3 * \
+                               (dMda * depsde + dMda * depsdv * np.sin(v_0) / eta_0 ** 2 * (
+                                           2.0 + e_0 * np.cos(e_0)) + dMde) * tau(v)
+            phi_53 = lambda v: r(v) * np.cos(i_0) * (dOda * depsdi + dOdi) * tau(v) + r(v) * (dwda * depsdi + dwdi) * tau(
+                v) + \
+                               r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3 * (dMda * depsdi + dMdi) * tau(v)
+            phi_54 = lambda v: r(v) * np.cos(i_0)
+            phi_55 = lambda v: r(v) + r(v) * np.cos(i_0) * dOda * depsdw * tau(v) + r(v) * dwda * depsdw * tau(v) + \
+                               r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3 * dMda * depsdw * tau(v)
+            phi_56 = lambda v: r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3 + r(v) * np.cos(i_0) * dOda * depsdv * \
+                               (1.0 + e_0 * np.cos(v_0)) ** 2 / eta_0 ** 3 * tau(v) + r(v) * dwda * depsdv * (
+                                           1.0 + e_0 * np.cos(v_0)) ** 2 / eta_0 ** 3 * tau(v) + \
+                               r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3 * dMda * depsdv * (
+                                           1.0 + e_0 * np.cos(v_0)) ** 2 / eta_0 ** 3 * tau(v)
+
+            # Phi 6
+            phi_61 = lambda v: -r(v) * np.cos(v + w_0 + w_mean_dot * tau(v)) * np.sin(i_0) * dOda * tau(v)
+            phi_62 = lambda v: -r(v) * np.cos(v + w_0 + w_mean_dot * tau(v)) * np.sin(i_0) * (
+                        dOda * depsde + dOda * depsdv * np.sin(v_0) /
+                        eta_0 ** 2 * (2.0 + e_0 * np.cos(e_0)) + dOde) * tau(v)
+            phi_63 = lambda v: r(v) * np.sin(v + w_0 + w_mean_dot * tau(v)) - r(v) * np.cos(
+                v + w_0 + w_mean_dot * tau(v)) * np.sin(i_0) * (dOda * depsdi + dOdi) * tau(v)
+            phi_64 = lambda v: -r(v) * np.cos(v + w_0 + w_mean_dot * tau(v)) * np.sin(i_0)
+            phi_65 = lambda v: -r(v) * np.cos(v + w_0 + w_mean_dot * tau(v)) * np.sin(i_0) * dOda * depsdw * tau(v)
+            phi_66 = lambda v: -r(v) * np.cos(v + w_0 + w_mean_dot * tau(v)) * np.sin(i_0) * dOda * depsdv * (
+                        1.0 + e_0 * np.cos(v_0)) ** 2 / eta_0 ** 3 * tau(v)
+
+            phi_i = np.array([
+                [phi_11(v_0), phi_12(v_0), phi_13(v_0), phi_14, phi_15(v_0), phi_16(v_0)],
+                [phi_21(v_0), phi_22(v_0), phi_23(v_0), phi_24(v_0), phi_25(v_0), phi_26(v_0)],
+                [phi_31(v_0), phi_32(v_0), phi_33(v_0), phi_34(v_0), phi_35(v_0), phi_36(v_0)],
+                [phi_41(v_0), phi_42(v_0), phi_43(v_0), phi_44, phi_45(v_0), phi_46(v_0)],
+                [phi_51(v_0), phi_52(v_0), phi_53(v_0), phi_54(v_0), phi_55(v_0), phi_56(v_0)],
+                [phi_61(v_0), phi_62(v_0), phi_63(v_0), phi_64(v_0), phi_65(v_0), phi_66(v_0)]
+            ])
+
+            phi_f = np.array([
+                [phi_11(v_f), phi_12(v_f), phi_13(v_f), phi_14, phi_15(v_f), phi_16(v_f)],
+                [phi_21(v_f), phi_22(v_f), phi_23(v_f), phi_24(v_f), phi_25(v_f), phi_26(v_f)],
+                [phi_31(v_f), phi_32(v_f), phi_33(v_f), phi_34(v_f), phi_35(v_f), phi_36(v_f)],
+                [phi_41(v_f), phi_42(v_f), phi_43(v_f), phi_44, phi_45(v_f), phi_46(v_f)],
+                [phi_51(v_f), phi_52(v_f), phi_53(v_f), phi_54(v_f), phi_55(v_f), phi_56(v_f)],
+                [phi_61(v_f), phi_62(v_f), phi_63(v_f), phi_64(v_f), phi_65(v_f), phi_66(v_f)]
+            ])
+
+            phi_comb = np.array([
+                phi_i[3][:],
+                phi_i[4][:],
+                phi_i[5][:],
+                phi_f[3][:],
+                phi_f[4][:],
+                phi_f[5][:]
+            ])
+
+            state_comb = np.array([self.chaser.rel_state.R[0],
+                                   self.chaser.rel_state.R[1],
+                                   self.chaser.rel_state.R[2],
+                                   checkpoint.rel_state.R[0],
+                                   checkpoint.rel_state.R[1],
+                                   checkpoint.rel_state.R[2]])
+
+            de0_wanted = np.linalg.inv(phi_comb).dot(state_comb)
+            de0_diff = de0_wanted - de0_initial
+
+            chaser_kep_wanted = KepOrbElem()
+            chaser_kep_wanted.a = self.chaser.abs_state.a + de0_diff[0]
+            chaser_kep_wanted.e = self.chaser.abs_state.e + de0_diff[1]
+            chaser_kep_wanted.i = self.chaser.abs_state.i + de0_diff[2]
+            chaser_kep_wanted.O = self.chaser.abs_state.O + de0_diff[3]
+            chaser_kep_wanted.w = self.chaser.abs_state.w + de0_diff[4]
+            chaser_kep_wanted.m = self.chaser.abs_state.m + de0_diff[5]
+
+            chaser_cart_wanted = Cartesian()
+            chaser_cart_wanted.from_keporb(chaser_kep_wanted)
+
+            # Evaluate delta_V_1
+            delta_V_1 = chaser_cart_wanted.V - chaser_cart.V
+
+            # Evaluate delta_V_2
+            state_f = phi_f.dot(de0_wanted)
+            delta_V_2 = checkpoint.rel_state.V - state_f[0:3]
+
+            # self._change_propagator_ic(self.scenario.prop_chaser, chaser_cart_wanted, self.epoch, self.chaser.mass)
+            #
+            # prop_chaser = self.scenario.prop_chaser.propagate(self.epoch + timedelta(seconds=dt))
+            # prop_target = self.scenario.prop_target.propagate(self.epoch + timedelta(seconds=dt))
+            #
+            #
+            # dr_TEME = prop_chaser[0].R - prop_target[0].R
+            # dr_LVLH = prop_target[0].get_lof().dot(dr_TEME)
+
+            deltaV_tot = np.linalg.norm(delta_V_1) + np.linalg.norm(delta_V_2)
+
+            if best_dV > deltaV_tot:
+                if self.is_trajectory_safe(dt, approach_ellipsoid):
+                    best_dV = deltaV_tot
+                    best_dV_1 = delta_V_1
+                    best_dV_2 = delta_V_2
+                    best_dt = dt
+
+        c1 = RelativeMan()
+        c1.dV = best_dV_1
+        c1.set_abs_state(self.chaser.abs_state)
+        c1.set_rel_state(self.chaser.rel_state)
+        c1.duration = 0
+        c1.description = 'Linearized-J2 solution'
+        self.manoeuvre_plan.append(c1)
+
+        self._propagator(1e-3, best_dV_1)
+
+        chaser_cart.from_keporb(self.chaser.abs_state)
+
+        c2 = RelativeMan()
+        c2.dV = best_dV_2
+        c2.set_abs_state(self.chaser.abs_state)
+        c2.set_rel_state(self.chaser.rel_state)
+        c2.duration = best_dt
+        c2.description = 'Linearized-J2 solution'
+        self.manoeuvre_plan.append(c2)
+
+        self._propagator(best_dt, best_dV_2)
 
     def _change_propagator_ic(self, propagator, initial_state, epoch, mass):
         """
@@ -1550,3 +1306,53 @@ class Solver(object):
 
         # Rewrite propagator initial conditions
         propagator._propagator_num.setInitialState(newSpacecraftState)
+
+    def find_best_deltaV(self, checkpoint):
+        """
+            Find the best deltaV given the checkpoint that the chaser has to reach next.
+
+        Args:
+            checkpoint (Checkpoint):
+        """
+
+
+        if self.scenario.prop_type == 'real-world':
+            pass
+        elif self.scenario.prop_type == '2-body':
+            pass
+        else:
+            print "Propagator type not known!"
+            raise TypeError
+
+    def _calc_E_from_m(self, e, m):
+        """Calculates Eccentric anomaly from Mean anomaly
+
+        Uses a Newton-Raphson iteration to solve Kepler's Equation.
+        Source: Algorithm 3.1 in [1]
+
+        Prerequisites: m and e
+
+        """
+        if m < np.pi:
+            E = m + e / 2.0
+        else:
+            E = m - e / 2.0
+
+        max_int = 20  # maximum number of iterations
+
+        while max_int > 1:
+            fE = E - e * np.sin(E) - m
+            fpE = 1.0 - e * np.cos(E)
+            ratio = fE / fpE
+            max_int = max_int - 1
+
+            # check if ratio is small enough
+            if abs(ratio) > 1e-15:
+                E = E - ratio
+            else:
+                break
+
+        if E < 0:
+            E = E + np.pi * 2.0
+
+        return E
