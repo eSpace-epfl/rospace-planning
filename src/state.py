@@ -19,10 +19,12 @@ class Satellite(object):
         Class that holds the basic information of a Satellite.
 
         Attributes:
+            mass (float64): Mass of the satellite in [kg].
             abs_state (KepOrbElem): Osculating orbital elements of the satellite.
     """
 
     def __init__(self):
+        self.mass = 0.0
         self.abs_state = KepOrbElem()
 
     def set_from_other_satellite(self, satellite):
@@ -42,6 +44,8 @@ class Satellite(object):
         self.abs_state.O = satellite.abs_state.O
         self.abs_state.w = satellite.abs_state.w
         self.abs_state.v = satellite.abs_state.v
+
+        self.mass = satellite.mass
 
         if hasattr(satellite, 'rel_state'):
             self.rel_state.R = satellite.rel_state.R
