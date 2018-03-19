@@ -18,6 +18,54 @@ from state import Chaser, Satellite
 from space_tf import Cartesian, mu_earth, KepOrbElem
 from datetime import timedelta
 
+from org.orekit.propagation import SpacecraftState
+from org.orekit.frames import FramesFactory
+from org.orekit.orbits import CartesianOrbit
+from org.orekit.utils import PVCoordinates
+from org.orekit.utils import Constants as Cst
+from org.hipparchus.geometry.euclidean.threed import Vector3D
+from org.orekit.time import AbsoluteDate, TimeScalesFactory
+
+
+def _change_propagator_ic(propagator, initial_state, epoch, mass):
+    """
+        Allows to change the initial conditions given to the propagator without initializing it again.
+
+    Args:
+        propagator (OrekitPropagator): The propagator that has to be changed.
+        initial_state (Cartesian): New cartesian coordinates of the initial state.
+        epoch (datetime): New starting epoch.
+        mass (float64): Satellite mass.
+    """
+
+    # Create position and velocity vectors as Vector3D
+    p = Vector3D(float(initial_state.R[0]) * 1e3, float(initial_state.R[1]) * 1e3,
+                 float(initial_state.R[2]) * 1e3)
+    v = Vector3D(float(initial_state.V[0]) * 1e3, float(initial_state.V[1]) * 1e3,
+                 float(initial_state.V[2]) * 1e3)
+
+    # Initialize orekit date
+    seconds = float(epoch.second) + float(epoch.microsecond) / 1e6
+    orekit_date = AbsoluteDate(epoch.year,
+                               epoch.month,
+                               epoch.day,
+                               epoch.hour,
+                               epoch.minute,
+                               seconds,
+                               TimeScalesFactory.getUTC())
+
+    # Extract frame
+    inertialFrame = FramesFactory.getEME2000()
+
+    # Evaluate new initial orbit
+    initialOrbit = CartesianOrbit(PVCoordinates(p, v), inertialFrame, orekit_date, Cst.WGS84_EARTH_MU)
+
+    # Create new spacecraft state
+    newSpacecraftState = SpacecraftState(initialOrbit, mass)
+
+    # Rewrite propagator initial conditions
+    propagator._propagator_num.setInitialState(newSpacecraftState)
+
 def print_state(kep):
     print "      a :     " + str(kep.a)
     print "      e :     " + str(kep.e)
@@ -64,7 +112,7 @@ def plot_result(manoeuvre_plan, scenario, save_path):
     print_state(chaser.abs_state)
     print "\n >> Mean Elements:"
     chaser_mean = KepOrbElem()
-    chaser_mean.from_osc_elems(chaser.abs_state, scenario.settings)
+    chaser_mean.from_osc_elems(chaser.abs_state, scenario.prop_type)
     print_state(chaser_mean)
     print "\n >> LVLH:"
     print "     R: " + str(chaser.rel_state.R)
@@ -74,7 +122,7 @@ def plot_result(manoeuvre_plan, scenario, save_path):
     print_state(target.abs_state)
     print "\n >> Mean Elements:"
     target_mean = KepOrbElem()
-    target_mean.from_osc_elems(target.abs_state, scenario.settings)
+    target_mean.from_osc_elems(target.abs_state, scenario.prop_type)
     print_state(target_mean)
     print "------------------------------------------------------------\n"
 
@@ -130,9 +178,14 @@ def plot_result(manoeuvre_plan, scenario, save_path):
         chaser_new_ic.from_cartesian(chaser_cart)
         target_new_ic.from_cartesian(target_cart)
 
-        scenario.initialize_propagators(chaser_new_ic, target_new_ic, epoch)
+        # scenario.initialize_propagators(chaser_new_ic, target_new_ic, epoch)
+
+        _change_propagator_ic(scenario.prop_chaser, chaser_cart, epoch + timedelta(seconds=man.duration), chaser.mass)
+        _change_propagator_ic(scenario.prop_target, target_cart, epoch + timedelta(seconds=man.duration), target.mass)
 
         print "     End pos: " + str(chaser.rel_state.R)
+
+        epoch += timedelta(seconds=man.duration)
 
         # EXTRA PROPAGATION TO CHECK TRAJECTORY SAFETY
 
@@ -179,7 +232,7 @@ def plot_result(manoeuvre_plan, scenario, save_path):
 def main(prop):
     # Import scenario and initial conditions
     scenario = Scenario()
-    scenario.set_propagator_type(prop)
+    scenario.prop_type = prop
     scenario.import_yaml_scenario()
 
     # Import scenario solution

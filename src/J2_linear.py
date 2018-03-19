@@ -1,12 +1,184 @@
-from propagator.OrekitPropagator import OrekitPropagator
-from space_tf import KepOrbElem, CartesianLVLH, Cartesian, mu_earth, J_2, R_earth
 import numpy as np
 import yaml
-from datetime import datetime
-from datetime import timedelta
-import matplotlib.pyplot as plt
 
-def linearized_including_J2(target, de0, v_f, N_orb):
+from datetime import datetime, timedelta
+from propagator.OrekitPropagator import OrekitPropagator
+from space_tf import KepOrbElem, CartesianLVLH, Cartesian, mu_earth, J_2, R_earth
+
+from org.orekit.propagation import SpacecraftState
+from org.orekit.frames import FramesFactory
+from org.orekit.orbits import CartesianOrbit
+from org.orekit.utils import PVCoordinates
+from org.orekit.utils import Constants as Cst
+from org.hipparchus.geometry.euclidean.threed import Vector3D
+from org.orekit.time import AbsoluteDate, TimeScalesFactory
+
+
+class Individual(object):
+
+    def __init__(self):
+        self.delta_v = np.array([0.0, 0.0, 0.0])
+        self.fitness = 1e12
+        self.arrival = None
+
+    def create_individual(self, seed, mu=0.0):
+        # Evaluate a possible delta-v based on the seed given
+        self.delta_v[0] = seed[0]
+        self.delta_v[1] = seed[1]
+        self.delta_v[2] = seed[2]
+
+        # Add some disturbance according to a gaussian distribution
+        x_d = np.random.normal(mu, 10**(np.floor(np.log10(abs(self.delta_v[0]))) - 2.0))
+        y_d = np.random.normal(mu, 10**(np.floor(np.log10(abs(self.delta_v[1]))) - 2.0))
+        z_d = np.random.normal(mu, 10**(np.floor(np.log10(abs(self.delta_v[2]))) - 2.0))
+
+        # Add disturbances according to linear distribution
+        # x_d = (np.random.random() - 0.5) * 10**(np.floor(np.log10(abs(self.delta_v[0]))) - 1.0) * (1 - np.exp(-(self.fitness/1e4)**0.8))
+        # y_d = (np.random.random() - 0.5) * 10**(np.floor(np.log10(abs(self.delta_v[1]))) - 1.0) * (1 - np.exp(-(self.fitness/1e4)**0.8))
+        # z_d = (np.random.random() - 0.5) * 10**(np.floor(np.log10(abs(self.delta_v[2]))) - 1.0) * (1 - np.exp(-(self.fitness/1e4)**0.8))
+
+        self.delta_v[0] += x_d
+        self.delta_v[1] += y_d
+        self.delta_v[2] += z_d
+
+    def evaluate_fitness(self, prop, mass, init_state, target_cart, wanted_position, start_date, time):
+        # Correct initial state with delta-v
+        new_init_state = Cartesian()
+        new_init_state.R = init_state.R
+        new_init_state.V = init_state.V + self.delta_v
+
+        p = Vector3D(float(new_init_state.R[0])*1e3, float(new_init_state.R[1])*1e3, float(new_init_state.R[2])*1e3)
+        v = Vector3D(float(new_init_state.V[0])*1e3, float(new_init_state.V[1])*1e3, float(new_init_state.V[2])*1e3)
+
+        # Initialize propagators
+        seconds = float(start_date.second) + float(start_date.microsecond) / 1e6
+        orekit_date = AbsoluteDate(start_date.year,
+                                   start_date.month,
+                                   start_date.day,
+                                   start_date.hour,
+                                   start_date.minute,
+                                   seconds,
+                                   TimeScalesFactory.getUTC())
+
+        inertialFrame = FramesFactory.getEME2000()
+        initialOrbit = CartesianOrbit(PVCoordinates(p, v), inertialFrame, orekit_date, Cst.WGS84_EARTH_MU)
+
+        newSpacecraftState = SpacecraftState(initialOrbit, mass)
+
+        prop._propagator_num.setInitialState(newSpacecraftState)
+
+        new_state = prop.propagate(start_date + timedelta(seconds=time))
+        state_cart = new_state[0]
+
+        state_lvlh = CartesianLVLH()
+        state_lvlh.from_cartesian_pair(state_cart, target_cart)
+
+        self.arrival = state_lvlh
+
+        # Evaluate fitness depending on how far we are from the wanted position
+        self.fitness = (state_lvlh.R[0]*1e3 - wanted_position[0]*1e3)**2 + \
+                       (state_lvlh.R[1]*1e3 - wanted_position[1]*1e3)**2 + \
+                       (state_lvlh.R[2]*1e3 - wanted_position[2]*1e3)**2
+
+
+class Population(object):
+
+    def __init__(self):
+        self.pop = []
+        self.size = 0
+        self.avg_fitness = 0
+        self.prop = None
+        self.mass = 0
+
+    def set_propagator(self, init_state, start_date=datetime.utcnow()):
+        settings_path = '/home/dfrey/cso_ws/src/rdv-cap-sim/simulator/cso_gnc_sim/cfg/chaser.yaml'
+        settings_file = file(settings_path, 'r')
+        propSettings = yaml.load(settings_file)
+
+        propSettings = propSettings['propagator_settings']
+        self.mass = propSettings['orbitProp']['State']['settings']['mass']
+
+        self.prop = OrekitPropagator()
+        self.prop.initialize(propSettings, init_state, start_date)
+
+    def generate_population(self, seed, init_state, target_cart, wanted_position, start_date, time, N=1000):
+        self.size = N
+
+        for i in xrange(0, self.size):
+            ind = Individual()
+            ind.create_individual(seed)
+            ind.evaluate_fitness(self.prop, self.mass, init_state, target_cart, wanted_position, start_date, time)
+            self.pop.append(ind)
+
+        self.avg_fitness = 1.0 / self.size * sum([ind.fitness for ind in self.pop])
+
+    def evolve(self, init_state, target_cart, wanted_position, start_date, time, retain=0.2, random_select=0.05, mutate=0.01):
+        # Order population by fitness
+        graded = [(ind.fitness, ind) for ind in self.pop]
+        graded = [x[1] for x in sorted(graded)]
+
+        # Keep only a percentage of the population to breed
+        retain_length = int(len(graded) * retain)
+        parents = graded[:retain_length]
+
+        # Randomly add other individuals to promote genetic diversity
+        for ind in graded[retain_length:]:
+            if random_select > np.random.random():
+                parents.append(ind)
+
+        # Mutate some individuals
+        for ind in parents:
+            if mutate > np.random.random():
+                x_d = np.random.normal(0.0, 10**(np.floor(np.log10(abs(ind.delta_v[0]))) - 2.0))
+                y_d = np.random.normal(0.0, 10**(np.floor(np.log10(abs(ind.delta_v[1]))) - 2.0))
+                z_d = np.random.normal(0.0, 10**(np.floor(np.log10(abs(ind.delta_v[2]))) - 2.0))
+
+                ind.delta_v[0] += x_d
+                ind.delta_v[1] += y_d
+                ind.delta_v[2] += z_d
+
+        # Cross-over of parents to create children
+        parents_length = len(parents)
+        children_legth = len(self.pop) - parents_length
+        childrens = []
+        while len(childrens) < children_legth:
+            male = np.random.randint(0, parents_length-1)
+            female = np.random.randint(0, parents_length-1)
+            if male != female:
+                male = parents[male]
+                female = parents[female]
+
+                child = Individual()
+                delta_v_seed = 0.5 * (male.delta_v + female.delta_v)
+
+                # if male.fitness > female.fitness:
+                #     child.delta_v = male.delta_v
+                # else:
+                #     child.delta_v = female.delta_v
+
+                child.delta_v[0] = delta_v_seed[0]
+                child.delta_v[1] = delta_v_seed[1]
+                child.delta_v[2] = delta_v_seed[2]
+
+                # child.create_individual(delta_v_seed)
+                child.evaluate_fitness(self.prop, self.mass, init_state, target_cart, wanted_position, start_date, time)
+
+                childrens.append(child)
+
+            # parent = parents[0]
+            # child = Individual()
+            # delta_v_seed = parent.delta_v
+            # child.fitness = parent.fitness
+            # child.create_individual(delta_v_seed)
+            # child.evaluate_fitness(self.prop, self.mass, init_state, target_cart, wanted_position, start_date, time)
+            # childrens.append(child)
+
+        parents.extend(childrens)
+        self.pop = parents
+
+        self.avg_fitness = 1.0 / self.size * sum([ind.fitness for ind in self.pop])
+
+def linearized_including_J2(target, v_f, N_orb):
     # Initial reference osculatin orbit
     a_0 = target.a
     e_0 = target.e
@@ -72,10 +244,6 @@ def linearized_including_J2(target, de0, v_f, N_orb):
     # N_orb = ...
     E = lambda v: 2.0 * np.arctan(np.sqrt((1.0 - e_0) / (1.0 + e_0)) * np.tan(v / 2.0))
     M = lambda v: (E(v) - e_0 * np.sin(E(v))) % (2.0 * np.pi)
-
-    print M_0
-    print M(v)
-    print M_mean_dot
 
     tau = lambda v: (2.0 * np.pi * N_orb + M(v) - M_0) / M_mean_dot
 
@@ -176,10 +344,6 @@ def linearized_including_J2(target, de0, v_f, N_orb):
         [phi_61(v_f), phi_62(v_f), phi_63(v_f), phi_64(v_f), phi_65(v_f), phi_66(v_f)],
     ])
 
-    state = phi_.dot(de0)
-
-    print "TAU: " + str(tau(v_f))
-
     return phi_, tau(v_f)
 
 def find_v(time, a_mean, e_mean, i_mean, M_0, e_0):
@@ -235,295 +399,136 @@ def calc_v_from_E(E, e):
 
     return v
 
-def print_state(kep):
-    print "      a :     " + str(kep.a)
-    print "      e :     " + str(kep.e)
-    print "      i :     " + str(kep.i)
-    print "      O :     " + str(kep.O)
-    print "      w :     " + str(kep.w)
-    print "      v :     " + str(kep.v)
-
-start_date = datetime.utcnow()
-
-init_state_ch = KepOrbElem()
-init_state_ta = KepOrbElem()
-
-target_mean = KepOrbElem()
-
-chaser_cart = Cartesian()
-target_cart = Cartesian()
-
-chaser_kep = KepOrbElem()
-target_kep = KepOrbElem()
-
-chaser_LVLH = CartesianLVLH()
-
-# OSCULATING OE
-init_state_ta.a = 7066.09296657
-init_state_ta.e = 0.00540430198877
-init_state_ta.i = 1.72707085384
-init_state_ta.O = 0.740715584014
-init_state_ta.w = 1.60971872749
-init_state_ta.v = 3.12506797076
-target_cart.from_keporb(init_state_ta)
-target_mean.from_osc_elems(init_state_ta, 'real-world')
-
-print "----------------------------------------------------------"
-print "Initial target cartesian position: "
-print " >>> R: " + str(target_cart.R)
-print " >>> V: " + str(target_cart.V)
-print "----------------------------------------------------------\n"
-print "----------------------------------------------------------"
-print "Initial target osculating orbital elements: "
-print_state(init_state_ta)
-print "----------------------------------------------------------\n"
-
-# Initial relative position
-init_lvlh_ch = CartesianLVLH()
-init_lvlh_ch.R = np.array([-3.94336142396, 7.99995939962, -0.0024119166679])
-init_lvlh_ch.V = np.array([-0.000214949519072, 0.00618618172046, -6.20933747525e-5])
-chaser_cart.from_lvlh_frame(target_cart, init_lvlh_ch)
-init_state_ch.from_cartesian(chaser_cart)
-
-print "----------------------------------------------------------"
-print "Initial chaser cartesian position: "
-print " >>> R: " + str(chaser_cart.R)
-print " >>> V: " + str(chaser_cart.V)
-print "----------------------------------------------------------\n"
-
-print "----------------------------------------------------------"
-print "Initial chaser relative position: "
-print " >>> R: " + str(init_lvlh_ch.R)
-print " >>> V: " + str(init_lvlh_ch.V)
-print "----------------------------------------------------------\n"
-
-print "----------------------------------------------------------"
-print "Initial chaser osculating orbital elements: "
-print_state(init_state_ch)
-print "----------------------------------------------------------\n"
-
-de0_initial = np.array([
-    init_state_ch.a - init_state_ta.a,
-    init_state_ch.e - init_state_ta.e,
-    init_state_ch.i - init_state_ta.i,
-    init_state_ch.O - init_state_ta.O,
-    init_state_ch.w - init_state_ta.w,
-    init_state_ch.m - init_state_ta.m,
-])
-
-print "----------------------------------------------------------"
-print "Initial osculating orbital elements difference: "
-print " >>> da: " + str(de0_initial[0])
-print " >>> de: " + str(de0_initial[1])
-print " >>> di: " + str(de0_initial[2])
-print " >>> dO: " + str(de0_initial[3])
-print " >>> dw: " + str(de0_initial[4])
-print " >>> dm: " + str(de0_initial[5])
-print "----------------------------------------------------------\n"
-
-# Final wanted position
-state_final = np.array([0.0, 0.0, 0.0, 0.0, 18.0, 0.0])
-
-tau = 3005.0
-vn = find_v(tau, target_mean.a, target_mean.e, target_mean.i, init_state_ta.m, init_state_ta.e)
-
-v = init_state_ta.v
-N_orb = 0.0
-
-st_0 = linearized_including_J2(init_state_ta, 0.0, v, N_orb)
-
-phi_0 = st_0[0]
-
-v = vn[0]
-N_orb = 1.0
-
-st = linearized_including_J2(init_state_ta, 0.0, v, N_orb)
-
-phi = st[0]
-tau = st[1]
-
-phi_comb = np.array([
-    phi_0[0:6][3],
-    phi_0[0:6][4],
-    phi_0[0:6][5],
-    phi[0:6][3],
-    phi[0:6][4],
-    phi[0:6][5]
-])
-
-state_comb = np.array([init_lvlh_ch.R[0], init_lvlh_ch.R[1], init_lvlh_ch.R[2], 0.0, 18.0, 0.0])
-
-print "Phi comb"
-print phi_comb
-
-print "----------------------------------------------------------"
-print "Model test with true anomaly = initial anomaly: "
-print " >>> R: " + str(phi.dot(de0_initial)[3:6])
-print " >>> V: " + str(phi.dot(de0_initial)[0:3])
-print "----------------------------------------------------------\n"
-
-print "----------------------------------------------------------"
-print "Initial error in relative position: "
-print " >>> dR: " + str(abs(phi.dot(de0_initial)[3:6] - init_lvlh_ch.R) * 1e3) + " [m]"
-print " >>> dV: " + str(abs(phi.dot(de0_initial)[0:3] - init_lvlh_ch.V) * 1e3) + " [m/s]"
-print "----------------------------------------------------------\n"
-
-# Wanted initial relative orbital elements
-de0_wanted = np.linalg.inv(phi_comb).dot(state_comb)
-
-print de0_wanted
-
-de0_diff = de0_wanted - de0_initial
-print "\n Difference in initial delta orbital elements"
-print de0_diff
-
-de_chaser_wanted = np.array([
-    init_state_ch.a + de0_diff[0],
-    init_state_ch.e + de0_diff[1],
-    init_state_ch.i + de0_diff[2],
-    init_state_ch.O + de0_diff[3],
-    init_state_ch.w + de0_diff[4],
-    init_state_ch.m + de0_diff[5],
-])
-
-print "\n Wanted chaser orbital elements"
-print de_chaser_wanted
-
-chaser_kep_wanted = KepOrbElem()
-chaser_kep_wanted.a = de_chaser_wanted[0]
-chaser_kep_wanted.e = de_chaser_wanted[1]
-chaser_kep_wanted.i = de_chaser_wanted[2]
-chaser_kep_wanted.O = de_chaser_wanted[3]
-chaser_kep_wanted.w = de_chaser_wanted[4]
-chaser_kep_wanted.m = de_chaser_wanted[5]
-
-R_chaser_initial = chaser_cart.R
-V_chaser_initial = chaser_cart.V
-
-chaser_cart.from_keporb(chaser_kep_wanted)
-
-R_chaser_initial_wanted = chaser_cart.R
-V_chaser_initial_wanted = chaser_cart.V
-
-print R_chaser_initial
-print R_chaser_initial_wanted
-print "\n"
-print V_chaser_initial
-print V_chaser_initial_wanted
+def main():
+    # Define start date
+    start_date = datetime.utcnow()
+
+    chaser_osc = KepOrbElem()
+    target_osc = KepOrbElem()
+    target_mean = KepOrbElem()
+
+    chaser_cart = Cartesian()
+    target_cart = Cartesian()
+
+    # Define target and chaser initial positions
+    target_osc.a = 7075.384
+    target_osc.e = 0.0003721779
+    target_osc.i = 1.727
+    target_osc.O = 0.74233
+    target_osc.w = 1.628
+    target_osc.v = 4.67845
+
+    target_cart.from_keporb(target_osc)
+    target_mean.from_osc_elems(target_osc, 'real-world')
+
+    chaser_lvlh = CartesianLVLH()
+    chaser_lvlh.R = np.array([-3.84647216, 7.99996761, 0.03330542])
+    chaser_lvlh.V = np.array([1.67308709e-4, 6.11002933e-3, 4.20827334e-5])
+    chaser_cart.from_lvlh_frame(target_cart, chaser_lvlh)
+    chaser_osc.from_cartesian(chaser_cart)
+
+    # Choose a time for the transfer
+    t = 3000.0
+
+    # Evaluate anomaly after t seconds
+    vn = find_v(t, target_mean.a, target_mean.e, target_mean.i, target_osc.m, target_osc.e)
+
+    st_0 = linearized_including_J2(target_osc, target_osc.v, 0.0)
+    phi_0 = st_0[0]
+
+    st = linearized_including_J2(target_osc, vn[0], 1.0)
+    phi = st[0]
+
+    phi_comb = np.array([
+        phi_0[0:6][3],
+        phi_0[0:6][4],
+        phi_0[0:6][5],
+        phi[0:6][3],
+        phi[0:6][4],
+        phi[0:6][5]
+    ])
+
+    state_comb = np.array([chaser_lvlh.R[0], chaser_lvlh.R[1], chaser_lvlh.R[2], 0.0, 18.0, 0.0])
+
+    # Wanted initial relative orbital elements
+    de0_wanted = np.linalg.inv(phi_comb).dot(state_comb)
+
+    # Initial difference in osculating orbital elements
+    de0_initial = np.array([
+        chaser_osc.a - target_osc.a,
+        chaser_osc.e - target_osc.e,
+        chaser_osc.i - target_osc.i,
+        chaser_osc.O - target_osc.O,
+        chaser_osc.w - target_osc.w,
+        chaser_osc.m - target_osc.m,
+    ])
+
+    de0_diff = de0_wanted - de0_initial
+
+    de_chaser_wanted = np.array([
+        chaser_osc.a + de0_diff[0],
+        chaser_osc.e + de0_diff[1],
+        chaser_osc.i + de0_diff[2],
+        chaser_osc.O + de0_diff[3],
+        chaser_osc.w + de0_diff[4],
+        chaser_osc.m + de0_diff[5],
+    ])
+
+    chaser_kep_wanted = KepOrbElem()
+    chaser_kep_wanted.a = de_chaser_wanted[0]
+    chaser_kep_wanted.e = de_chaser_wanted[1]
+    chaser_kep_wanted.i = de_chaser_wanted[2]
+    chaser_kep_wanted.O = de_chaser_wanted[3]
+    chaser_kep_wanted.w = de_chaser_wanted[4]
+    chaser_kep_wanted.m = de_chaser_wanted[5]
+
+    R_chaser_initial = chaser_cart.R
+    V_chaser_initial = chaser_cart.V
+
+    chaser_cart.from_keporb(chaser_kep_wanted)
+
+    R_chaser_initial_wanted = chaser_cart.R
+    V_chaser_initial_wanted = chaser_cart.V
+
+    # Evaluate delta-v seed
+    delta_v_seed = V_chaser_initial_wanted - V_chaser_initial
+
+    # Re-set chaser_cart to initial condition
+    chaser_cart.R = R_chaser_initial
+    chaser_cart.V = V_chaser_initial
+
+    # Target propagator
+    settings_path = '/home/dfrey/cso_ws/src/rdv-cap-sim/simulator/cso_gnc_sim/cfg/target.yaml'
+    settings_file = file(settings_path, 'r')
+    propSettings = yaml.load(settings_file)
+    propSettings = propSettings['propagator_settings']
 
-chaser_LVLH.from_cartesian_pair(chaser_cart, target_cart)
+    OrekitPropagator.init_jvm()
+    prop_target = OrekitPropagator()
+    prop_target.initialize(propSettings, target_osc, start_date)
 
-print "\n "
-print "LVLH initial:    " + str(init_lvlh_ch.R)
-print "LVLH calculated: " + str(chaser_LVLH.R)
+    target_prop = prop_target.propagate(start_date + timedelta(seconds=t))
 
-print "\n "
-print "Delta-V: " + str(V_chaser_initial_wanted - V_chaser_initial)
+    delta_v_seed = np.array([-5.62461607e-04, -9.63933081e-05, 1.07564374e-03])
 
-chaser_cart.R = R_chaser_initial_wanted
-chaser_cart.V = V_chaser_initial_wanted
+    # Create population
+    pop = Population()
+    pop.set_propagator(chaser_kep_wanted, start_date)
+    pop.generate_population(delta_v_seed, chaser_cart, target_prop[0], state_comb[3:6], start_date, t)
 
-chaser_kep.from_cartesian(chaser_cart)
+    gen = 200
+    i = 0
+    while i < gen:
 
-print "R_chaser_wanted: "  + str(R_chaser_initial)
-print "R_chaser:        " + str(R_chaser_initial_wanted)
+        pop.evolve(chaser_cart, target_prop[0], state_comb[3:6], start_date, t)
+        print "\nGen nr. " + str(i) + ":  " + str(pop.avg_fitness)
+        print " >>> Best:    " + str(pop.pop[0].fitness)
+        print " >>> Deltav:  " + str(pop.pop[0].delta_v)
+        print " >>> Arrival: " + str(pop.pop[0].arrival.R)
+        i += 1
 
-# Propagate target by tau
-settings_path = '/home/dfrey/cso_ws/src/rdv-cap-sim/simulator/cso_gnc_sim/cfg/chaser.yaml'
-settings_file = file(settings_path, 'r')
-propSettings = yaml.load(settings_file)
-propSettings = propSettings['propagator_settings']
+    print pop.pop[0].delta_v
 
-OrekitPropagator.init_jvm()
-prop_chaser = OrekitPropagator()
-# get settings from yaml file
-prop_chaser.initialize(propSettings,
-                       chaser_kep,
-                       start_date)
+if __name__ == "__main__":
+    main()
 
-settings_path = '/home/dfrey/cso_ws/src/rdv-cap-sim/simulator/cso_gnc_sim/cfg/target.yaml'
-settings_file = file(settings_path, 'r')
-propSettings = yaml.load(settings_file)
-propSettings = propSettings['propagator_settings']
-prop_target = OrekitPropagator()
-# get settings from yaml file
-prop_target.initialize(propSettings,
-                       init_state_ta,
-                       start_date)
-
-target_init = prop_target.propagate(start_date)
-chaser_init = prop_chaser.propagate(start_date)
-
-print "----------------------------------------------------------"
-print "Initial target cartesian position from propagator: "
-print " >>> R: " + str(target_init[0].R)
-print " >>> V: " + str(target_init[0].V)
-print "----------------------------------------------------------"
-
-print "----------------------------------------------------------"
-print "Initial chaser cartesian position from propagator: "
-print " >>> R: " + str(chaser_init[0].R)
-print " >>> V: " + str(chaser_init[0].V)
-print "----------------------------------------------------------"
-
-target = prop_target.propagate(start_date + timedelta(seconds=tau))
-chaser = prop_chaser.propagate(start_date + timedelta(seconds=tau))
-
-target_cart.R = target[0].R
-target_cart.V = target[0].V
-
-chaser_cart.R = chaser[0].R
-chaser_cart.V = chaser[0].V
-
-chaser_LVLH.from_cartesian_pair(chaser_cart, target_cart)
-
-print "Chaser R: " + str(chaser_LVLH.R)
-print "Chaser V: " + str(chaser_LVLH.V)
-
-
-e = []
-e_mean = []
-sum_w_v = []
-sum_w_v_mean = []
-
-lvlh_r = []
-lvlh_v = []
-lvlh_h = []
-
-diff_r = []
-diff_r_pk = []
-
-mu_earth = 398600.4
-
-tmax = 10000
-dt = 10
-for i in xrange(1, tmax, dt):
-    chaser = prop_chaser.propagate(start_date + timedelta(seconds=i))
-    target = prop_target.propagate(start_date + timedelta(seconds=i))
-
-    chaser_cart = chaser[0]
-    target_cart = target[0]
-
-    diff_r.append(np.linalg.norm(chaser_cart.R) - np.linalg.norm(target_cart.R))
-
-    chaser_kep.from_cartesian(chaser_cart)
-
-    chaser_LVLH.from_cartesian_pair(chaser_cart, target_cart)
-
-    lvlh_r.append(chaser_LVLH.R[0])
-    lvlh_v.append(chaser_LVLH.R[1])
-    lvlh_h.append(chaser_LVLH.R[2])
-
-    e.append(chaser_kep.a)
-    # plt.plot(i, chaser_kep.a, 'k.', markersize=5)
-    sum_w_v.append(chaser_kep.v + chaser_kep.w)
-
-    i_osc = chaser_kep.i
-
-    chaser_kep.from_osc_elems(chaser_kep)
-    # e_mean.append((i_osc - chaser_kep.i)* np.linalg.norm(chaser_cart.R))
-    # plt.plot(i, chaser_kep.a, 'r.', markersize=5)
-    sum_w_v_mean.append(chaser_kep.v + chaser_kep.w)
-
-plt.plot(lvlh_v, lvlh_r, 'b-')
-plt.show()

@@ -197,10 +197,12 @@ class Solver(object):
         c1.abs_state.v = theta_1
         c1.duration = self.travel_time(chaser_mean, chaser_mean.v, theta_1)
         c1.description = 'Apogee/Perigee raise'
-        self.manoeuvre_plan.append(c1)
 
+        c1.initial_rel_state = self.chaser.rel_state.R
         # Propagate chaser and target
         self._propagator(c1.duration, deltaV_C_1)
+        c1.final_rel_state = self.chaser.rel_state.R
+        self.manoeuvre_plan.append(c1)
 
         chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.prop_type)
 
@@ -210,12 +212,12 @@ class Solver(object):
         c2.abs_state.v = theta_2
         c2.duration = np.pi * np.sqrt(chaser_mean.a**3 / mu_earth)
         c2.description = 'Apogee/Perigee raise'
-        self.manoeuvre_plan.append(c2)
 
+        c2.initial_rel_state = self.chaser.rel_state.R
         # Propagate chaser and target
         self._propagator(c2.duration, deltaV_C_2)
-
-        chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.prop_type)
+        c2.final_rel_state = self.chaser.rel_state.R
+        self.manoeuvre_plan.append(c2)
 
     def adjust_perigee(self, checkpoint):
         """
@@ -283,10 +285,11 @@ class Solver(object):
         c.abs_state.v = theta_i
         c.duration = self.travel_time(chaser_mean, chaser_mean.v, theta_i)
         c.description = 'Argument of Perigee correction'
-        self.manoeuvre_plan.append(c)
-
+        c.initial_rel_state = self.chaser.rel_state.R
         # Propagate chaser and target
         self._propagator(c.duration, deltaV_C)
+        c.final_rel_state = self.chaser.rel_state.R
+        self.manoeuvre_plan.append(c)
 
     def plane_correction(self, checkpoint):
         """
@@ -402,10 +405,12 @@ class Solver(object):
         c.abs_state.v = theta_i
         c.duration = self.travel_time(chaser_mean, chaser_mean.v, theta_i)
         c.description = 'Inclination and RAAN correction'
-        self.manoeuvre_plan.append(c)
 
+        c.initial_rel_state = self.chaser.rel_state.R
         # Propagate chaser and target
         self._propagator(c.duration, deltaV_C)
+        c.final_rel_state = self.chaser.rel_state.R
+        self.manoeuvre_plan.append(c)
 
     def drift_to(self, checkpoint):
         """
@@ -526,7 +531,21 @@ class Solver(object):
                             self.chaser.set_from_other_satellite(chaser_tmp)
                             self.target.set_from_other_satellite(target_tmp)
                             self.epoch = epoch_tmp
-                            self.scenario.initialize_propagators(self.chaser.abs_state, self.target.abs_state, self.epoch)
+
+                            chaser_cartesian_tmp = Cartesian()
+                            chaser_cartesian_tmp.from_keporb(self.chaser.abs_state)
+
+                            target_cartesian_tmp = Cartesian()
+                            target_cartesian_tmp.from_keporb(self.target.abs_state)
+
+                            self._change_propagator_ic(self.scenario.prop_chaser, chaser_cartesian_tmp, self.epoch,
+                                                       self.chaser.mass)
+                            self._change_propagator_ic(self.scenario.prop_target, target_cartesian_tmp, self.epoch,
+                                                       self.target.mass)
+
+                            # self.scenario.initialize_propagators(self.chaser.abs_state, self.target.abs_state, self.epoch)
+
+
                             self.manoeuvre_plan = manoeuvre_plan_tmp
                             # dr_next_old should be the same as the one at the beginning
                             dr_next = dr_next_tmp
@@ -537,8 +556,13 @@ class Solver(object):
                             c.set_abs_state(chaser_tmp.abs_state)
                             c.set_rel_state(chaser_tmp.rel_state)
                             c.duration = dt
-                            c.description = 'Drift for ' + str(t_est) + ' seconds'
+                            c.description = 'Drift for ' + str(dt) + ' seconds'
+
+                            c.initial_rel_state = chaser_tmp.rel_state.R
+                            # Propagate chaser and target
+                            c.final_rel_state = self.chaser.rel_state.R
                             self.manoeuvre_plan.append(c)
+
                             dr_next_old = dr_next
 
                     else:
@@ -549,7 +573,12 @@ class Solver(object):
                         c.set_rel_state(chaser_tmp.rel_state)
                         c.duration = dt
                         c.description = 'Drift for ' + str(dt) + ' seconds'
+
+                        c.initial_rel_state = chaser_tmp.rel_state.R
+                        # Propagate chaser and target
+                        c.final_rel_state = self.chaser.rel_state.R
                         self.manoeuvre_plan.append(c)
+
                         dr_next_old = dr_next
 
                 elif dr_next >= 0.0 and dr_next_old >= 0.0:
@@ -942,6 +971,8 @@ class Solver(object):
             print '--> Normalized DeltaV: ' + str(np.linalg.norm(command.dV))
             print '--> Idle after burn:   ' + str(command.duration)
             print '--> Burn position:     ' + str(command.abs_state.v)
+            print '--> Initial rel state: ' + str(command.initial_rel_state)
+            print '--> Final rel state:   ' + str(command.final_rel_state)
             tot_dv += np.linalg.norm(command.dV)
             tot_dt += command.duration
 
@@ -1043,22 +1074,25 @@ class Solver(object):
         t_min = int(checkpoint.t_min)
         t_max = int(checkpoint.t_max)
 
-        t_min = 3005
-        t_max = 3006
-
         for dt in xrange(t_min, t_max):
             # Estimate flight time
-            N_orb = np.floor(dt / T_mean) + int((self.travel_time(self.target.abs_state, v_0, 0.0) < dt) and (dt / T_mean < 1.0))
             E = lambda v: 2.0 * np.arctan(np.sqrt((1.0 - e_0) / (1.0 + e_0)) * np.tan(v / 2.0))
             M = lambda v: (E(v) - e_0 * np.sin(E(v))) % (2.0 * np.pi)
 
-            # tau = lambda v: (2.0 * np.pi * N_orb + M(v) - M_0) / M_mean_dot
+            N_orb = np.floor(dt / T_mean) + int((self.travel_time(self.target.abs_state, v_0, 0.0) < dt) and (dt / T_mean < 1.0))
 
-            tau = lambda v: dt
+            # propagated_tg = self.scenario.prop_target.propagate(self.epoch + timedelta(seconds=dt))
 
-            M_f = (tau(v_0) * M_mean_dot) + M_0 - 2.0 * np.pi * N_orb
+
+            def tau(v):
+                if v != v_0:
+                    return (2.0 * np.pi * N_orb + M(v) - M_0) / M_mean_dot
+                else:
+                    return 0.0
+
+            M_f = (dt * M_mean_dot) + M_0 - 2.0 * np.pi * N_orb
             E_f = self._calc_E_from_m(e_0, M_f)
-            v_f = 2.0 * np.arctan(np.sqrt((1.0 + e_0) / (1.0 - e_0)) * np.tan(E_f / 2.0))
+            v_f = (2.0 * np.arctan(np.sqrt((1.0 + e_0) / (1.0 - e_0)) * np.tan(E_f / 2.0))) % (2.0 * np.pi)
 
             # Position
             r = lambda v: p_0 / (1.0 + e_0 * np.cos(v))
@@ -1192,12 +1226,12 @@ class Solver(object):
             ])
 
             phi_comb = np.array([
-                phi_i[3][:],
-                phi_i[4][:],
-                phi_i[5][:],
-                phi_f[3][:],
-                phi_f[4][:],
-                phi_f[5][:]
+                phi_i[0:6][3],
+                phi_i[0:6][4],
+                phi_i[0:6][5],
+                phi_f[0:6][3],
+                phi_f[0:6][4],
+                phi_f[0:6][5]
             ])
 
             state_comb = np.array([self.chaser.rel_state.R[0],
@@ -1224,6 +1258,7 @@ class Solver(object):
             # Evaluate delta_V_1
             delta_V_1 = chaser_cart_wanted.V - chaser_cart.V
 
+
             # Evaluate delta_V_2
             state_f = phi_f.dot(de0_wanted)
             delta_V_2 = checkpoint.rel_state.V - state_f[0:3]
@@ -1240,11 +1275,11 @@ class Solver(object):
             deltaV_tot = np.linalg.norm(delta_V_1) + np.linalg.norm(delta_V_2)
 
             if best_dV > deltaV_tot:
-                if self.is_trajectory_safe(dt, approach_ellipsoid):
-                    best_dV = deltaV_tot
-                    best_dV_1 = delta_V_1
-                    best_dV_2 = delta_V_2
-                    best_dt = dt
+                # if self.is_trajectory_safe(dt, approach_ellipsoid):
+                best_dV = deltaV_tot
+                best_dV_1 = delta_V_1
+                best_dV_2 = delta_V_2
+                best_dt = dt
 
         c1 = RelativeMan()
         c1.dV = best_dV_1
