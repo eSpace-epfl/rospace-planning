@@ -864,7 +864,7 @@ class Solver(object):
         chaser_cart = chaser_prop[0]
         target_cart = target_prop[0]
 
-        self.chaser.abs_state.from_cartesian(chaser_cart)
+        # self.chaser.abs_state.from_cartesian(chaser_cart)
 
         # Add deltaV
         chaser_cart.V += dv
@@ -1263,15 +1263,6 @@ class Solver(object):
             state_f = phi_f.dot(de0_wanted)
             delta_V_2 = checkpoint.rel_state.V - state_f[0:3]
 
-            # self._change_propagator_ic(self.scenario.prop_chaser, chaser_cart_wanted, self.epoch, self.chaser.mass)
-            #
-            # prop_chaser = self.scenario.prop_chaser.propagate(self.epoch + timedelta(seconds=dt))
-            # prop_target = self.scenario.prop_target.propagate(self.epoch + timedelta(seconds=dt))
-            #
-            #
-            # dr_TEME = prop_chaser[0].R - prop_target[0].R
-            # dr_LVLH = prop_target[0].get_lof().dot(dr_TEME)
-
             deltaV_tot = np.linalg.norm(delta_V_1) + np.linalg.norm(delta_V_2)
 
             if best_dV > deltaV_tot:
@@ -1285,11 +1276,16 @@ class Solver(object):
         c1.dV = best_dV_1
         c1.set_abs_state(self.chaser.abs_state)
         c1.set_rel_state(self.chaser.rel_state)
-        c1.duration = 0
+        c1.duration = 1e-3
         c1.description = 'Linearized-J2 solution'
-        self.manoeuvre_plan.append(c1)
 
+        # self._propagator(1e-3, best_dV_1)
+
+        c1.initial_rel_state = self.chaser.rel_state.R
+        # Propagate chaser and target
         self._propagator(1e-3, best_dV_1)
+        c1.final_rel_state = self.chaser.rel_state.R
+        self.manoeuvre_plan.append(c1)
 
         chaser_cart.from_keporb(self.chaser.abs_state)
 
@@ -1299,9 +1295,12 @@ class Solver(object):
         c2.set_rel_state(self.chaser.rel_state)
         c2.duration = best_dt
         c2.description = 'Linearized-J2 solution'
-        self.manoeuvre_plan.append(c2)
 
-        self._propagator(best_dt, best_dV_2)
+        c2.initial_rel_state = self.chaser.rel_state.R
+        # Propagate chaser and target
+        self._propagator(c2.duration, best_dV_2)
+        c2.final_rel_state = self.chaser.rel_state.R
+        self.manoeuvre_plan.append(c2)
 
     def _change_propagator_ic(self, propagator, initial_state, epoch, mass):
         """

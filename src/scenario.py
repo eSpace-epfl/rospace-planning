@@ -88,6 +88,7 @@ class Scenario(object):
                     self.chaser_ic = obj['chaser_ic']
                     self.target_ic = obj['target_ic']
                     self.date = obj['scenario_epoch']
+                    self.prop_type = obj['prop_type']
 
                     # Add lockers again
                     for chkp in self.checkpoints:
@@ -96,9 +97,12 @@ class Scenario(object):
                     self.chaser_ic.add_lock()
                     self.target_ic.add_lock()
 
+                    #Initialize propagators
+                    self.initialize_propagators(self.chaser_ic.abs_state, self.target_ic.abs_state, self.date, self.prop_type)
+
                     return obj['manoeuvre_plan']
                 else:
-                    print "[WARNING]: Old scenario does not correspond to actual one."
+                    print "[WARNING]: Scenario in cfg folder does not correspond to actual one."
                     sys.exit(1)
         except IOError:
             print "\n[WARNING]: Scenario file not found."
@@ -129,7 +133,8 @@ class Scenario(object):
             self.target_ic.remove_lock()
 
             obj = {'scenario_name': self.name, 'checkpoints': self.checkpoints, 'manoeuvre_plan': manoeuvre_plan,
-                   'chaser_ic': self.chaser_ic, 'target_ic': self.target_ic, 'scenario_epoch': self.date}
+                   'chaser_ic': self.chaser_ic, 'target_ic': self.target_ic, 'scenario_epoch': self.date,
+                   'prop_type': self.prop_type}
 
             pickle.dump(obj, file, protocol=pickle.HIGHEST_PROTOCOL)
 

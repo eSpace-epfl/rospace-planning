@@ -132,20 +132,15 @@ def plot_result(manoeuvre_plan, scenario, save_path):
         print "     Start pos: " + str(chaser.rel_state.R)
 
         # Creating list of radius of target and chaser
-        R_target = [target_cart.R]
-        R_chaser = [chaser_cart.R]
-        R_chaser_lvlh = [chaser.rel_state.R]
+        R_target = []
+        R_chaser = []
+        R_chaser_lvlh = []
 
         man = manoeuvre_plan[i]
 
-        r_C = chaser_cart.R
-        v_C = chaser_cart.V
-        r_T = target_cart.R
-        v_T = target_cart.V
-
-        for j in xrange(0, int(np.floor(man.duration)), 10):
-            chaser_prop = scenario.prop_chaser.propagate(epoch + timedelta(seconds=j+1))
-            target_prop = scenario.prop_target.propagate(epoch + timedelta(seconds=j+1))
+        for j in xrange(0, int(np.floor(man.duration)), 100):
+            chaser_prop = scenario.prop_chaser.propagate(epoch + timedelta(seconds=j))
+            target_prop = scenario.prop_target.propagate(epoch + timedelta(seconds=j))
 
             chaser_cart.R = chaser_prop[0].R
             chaser_cart.V = chaser_prop[0].V
@@ -158,34 +153,26 @@ def plot_result(manoeuvre_plan, scenario, save_path):
             R_target.append(target_cart.R)
             R_chaser_lvlh.append(chaser.rel_state.R)
 
-        chaser_prop = scenario.prop_chaser.propagate(epoch + timedelta(seconds=man.duration))
-        target_prop = scenario.prop_target.propagate(epoch + timedelta(seconds=man.duration))
+        # Re-initialize propagators and update epoch
+        epoch += timedelta(seconds=man.duration)
+
+        chaser_prop = scenario.prop_chaser.propagate(epoch)
+        target_prop = scenario.prop_target.propagate(epoch)
 
         chaser_cart.R = chaser_prop[0].R
         chaser_cart.V = chaser_prop[0].V
+
         target_cart.R = target_prop[0].R
         target_cart.V = target_prop[0].V
 
         chaser.rel_state.from_cartesian_pair(chaser_cart, target_cart)
 
-        # Re-initialize propagators and update epoch
-        epoch += timedelta(seconds=man.duration)
         chaser_cart.V += man.dV
 
-        # Osculating orbital elements
-        chaser_new_ic = KepOrbElem()
-        target_new_ic = KepOrbElem()
-        chaser_new_ic.from_cartesian(chaser_cart)
-        target_new_ic.from_cartesian(target_cart)
-
-        # scenario.initialize_propagators(chaser_new_ic, target_new_ic, epoch)
-
-        _change_propagator_ic(scenario.prop_chaser, chaser_cart, epoch + timedelta(seconds=man.duration), chaser.mass)
-        _change_propagator_ic(scenario.prop_target, target_cart, epoch + timedelta(seconds=man.duration), target.mass)
+        _change_propagator_ic(scenario.prop_chaser, chaser_cart, epoch, chaser.mass)
+        _change_propagator_ic(scenario.prop_target, target_cart, epoch, target.mass)
 
         print "     End pos: " + str(chaser.rel_state.R)
-
-        epoch += timedelta(seconds=man.duration)
 
         # EXTRA PROPAGATION TO CHECK TRAJECTORY SAFETY
 
@@ -202,7 +189,7 @@ def plot_result(manoeuvre_plan, scenario, save_path):
         #
         # chaser_extra.rel_state.from_cartesian_pair(chaser_cart_extra, target_cart_extra)
         #
-        R_chaser_lvlh_extra = [chaser_extra.rel_state.R]
+        # R_chaser_lvlh_extra = [chaser_extra.rel_state.R]
         #
         # for j in xrange(0, extra_propagation):
         #     r_C_extra, v_C_extra = pk.propagate_lagrangian(r_C_extra, v_C_extra, 1.0, mu_earth)
@@ -225,18 +212,20 @@ def plot_result(manoeuvre_plan, scenario, save_path):
         # Saving in .mat file
         sio.savemat(save_path + '/test_' + str(last + 1) + '/manoeuvre_' + str(i) + '.mat',
                     mdict={'abs_state_c': R_chaser, 'rel_state_c': R_chaser_lvlh, 'abs_state_t': R_target,
-                           'deltaV': man.dV, 'duration': man.duration, 'rel_state_c_extra': R_chaser_lvlh_extra})
+                           'deltaV': man.dV, 'duration': man.duration}) #, 'rel_state_c_extra': R_chaser_lvlh_extra})
 
     print "\nManoeuvre saved."
 
-def main(prop):
-    # Import scenario and initial conditions
+def main():
+    # Create scenario
     scenario = Scenario()
-    scenario.prop_type = prop
     scenario.import_yaml_scenario()
 
     # Import scenario solution
     manoeuvre_plan = scenario.import_solved_scenario()
+
+    scenario.prop_chaser._propagator_num.resetAtEnd = False
+    scenario.prop_target._propagator_num.resetAtEnd = False
 
     # Add lockers to manoeuvre plan
     for man in manoeuvre_plan:
@@ -248,6 +237,4 @@ def main(prop):
     plot_result(manoeuvre_plan, scenario, save_path)
 
 if __name__ == "__main__":
-    # prop = '2-body'
-    prop = 'real-world'
-    main(prop)
+    main()
