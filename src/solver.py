@@ -11,10 +11,10 @@
 import numpy as np
 import pykep as pk
 
-from space_tf import Cartesian, mu_earth, R_earth, KepOrbElem, J_2
-from manoeuvre import Manoeuvre, RelativeMan
+from space_tf import Cartesian, KepOrbElem, CartesianLVLH, J_2, mu_earth, R_earth
+from manoeuvre import Manoeuvre
 from state import Satellite, Chaser
-from checkpoint import RelativeCP, AbsoluteCP
+from checkpoint import CheckPoint
 from scenario import Scenario
 from datetime import timedelta, datetime
 
@@ -29,27 +29,125 @@ from org.orekit.time import AbsoluteDate, TimeScalesFactory
 
 class Solver(object):
     """
-        Base solver class.
+        Base solver class, which takes a predefined scenario and some initial conditions and outputs one possible
+        manoeuvre plan that can be executed in order to achieve the final wanted position.
+
+        NOTE: This solver works with optimal solutions for each single manoeuvre, but it has to be noted that the
+            combination of all those optimal solutions may be sub-optimal!
+            For each manoeuvre it choose to apply the one that consumes the least delta-V within a certain given time
+            interval. Therefore, depending on the time interval chosen, the solution may not be the optimal one!
 
     Attributes:
-        manoeuvre_plan (list): List of the manoeuvre that has to be executed to perform the scenario
+        manoeuvre_plan (list): List of the manoeuvre that has to be executed to perform the scenario.
+        scenario (Scenario): The scenario that has to be solved.
+        chaser (Chaser): Chaser actual state, evolving in time according to the solver.
+        target (Satellite): Target actual state, evolving in time according to the solver.
+        epoch (datetime): Actual epoch, evolving in time according to the solver.
     """
 
-    def __init__(self):
+    def __init__(self, scenario=None):
+        """Initialize solver attributes given the scenario to be solved.
+
+        Args:
+            scenario (Scenario)
+        """
+
         self.manoeuvre_plan = []
-
         self.scenario = Scenario()
-
         self.chaser = Chaser()
         self.target = Satellite()
-
         self.epoch = datetime.utcnow()
 
-    def set_solver(self, scenario):
-        self.scenario = scenario
-        self.chaser.set_from_other_satellite(scenario.chaser_ic)
-        self.target.set_from_other_satellite(scenario.target_ic)
-        self.epoch = scenario.date
+        if scenario != None:
+            self.scenario = scenario
+            self.epoch = scenario.date
+            self.chaser.set_from_satellite(scenario.chaser_ic)
+            self.target.set_from_satellite(scenario.target_ic)
+
+    def _print_state(self, satellite):
+        """Print out satellite state.
+
+        Args:
+            satellite (Satellite)
+        """
+
+        print " >> Cartesian: "
+        print "      R :      " + str(satellite.abs_state.R) + "   [km]"
+        print "      V :      " + str(satellite.abs_state.V) + "   [km/s]"
+        print ""
+
+        kep_osc = satellite.get_osc_oe()
+
+        print " >> Osculating orbital elements: "
+        print "      a :      " + str(kep_osc.a)
+        print "      e :      " + str(kep_osc.e)
+        print "      i :      " + str(kep_osc.i)
+        print "      O :      " + str(kep_osc.O)
+        print "      w :      " + str(kep_osc.w)
+        print "      v :      " + str(kep_osc.v)
+        print ""
+
+        kep_mean = satellite.get_mean_oe(self.scenario.prop_type)
+
+        print " >> Mean orbital elements: "
+        print "      a :      " + str(kep_mean.a)
+        print "      e :      " + str(kep_mean.e)
+        print "      i :      " + str(kep_mean.i)
+        print "      O :      " + str(kep_mean.O)
+        print "      w :      " + str(kep_mean.w)
+        print "      v :      " + str(kep_mean.v)
+
+        if hasattr(satellite, 'rel_state'):
+            print ""
+            print " >> Cartesian LVLH: "
+            print "      R :      " + str(satellite.rel_state.R) + "   [km]"
+            print "      V :      " + str(satellite.rel_state.V) + "   [km/s]"
+
+    def _print_checkpoint(self, checkpoint):
+        """Print out checkpoint informations.
+
+        Args:
+            checkpoint (CheckPoint)
+        """
+
+        state_type = type(checkpoint.state)
+
+        if state_type == Cartesian:
+            print " >> Cartesian: "
+            print "      R :      " + str(checkpoint.state.R) + "   [km]"
+            print "      V :      " + str(checkpoint.state.V) + "   [km/s]"
+            print ""
+        elif state_type == KepOrbElem:
+            print " >> Mean orbital elements: "
+            print "      a :      " + str(checkpoint.state.a)
+            print "      e :      " + str(checkpoint.state.e)
+            print "      i :      " + str(checkpoint.state.i)
+            print "      O :      " + str(checkpoint.state.O)
+            print "      w :      " + str(checkpoint.state.w)
+            print "      v :      " + str(checkpoint.state.v)
+        elif state_type == CartesianLVLH:
+            print " >> Cartesian LVLH: "
+            print "      R :      " + str(checkpoint.state.R) + "   [km]"
+            print "      V :      " + str(checkpoint.state.V) + "   [km/s]"
+            print ""
+        else:
+            raise TypeError('CheckPoint state type not recognized!')
+
+    def _print_result(self):
+        tot_dv = 0
+        tot_dt = 0
+
+        for it, command in enumerate(self.manoeuvre_plan):
+            print '\n' + command.description + ', command nr. ' + str(it) + ':'
+            print '--> DeltaV:            ' + str(command.dV)
+            print '--> Normalized DeltaV: ' + str(np.linalg.norm(command.dV))
+            print '--> Idle after burn:   ' + str(command.duration)
+            print '--> Initial rel state: ' + str(command.initial_rel_state)
+            print '--> Final rel state:   ' + str(command.final_rel_state)
+            tot_dv += np.linalg.norm(command.dV)
+            tot_dt += command.duration
+
+        return tot_dv, tot_dt
 
     def solve_scenario(self):
         """
@@ -72,24 +170,10 @@ class Solver(object):
         approach_ellipsoid = self.scenario.approach_ellipsoid
 
         print "--------------------Chaser initial state-------------------"
-        print " >> Osc Elements:"
-        self.print_state(self.chaser.abs_state)
-        print "\n >> Mean Elements:"
-        chaser_mean = KepOrbElem()
-        chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.prop_type)
-        self.print_state(chaser_mean)
-        print "\n >> LVLH:"
-        print "     R: " + str(self.chaser.rel_state.R)
-        print "     V: " + str(self.chaser.rel_state.V)
+        self._print_state(self.chaser)
         print "\n--------------------Target initial state-------------------"
-        print " >> Osc Elements:"
-        self.print_state(self.target.abs_state)
-        print "\n >> Mean Elements:"
-        target_mean = KepOrbElem()
-        target_mean.from_osc_elems(self.target.abs_state, self.scenario.prop_type)
-        self.print_state(target_mean)
+        self._print_state(self.target)
         print "------------------------------------------------------------\n"
-
 
         # Start solving scenario by popping positions from position list
         for checkpoint in checkpoints:
@@ -97,33 +181,25 @@ class Solver(object):
             print "[GOING TO CHECKPOINT NR. " + str(checkpoint.id) + "]"
             print "======================================================================="
             print "[CHECKPOINT]:"
-            if hasattr(checkpoint, 'abs_state'):
-                print " >> Kep:"
-                self.print_state(checkpoint.abs_state)
-            else:
-                print " >> LVLH:"
-                print "      R:     " + str(checkpoint.rel_state.R)
-                print "      V:     " + str(checkpoint.rel_state.V)
+            self._print_checkpoint(checkpoint)
             print "======================================================================="
-            if hasattr(checkpoint, 'rel_state'):
+            if type(checkpoint.state) == Cartesian or type(checkpoint.state) == CartesianLVLH:
                 # Relative navigation
                 self.relative_solver(checkpoint, approach_ellipsoid)
             else:
                 # Absolute navigation
                 self.absolute_solver(checkpoint)
+            print "======================================================================="
             print "[REACHED STATE]:"
-            chaser_mean = KepOrbElem()
-            chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.prop_type)
-            print " >> Kep:"
-            self.print_state(chaser_mean)
-            print "\n >> LVLH:"
-            print "      R:     " + str(self.chaser.rel_state.R)
-            print "      V:     " + str(self.chaser.rel_state.V)
+            print "--------------------Chaser-------------------"
+            self._print_state(self.chaser)
+            print "--------------------Target-------------------"
+            self._print_state(self.target)
             print "=======================================================================\n"
 
-        tot_dV, tot_dt = self.print_result()
+        tot_dV, tot_dt = self._print_result()
 
-        print "Final achieved relative position:     " + str(self.chaser.rel_state.R)
+        print "\n[FINAL RELATIVE POSITION]:     " + str(self.chaser.rel_state.R)
 
         print "\n\n-----------------> Manoeuvre elaborated <--------------------\n"
         print "---> Manoeuvre duration:    " + str(tot_dt) + " seconds"
@@ -145,14 +221,13 @@ class Solver(object):
             target (Satellite): Target state.
         """
         # Evaluating mean orbital elements
-        chaser_mean = KepOrbElem()
-        chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.prop_type)
+        chaser_mean = self.chaser.get_mean_oe(self.scenario.prop_type)
 
         # Extract initial and final semi-major axis and eccentricities
         a_i = chaser_mean.a
         e_i = chaser_mean.e
-        a_f = checkpoint.abs_state.a
-        e_f = checkpoint.abs_state.e
+        a_f = checkpoint.state.a
+        e_f = checkpoint.state.e
 
         r_p_i = a_i * (1.0 - e_i)
         r_p_f = a_f * (1.0 - e_f)
@@ -190,11 +265,13 @@ class Solver(object):
 
         deltaV_C_2 = np.linalg.inv(chaser_mean.get_pof()).dot(V_PERI_f_2 - V_PERI_i_2)
 
+        print "  >> Apogee/Perigee correction..."
+
         # Create commands
         c1 = Manoeuvre()
         c1.dV = deltaV_C_1
-        c1.set_abs_state(chaser_mean)
-        c1.abs_state.v = theta_1
+        c1.set_initial_state(chaser_mean)
+        c1.initial_state.v = theta_1
         c1.duration = self.travel_time(chaser_mean, chaser_mean.v, theta_1)
         c1.description = 'Apogee/Perigee raise'
 
@@ -204,12 +281,12 @@ class Solver(object):
         c1.final_rel_state = self.chaser.rel_state.R
         self.manoeuvre_plan.append(c1)
 
-        chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.prop_type)
+        chaser_mean = self.chaser.get_mean_oe(self.scenario.prop_type)
 
         c2 = Manoeuvre()
         c2.dV = deltaV_C_2
-        c2.set_abs_state(chaser_mean)
-        c2.abs_state.v = theta_2
+        c2.set_initial_state(chaser_mean)
+        c2.initial_state.v = theta_2
         c2.duration = np.pi * np.sqrt(chaser_mean.a**3 / mu_earth)
         c2.description = 'Apogee/Perigee raise'
 
@@ -228,20 +305,17 @@ class Solver(object):
             David A. Vallado, Fundamentals of Astrodynamics and Applications, Second Edition, Chapter 6
 
         Args:
-            chaser (Chaser): Chaser state.
-            checkpoint (AbsoluteCP or RelativeCP): Next checkpoint.
-            target (Satellite): Target state.
+            checkpoint (CheckPoint): CheckPoint with the state defined in terms of Mean Orbital Elements.
         """
         # Mean orbital elements
-        chaser_mean = KepOrbElem()
-        chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.prop_type)
+        chaser_mean = self.chaser.get_mean_oe(self.scenario.prop_type)
 
         # Extract constants
         a = chaser_mean.a
         e = chaser_mean.e
 
         # Evaluate perigee difference to correct
-        dw = (checkpoint.abs_state.w - chaser_mean.w) % (2.0 * np.pi)
+        dw = (checkpoint.state.w - chaser_mean.w) % (2.0 * np.pi)
 
         # Positions where burn can occur
         theta_i_1 = dw / 2.0
@@ -273,16 +347,18 @@ class Solver(object):
 
         # Final velocity
         V_PERI_f = np.sqrt(mu_earth / (a * (1.0 - e**2))) * np.array([-np.sin(theta_f), e + np.cos(theta_f), 0.0])
-        V_TEM_f = np.linalg.inv(checkpoint.abs_state.get_pof()).dot(V_PERI_f)
+        V_TEM_f = np.linalg.inv(checkpoint.state.get_pof()).dot(V_PERI_f)
 
         # Delta-V
         deltaV_C = V_TEM_f - V_TEM_i
 
+        print "  >> Argument of Perigee correction..."
+
         # Create command
         c = Manoeuvre()
         c.dV = deltaV_C
-        c.set_abs_state(chaser_mean)
-        c.abs_state.v = theta_i
+        c.set_initial_state(chaser_mean)
+        c.initial_state.v = theta_i
         c.duration = self.travel_time(chaser_mean, chaser_mean.v, theta_i)
         c.description = 'Argument of Perigee correction'
         c.initial_rel_state = self.chaser.rel_state.R
@@ -300,13 +376,10 @@ class Solver(object):
             David A. Vallado, Fundamentals of Astrodynamics and Applications, Second Edition, Chapter 6
 
         Args:
-            chaser (Chaser): Chaser state.
-            checkpoint (AbsoluteCP or RelativeCP): Next checkpoint.
-            target (Satellite): Target state.
+            checkpoint (CheckPoint): CheckPoint with the state defined in terms of Mean Orbital Elements.
         """
         # Mean orbital elements
-        chaser_mean = KepOrbElem()
-        chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.prop_type)
+        chaser_mean = self.chaser.get_mean_oe(self.scenario.prop_type)
 
         # Extract semi-major axis and eccentricity
         a = chaser_mean.a
@@ -314,10 +387,10 @@ class Solver(object):
 
         # Changing values
         O_i = chaser_mean.O
-        O_f = checkpoint.abs_state.O
+        O_f = checkpoint.state.O
         dO = O_f - O_i
         i_i = chaser_mean.i
-        i_f = checkpoint.abs_state.i
+        i_f = checkpoint.state.i
         di = i_f - i_i
 
         # Spherical trigonometry
@@ -398,11 +471,13 @@ class Solver(object):
         # Evaluate deltaV
         deltaV_C = V_TEM_f - V_TEM_i
 
+        print "  >> Inclination and RAAN correction..."
+
         # Create command
         c = Manoeuvre()
         c.dV = deltaV_C
-        c.set_abs_state(chaser_mean)
-        c.abs_state.v = theta_i
+        c.set_initial_state(chaser_mean)
+        c.initial_state.v = theta_i
         c.duration = self.travel_time(chaser_mean, chaser_mean.v, theta_i)
         c.description = 'Inclination and RAAN correction'
 
@@ -417,14 +492,11 @@ class Solver(object):
             Algorithm that tries to drift to the next checkpoint, staying within a certain error ellipsoid.
 
         Args:
-            checkpoint (AbsoluteCP or RelativeCP): Next checkpoint.
+            checkpoint (CheckPoint): CheckPoint with the state defined in terms of CartesianLVLH.
 
         Return:
             t_est (float64): Drifting time to reach the next checkpoint (in seconds). If not reachable, return None.
         """
-        # Creating mean orbital elements
-        chaser_mean = KepOrbElem()
-        target_mean = KepOrbElem()
 
         # Creating cartesian coordinates
         chaser_cart = Cartesian()
@@ -439,16 +511,16 @@ class Solver(object):
 
         # Correct altitude at every loop until drifting is possible
         while 1:
-            # Assign mean values from osculating
-            chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.prop_type)
-            target_mean.from_osc_elems(self.target.abs_state, self.scenario.prop_type)
+            # Assign mean orbital elements
+            chaser_mean = self.chaser.get_mean_oe(self.scenario.prop_type)
+            target_mean = self.target.get_mean_oe(self.scenario.prop_type)
 
             # Assign cartesian coordinates from mean-orbital (mean orbital radius needed)
             chaser_cart.from_keporb(chaser_mean)
 
             # Assign information to the new chaser and target objects
-            chaser_old.set_from_other_satellite(self.chaser)
-            target_old.set_from_other_satellite(self.target)
+            chaser_old.set_from_satellite(self.chaser)
+            target_old.set_from_satellite(self.target)
 
             # Store initial epoch
             epoch_old = self.epoch
@@ -462,7 +534,7 @@ class Solver(object):
             # Required true anomaly difference at the end of the manoeuvre, estimation assuming circular
             # orbit
             r_C = np.linalg.norm(chaser_cart.R)
-            dv_req = checkpoint.rel_state.R[1] / r_C
+            dv_req = checkpoint.state.R[1] / r_C
 
             # Evaluate the actual true anomaly difference
             actual_dv = (chaser_mean.v + chaser_mean.w) % (2.0 * np.pi) - (target_mean.v + target_mean.w) % (
@@ -483,8 +555,8 @@ class Solver(object):
             dr_next = 0.0
             while dt > tol:
                 # Store (i-1) chaser and target state
-                chaser_tmp.set_from_other_satellite(self.chaser)
-                target_tmp.set_from_other_satellite(self.target)
+                chaser_tmp.set_from_satellite(self.chaser)
+                target_tmp.set_from_satellite(self.target)
                 epoch_tmp = self.epoch
                 dr_next_tmp = dr_next
                 manoeuvre_plan_tmp = self.manoeuvre_plan
@@ -496,40 +568,57 @@ class Solver(object):
                 chaser_prop = self.scenario.prop_chaser.propagate(self.epoch)
                 target_prop = self.scenario.prop_target.propagate(self.epoch)
 
-                self.chaser.abs_state.from_cartesian(chaser_prop[0])
-                self.target.abs_state.from_cartesian(target_prop[0])
-                self.chaser.rel_state.from_cartesian_pair(chaser_prop[0], target_prop[0])
+                self.chaser.abs_state.R = chaser_prop[0].R
+                self.chaser.abs_state.V = chaser_prop[0].V
+                self.target.abs_state.R = target_prop[0].R
+                self.target.abs_state.V = target_prop[0].V
+                self.chaser.rel_state.from_cartesian_pair(self.chaser.abs_state, self.target.abs_state)
 
                 # Re-initialize propagators
                 self._change_propagator_ic(self.scenario.prop_chaser, chaser_prop[0], self.epoch, self.chaser.mass)
                 self._change_propagator_ic(self.scenario.prop_target, target_prop[0], self.epoch, self.target.mass)
 
-                dr_next = self.chaser.rel_state.R[1] - checkpoint.rel_state.R[1]
+                dr_next = self.chaser.rel_state.R[1] - checkpoint.state.R[1]
 
                 if dr_next <= 0.0 and dr_next_old <= 0.0:
-                    # Correct plane in the middle of the drifting
-                    tol_i = 0.5 / self.chaser.abs_state.a
-                    tol_O = 0.5 / self.chaser.abs_state.a
+                    # Re-evaluate mean orbital elements
+                    chaser_mean = self.chaser.get_mean_oe(self.scenario.prop_type)
+                    target_mean = self.target.get_mean_oe(self.scenario.prop_type)
 
-                    chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.prop_type)
-                    target_mean.from_osc_elems(self.target.abs_state, self.scenario.prop_type)
+                    # Correct plane in the middle of the drifting
+                    tol_i = 0.5 / chaser_mean.a
+                    tol_O = 0.5 / chaser_mean.a
 
                     # At this point, inclination and raan should match the one of the target
                     di = target_mean.i - chaser_mean.i
                     dO = target_mean.O - chaser_mean.O
                     if abs(di) > tol_i or abs(dO) > tol_O:
-                        checkpoint_abs = AbsoluteCP()
-                        checkpoint_abs.abs_state.i = target_mean.i
-                        checkpoint_abs.abs_state.O = target_mean.O
+                        checkpoint_abs = CheckPoint()
+                        checkpoint_abs.set_state(chaser_mean)
+                        checkpoint_abs.state.i = target_mean.i
+                        checkpoint_abs.state.O = target_mean.O
+
+                        c = Manoeuvre()
+                        c.dV = np.array([0.0, 0.0, 0.0])
+                        c.set_initial_state(chaser_tmp.rel_state)
+                        c.duration = dt
+                        c.description = 'Drift for ' + str(dt) + ' seconds'
+
+                        c.initial_rel_state = chaser_tmp.rel_state.R
+                        # Propagate chaser and target
+                        c.final_rel_state = self.chaser.rel_state.R
+                        self.manoeuvre_plan.append(c)
+                        # dr_next_old = dr_next
+
                         self.plane_correction(checkpoint_abs)
 
-                        dr_next = self.chaser.rel_state.R[1] - checkpoint.rel_state.R[1]
+                        dr_next = self.chaser.rel_state.R[1] - checkpoint.state.R[1]
 
                         if dr_next >= 0.0:
                             # Overshoot due to plane adjustment => reduce dt and depropagate
                             dt /= 10.0
-                            self.chaser.set_from_other_satellite(chaser_tmp)
-                            self.target.set_from_other_satellite(target_tmp)
+                            self.chaser.set_from_satellite(chaser_tmp)
+                            self.target.set_from_satellite(target_tmp)
                             self.epoch = epoch_tmp
 
                             chaser_cartesian_tmp = Cartesian()
@@ -551,26 +640,25 @@ class Solver(object):
                             dr_next = dr_next_tmp
                         else:
                             # Target point not overshooted, everything looks good as it is
-                            c = RelativeMan()
-                            c.dV = np.array([0.0, 0.0, 0.0])
-                            c.set_abs_state(chaser_tmp.abs_state)
-                            c.set_rel_state(chaser_tmp.rel_state)
-                            c.duration = dt
-                            c.description = 'Drift for ' + str(dt) + ' seconds'
-
-                            c.initial_rel_state = chaser_tmp.rel_state.R
-                            # Propagate chaser and target
-                            c.final_rel_state = self.chaser.rel_state.R
-                            self.manoeuvre_plan.append(c)
+                            # c = RelativeMan()
+                            # c.dV = np.array([0.0, 0.0, 0.0])
+                            # c.set_abs_state(chaser_tmp.abs_state)
+                            # c.set_rel_state(chaser_tmp.rel_state)
+                            # c.duration = dt
+                            # c.description = 'Drift for ' + str(dt) + ' seconds'
+                            #
+                            # c.initial_rel_state = chaser_tmp.rel_state.R
+                            # # Propagate chaser and target
+                            # c.final_rel_state = self.chaser.rel_state.R
+                            # self.manoeuvre_plan.append(c)
 
                             dr_next_old = dr_next
 
                     else:
                         # No plane adjustment needed, add another dt and move forward
-                        c = RelativeMan()
+                        c = Manoeuvre()
                         c.dV = np.array([0.0, 0.0, 0.0])
-                        c.set_abs_state(chaser_tmp.abs_state)
-                        c.set_rel_state(chaser_tmp.rel_state)
+                        c.set_initial_state(chaser_tmp.rel_state)
                         c.duration = dt
                         c.description = 'Drift for ' + str(dt) + ' seconds'
 
@@ -587,27 +675,22 @@ class Solver(object):
 
                 elif (dr_next <= 0.0 and dr_next_old >= 0.0) or (dr_next >= 0.0 and dr_next_old <= 0.0):
                     dt /= 10.0
-                    self.chaser.set_from_other_satellite(chaser_tmp)
-                    self.target.set_from_other_satellite(target_tmp)
+                    self.chaser.set_from_satellite(chaser_tmp)
+                    self.target.set_from_satellite(target_tmp)
                     self.epoch = epoch_tmp
 
-                    chaser_cart_tmp = Cartesian()
-                    target_cart_tmp = Cartesian()
-                    chaser_cart_tmp.from_keporb(chaser_tmp.abs_state)
-                    target_cart_tmp.from_keporb(target_tmp.abs_state)
-
-                    self._change_propagator_ic(self.scenario.prop_chaser, chaser_cart_tmp, self.epoch, chaser_tmp.mass)
-                    self._change_propagator_ic(self.scenario.prop_target, target_cart_tmp, self.epoch, target_tmp.mass)
+                    self._change_propagator_ic(self.scenario.prop_chaser, chaser_tmp.abs_state, self.epoch, chaser_tmp.mass)
+                    self._change_propagator_ic(self.scenario.prop_target, target_tmp.abs_state, self.epoch, target_tmp.mass)
                     # dr_next_old should be the same as the one at the beginning
                     dr_next = dr_next_tmp
 
-                if abs(checkpoint.rel_state.R[1] - self.chaser.rel_state.R[1]) <= checkpoint.error_ellipsoid[1]:
+                if abs(checkpoint.state.R[1] - self.chaser.rel_state.R[1]) <= checkpoint.error_ellipsoid[1]:
                     # Almost in line with the checkpoint
-                    if abs(checkpoint.rel_state.R[0] - self.chaser.rel_state.R[0]) <= checkpoint.error_ellipsoid[0]:
+                    if abs(checkpoint.state.R[0] - self.chaser.rel_state.R[0]) <= checkpoint.error_ellipsoid[0]:
                         # Inside the tolerance, the point may be reached by drifting
                         ellipsoid_flag = True
-                    elif abs(checkpoint.rel_state.R[1] - self.chaser.rel_state.R[1]) <= 0.05 and \
-                        abs(checkpoint.rel_state.R[0] - self.chaser.rel_state.R[0]) > checkpoint.error_ellipsoid[0]:
+                    elif abs(checkpoint.state.R[1] - self.chaser.rel_state.R[1]) <= 0.05 and \
+                        abs(checkpoint.state.R[0] - self.chaser.rel_state.R[0]) > checkpoint.error_ellipsoid[0]:
                         # Outside tolerance, point may not be reached!
                         break
 
@@ -617,32 +700,28 @@ class Solver(object):
             else:
                 # Drift is not possible, drop a warning and correct altitude!
                 print "\n[WARNING]: Drifting to checkpoint nr. " + str(checkpoint.id) + " not possible!"
+                print "           All the previous manoeuvres has been cancelled."
                 print "           Correcting altitude automatically...\n"
 
                 # Depropagate to initial conditions before drifting
-                self.chaser.set_from_other_satellite(chaser_old)
-                self.target.set_from_other_satellite(target_old)
+                self.chaser.set_from_satellite(chaser_old)
+                self.target.set_from_satellite(target_old)
 
-                chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.prop_type)
-                target_mean.from_osc_elems(self.target.abs_state, self.scenario.prop_type)
+                chaser_mean = self.chaser.get_mean_oe(self.scenario.prop_type)
+                target_mean = self.target.get_mean_oe(self.scenario.prop_type)
 
                 self.epoch = epoch_old
 
-                chaser_cart_old = Cartesian()
-                target_cart_old = Cartesian()
-                chaser_cart_old.from_keporb(chaser_old.abs_state)
-                target_cart_old.from_keporb(target_old.abs_state)
-
-                self._change_propagator_ic(self.scenario.prop_chaser, chaser_cart_old, self.epoch, chaser_old.mass)
-                self._change_propagator_ic(self.scenario.prop_target, target_cart_old, self.epoch, target_old.mass)
+                self._change_propagator_ic(self.scenario.prop_chaser, chaser_old.abs_state, self.epoch, chaser_old.mass)
+                self._change_propagator_ic(self.scenario.prop_target, target_old.abs_state, self.epoch, target_old.mass)
 
                 self.manoeuvre_plan = manoeuvre_plan_old
 
                 # Create new checkpoint
-                checkpoint_new_abs = AbsoluteCP()
-                checkpoint_new_abs.set_abs_state(chaser_mean)
-                checkpoint_new_abs.abs_state.a = target_mean.a + checkpoint.rel_state.R[0]
-                checkpoint_new_abs.abs_state.e = target_mean.a * target_mean.e / checkpoint_new_abs.abs_state.a
+                checkpoint_new_abs = CheckPoint()
+                checkpoint_new_abs.set_state(chaser_mean)
+                checkpoint_new_abs.state.a = target_mean.a + checkpoint.state.R[0]
+                checkpoint_new_abs.state.e = target_mean.a * target_mean.e / checkpoint_new_abs.state.a
 
                 self.adjust_eccentricity_semimajoraxis(checkpoint_new_abs)      #TODO: Maybe add also another plane correction there...
 
@@ -765,27 +844,24 @@ class Solver(object):
             Absolute solver. Calculate the manoeuvre needed to go from an absolute position to another.
 
         Args:
-             chaser (Chaser):
-             checkpoint (AbsoluteCP):
-             target (Satellite):
+             checkpoint (CheckPoint): CheckPoint with the state defined in terms of Mean Orbital Elements.
         """
-        # Define mean orbital elements
-        chaser_mean = KepOrbElem()
-        chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.prop_type)
+        # Extract mean orbital elements
+        chaser_mean = self.chaser.get_mean_oe(self.scenario.prop_type)
 
         # Define tolerances, if we get deviations greater than ~1 km then correct
-        tol_i = 1.0 / self.chaser.abs_state.a
-        tol_O = 1.0 / self.chaser.abs_state.a
-        tol_w = 1.0 / self.chaser.abs_state.a
+        tol_i = 1.0 / chaser_mean.a
+        tol_O = 1.0 / chaser_mean.a
+        tol_w = 1.0 / chaser_mean.a
         tol_a = 0.2
-        tol_e = 1.0 / self.chaser.abs_state.a
+        tol_e = 1.0 / chaser_mean.a
 
         # Evaluate differences
-        di = checkpoint.abs_state.i - chaser_mean.i
-        dO = checkpoint.abs_state.O - chaser_mean.O
-        dw = checkpoint.abs_state.w - chaser_mean.w
-        da = checkpoint.abs_state.a - chaser_mean.a
-        de = checkpoint.abs_state.e - chaser_mean.e
+        di = checkpoint.state.i - chaser_mean.i
+        dO = checkpoint.state.O - chaser_mean.O
+        dw = checkpoint.state.w - chaser_mean.w
+        da = checkpoint.state.a - chaser_mean.a
+        de = checkpoint.state.e - chaser_mean.e
 
         # Inclination and RAAN
         if abs(di) > tol_i or abs(dO) > tol_O:
@@ -802,56 +878,49 @@ class Solver(object):
     def relative_solver(self, checkpoint, approach_ellipsoid):
 
         # Mean orbital elements
-        chaser_mean = KepOrbElem()
-        chaser_mean.from_osc_elems(self.chaser.abs_state, self.scenario.prop_type)
+        chaser_mean = self.chaser.get_mean_oe(self.scenario.prop_type)
+        target_mean = self.target.get_mean_oe(self.scenario.prop_type)
 
-        target_mean = KepOrbElem()
-        target_mean.from_osc_elems(self.target.abs_state, self.scenario.prop_type)
-
-        # Check if plane needs to be corrected again
-        # TODO: Put as tolerance a number slightly bigger than the deviation of the estimation
-        tol_i = 1.0 / self.chaser.abs_state.a
-        tol_O = 1.0 / self.chaser.abs_state.a
-
-        # At this point, inclination and raan should match the one of the target
-        di = target_mean.i - chaser_mean.i
-        dO = target_mean.O - chaser_mean.O
-        if abs(di) > tol_i or abs(dO) > tol_O:
-            checkpoint_abs = AbsoluteCP()
-            checkpoint_abs.abs_state.i = target_mean.i
-            checkpoint_abs.abs_state.O = target_mean.O
-            self.plane_correction(checkpoint_abs)
-
-        t_limit = 604800
+        # # Check if plane needs to be corrected again
+        # # TODO: Put as tolerance a number slightly bigger than the deviation of the estimation
+        # tol_i = 1.0 / chaser_mean.a
+        # tol_O = 1.0 / chaser_mean.a
+        #
+        # # At this point, inclination and raan should match the one of the target
+        # di = target_mean.i - chaser_mean.i
+        # dO = target_mean.O - chaser_mean.O
+        # if abs(di) > tol_i or abs(dO) > tol_O:
+        #     checkpoint_abs = CheckPoint()
+        #     checkpoint_abs.set_state(chaser_mean)
+        #     checkpoint_abs.state.i = target_mean.i
+        #     checkpoint_abs.state.O = target_mean.O
+        #     self.plane_correction(checkpoint_abs)
 
         if checkpoint.manoeuvre_type == 'standard':
             # self.multi_lambert(checkpoint, approach_ellipsoid, False)
-            self.linearized_including_J2(checkpoint, approach_ellipsoid)
+            self.linearized_including_J2(checkpoint)
 
         elif checkpoint.manoeuvre_type == 'radial':
             # Manoeuvre type is radial -> deltaT is calculated from CW-equations -> solved with multi-lambert
-            a = self.target.abs_state.a
-            dt = np.pi / np.sqrt(mu_earth / a ** 3.0)
+            dt = np.pi / np.sqrt(mu_earth / target_mean.a ** 3.0)
 
             checkpoint.t_min = dt
             checkpoint.t_max = dt + 1.0
 
             # self.multi_lambert(checkpoint, approach_ellipsoid, True)
-            self.linearized_including_J2(checkpoint, approach_ellipsoid)
+            self.linearized_including_J2(checkpoint)
 
         elif checkpoint.manoeuvre_type == 'drift':
             self.drift_to(checkpoint)
 
-    def _propagator(self, dt, dv=np.array([0, 0, 0])):
+    def _propagator(self, dt, dv=np.array([0.0, 0.0, 0.0])):
         """
-            Propagate chaser and target to t* = now + dt.
+            Propagate chaser and target to t* = now + dt, and eventually apply a specific delta-v.
 
         Args:
-            chaser (Chaser): Chaser state.
-            target (Satellite): Target state.
             dt (float64): Propagated time in seconds.
-            dv (np.array): Amount of delta-v to be applied at the beginning of the propagation, in km/s in TEME
-                reference frame.
+            dv (array): Amount of delta-v to be applied AFTER propagating chaser and target by dt [s], in km/s in
+                Earth Inertial reference frame.
         """
 
         # Update time
@@ -861,22 +930,22 @@ class Solver(object):
         chaser_prop = self.scenario.prop_chaser.propagate(self.epoch)
         target_prop = self.scenario.prop_target.propagate(self.epoch)
 
-        chaser_cart = chaser_prop[0]
-        target_cart = target_prop[0]
+        # Update chaser and target absolute state
+        self.chaser.abs_state.R = chaser_prop[0].R
+        self.chaser.abs_state.V = chaser_prop[0].V
 
-        # self.chaser.abs_state.from_cartesian(chaser_cart)
+        self.target.abs_state.R = target_prop[0].R
+        self.target.abs_state.V = target_prop[0].V
 
         # Add deltaV
-        chaser_cart.V += dv
+        self.chaser.abs_state.V += dv
 
-        # Update chaser and target
-        self.chaser.abs_state.from_cartesian(chaser_cart)
-        self.target.abs_state.from_cartesian(target_cart)
-        self.chaser.rel_state.from_cartesian_pair(chaser_cart, target_cart)
+        # Update chaser relative position
+        self.chaser.rel_state.from_cartesian_pair(self.chaser.abs_state, self.target.abs_state)
 
         # Update propagator initial conditions
-        self._change_propagator_ic(self.scenario.prop_chaser, chaser_cart, self.epoch, self.chaser.mass)
-        self._change_propagator_ic(self.scenario.prop_target, target_cart, self.epoch, self.target.mass)
+        self._change_propagator_ic(self.scenario.prop_chaser, self.chaser.abs_state, self.epoch, self.chaser.mass)
+        self._change_propagator_ic(self.scenario.prop_target, self.target.abs_state, self.epoch, self.target.mass)
 
     def travel_time(self, state, theta0, theta1):
         """
@@ -953,69 +1022,42 @@ class Solver(object):
 
         return True
 
-    def print_state(self, kep):
-        print "      a :     " + str(kep.a)
-        print "      e :     " + str(kep.e)
-        print "      i :     " + str(kep.i)
-        print "      O :     " + str(kep.O)
-        print "      w :     " + str(kep.w)
-        print "      v :     " + str(kep.v)
-
-    def print_result(self):
-        tot_dv = 0
-        tot_dt = 0
-
-        for it, command in enumerate(self.manoeuvre_plan):
-            print '\n' + command.description + ', command nr. ' + str(it) + ':'
-            print '--> DeltaV:            ' + str(command.dV)
-            print '--> Normalized DeltaV: ' + str(np.linalg.norm(command.dV))
-            print '--> Idle after burn:   ' + str(command.duration)
-            print '--> Burn position:     ' + str(command.abs_state.v)
-            print '--> Initial rel state: ' + str(command.initial_rel_state)
-            print '--> Final rel state:   ' + str(command.final_rel_state)
-            tot_dv += np.linalg.norm(command.dV)
-            tot_dt += command.duration
-
-        return tot_dv, tot_dt
-
-    def linearized_including_J2(self, checkpoint, approach_ellipsoid):
+    def linearized_including_J2(self, checkpoint):
         """
             Using the linearized solution including J2 and elliptical orbits to estimate the deltaV needed.
 
         Args:
             checkpoint (Checkpoint):
         """
+        # Initial chaser and target osculating orbital elements
+        target_osc = self.target.get_osc_oe()
+        chaser_osc = self.chaser.get_osc_oe()
+
+        # Initial target mean orbital elements
+        target_mean = self.target.get_mean_oe(self.scenario.prop_type)
 
         # Initial reference osculatin orbit
-        a_0 = self.target.abs_state.a
-        e_0 = self.target.abs_state.e
-        i_0 = self.target.abs_state.i
-        O_0 = self.target.abs_state.O
-        w_0 = self.target.abs_state.w
-        M_0 = self.target.abs_state.m
-        v_0 = self.target.abs_state.v
+        a_0 = target_osc.a
+        e_0 = target_osc.e
+        i_0 = target_osc.i
+        O_0 = target_osc.O
+        w_0 = target_osc.w
+        M_0 = target_osc.m
+        v_0 = target_osc.v
 
         # Initial relative orbital elements
         de0_initial = np.array([
-            self.chaser.abs_state.a - a_0,
-            self.chaser.abs_state.e - e_0,
-            self.chaser.abs_state.i - i_0,
-            self.chaser.abs_state.O - O_0,
-            self.chaser.abs_state.w - w_0,
-            self.chaser.abs_state.m - M_0
+            chaser_osc.a - a_0,
+            chaser_osc.e - e_0,
+            chaser_osc.i - i_0,
+            chaser_osc.O - O_0,
+            chaser_osc.w - w_0,
+            chaser_osc.m - M_0
         ])
-
-        # Chaser cartesian initial state
-        chaser_cart = Cartesian()
-        chaser_cart.from_keporb(self.chaser.abs_state)
 
         eta_0 = np.sqrt(1.0 - e_0 ** 2)
         p_0 = a_0 * (1.0 - e_0 ** 2)
         r_0 = p_0 / (1.0 + e_0 * np.cos(v_0))
-
-        # Initial reference mean orbit
-        target_mean = KepOrbElem()
-        target_mean.from_osc_elems(self.target.abs_state, 'real-world')
 
         a_mean = target_mean.a
         i_mean = target_mean.i
@@ -1075,24 +1117,38 @@ class Solver(object):
         t_max = int(checkpoint.t_max)
 
         for dt in xrange(t_min, t_max):
+
+            N_orb = np.floor(dt / T_mean) + int((self.travel_time(target_osc, target_osc.v, 0.0) < dt) and (dt / T_mean < 1.0))
+            M_f = (dt * M_mean_dot) + M_0 - 2.0 * np.pi * N_orb
+            E_f = self._calc_E_from_m(e_0, M_f)
+            v_f = (2.0 * np.arctan(np.sqrt((1.0 + e_0) / (1.0 - e_0)) * np.tan(E_f / 2.0))) % (2.0 * np.pi)
+
             # Estimate flight time
             E = lambda v: 2.0 * np.arctan(np.sqrt((1.0 - e_0) / (1.0 + e_0)) * np.tan(v / 2.0))
             M = lambda v: (E(v) - e_0 * np.sin(E(v))) % (2.0 * np.pi)
 
-            N_orb = np.floor(dt / T_mean) + int((self.travel_time(self.target.abs_state, v_0, 0.0) < dt) and (dt / T_mean < 1.0))
-
-            # propagated_tg = self.scenario.prop_target.propagate(self.epoch + timedelta(seconds=dt))
-
+            # target_old = Cartesian()
+            # target_old.R = self.target.abs_state.R
+            # target_old.V = self.target.abs_state.V
+            #
+            # target_prop = self.scenario.prop_target.propagate(self.epoch + timedelta(seconds=dt))
+            # self.target.abs_state.R = target_prop[0].R
+            # self.target.abs_state.V = target_prop[0].V
+            #
+            # target_osc_prop = self.target.get_osc_oe()
+            # target_mean_prop = self.target.get_mean_oe(self.scenario.prop_type)
+            #
+            # v_f_prop = target_osc_prop.v
+            #
+            # self._change_propagator_ic(self.scenario.prop_target, target_old, self.epoch, self.target.mass)
+            # self.target.abs_state.R = target_old.R
+            # self.target.abs_state.V = target_old.V
 
             def tau(v):
                 if v != v_0:
                     return (2.0 * np.pi * N_orb + M(v) - M_0) / M_mean_dot
                 else:
                     return 0.0
-
-            M_f = (dt * M_mean_dot) + M_0 - 2.0 * np.pi * N_orb
-            E_f = self._calc_E_from_m(e_0, M_f)
-            v_f = (2.0 * np.arctan(np.sqrt((1.0 + e_0) / (1.0 - e_0)) * np.tan(E_f / 2.0))) % (2.0 * np.pi)
 
             # Position
             r = lambda v: p_0 / (1.0 + e_0 * np.cos(v))
@@ -1237,45 +1293,45 @@ class Solver(object):
             state_comb = np.array([self.chaser.rel_state.R[0],
                                    self.chaser.rel_state.R[1],
                                    self.chaser.rel_state.R[2],
-                                   checkpoint.rel_state.R[0],
-                                   checkpoint.rel_state.R[1],
-                                   checkpoint.rel_state.R[2]])
+                                   checkpoint.state.R[0],
+                                   checkpoint.state.R[1],
+                                   checkpoint.state.R[2]])
 
             de0_wanted = np.linalg.inv(phi_comb).dot(state_comb)
             de0_diff = de0_wanted - de0_initial
 
             chaser_kep_wanted = KepOrbElem()
-            chaser_kep_wanted.a = self.chaser.abs_state.a + de0_diff[0]
-            chaser_kep_wanted.e = self.chaser.abs_state.e + de0_diff[1]
-            chaser_kep_wanted.i = self.chaser.abs_state.i + de0_diff[2]
-            chaser_kep_wanted.O = self.chaser.abs_state.O + de0_diff[3]
-            chaser_kep_wanted.w = self.chaser.abs_state.w + de0_diff[4]
-            chaser_kep_wanted.m = self.chaser.abs_state.m + de0_diff[5]
+            chaser_kep_wanted.a = chaser_osc.a + de0_diff[0]
+            chaser_kep_wanted.e = chaser_osc.e + de0_diff[1]
+            chaser_kep_wanted.i = chaser_osc.i + de0_diff[2]
+            chaser_kep_wanted.O = chaser_osc.O + de0_diff[3]
+            chaser_kep_wanted.w = chaser_osc.w + de0_diff[4]
+            chaser_kep_wanted.m = chaser_osc.m + de0_diff[5]
 
             chaser_cart_wanted = Cartesian()
             chaser_cart_wanted.from_keporb(chaser_kep_wanted)
 
             # Evaluate delta_V_1
-            delta_V_1 = chaser_cart_wanted.V - chaser_cart.V
+            delta_V_1 = chaser_cart_wanted.V - self.chaser.abs_state.V
 
 
             # Evaluate delta_V_2
             state_f = phi_f.dot(de0_wanted)
-            delta_V_2 = checkpoint.rel_state.V - state_f[0:3]
+            delta_V_2 = checkpoint.state.V - state_f[0:3]
 
             deltaV_tot = np.linalg.norm(delta_V_1) + np.linalg.norm(delta_V_2)
 
-            if best_dV > deltaV_tot:
+            if best_dV > deltaV_tot and np.linalg.norm(delta_V_1) > dV_min and np.linalg.norm(delta_V_2) > dV_min:
                 # if self.is_trajectory_safe(dt, approach_ellipsoid):
                 best_dV = deltaV_tot
                 best_dV_1 = delta_V_1
                 best_dV_2 = delta_V_2
                 best_dt = dt
+                N_orb_best = N_orb
 
-        c1 = RelativeMan()
+        c1 = Manoeuvre()
         c1.dV = best_dV_1
-        c1.set_abs_state(self.chaser.abs_state)
-        c1.set_rel_state(self.chaser.rel_state)
+        c1.set_initial_state(self.chaser.rel_state)
         c1.duration = 1e-3
         c1.description = 'Linearized-J2 solution'
 
@@ -1287,12 +1343,9 @@ class Solver(object):
         c1.final_rel_state = self.chaser.rel_state.R
         self.manoeuvre_plan.append(c1)
 
-        chaser_cart.from_keporb(self.chaser.abs_state)
-
-        c2 = RelativeMan()
+        c2 = Manoeuvre()
         c2.dV = best_dV_2
-        c2.set_abs_state(self.chaser.abs_state)
-        c2.set_rel_state(self.chaser.rel_state)
+        c2.set_initial_state(self.chaser.rel_state)
         c2.duration = best_dt
         c2.description = 'Linearized-J2 solution'
 
