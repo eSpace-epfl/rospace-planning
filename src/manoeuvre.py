@@ -19,71 +19,67 @@ class Manoeuvre(object):
         Base class that contains the definition of a manoeuvre.
 
     Attributes:
-        dV (np.array): Amount of delta-v needed to execute the burn. Given in kilometers per second with respect
+        dV (array): Amount of delta-v needed to execute the burn. Given in kilometers per second with respect
             to TEME reference frame.
         duration (float64): Waiting time from last manoeuvre to the next one, given in seconds. (TO BE REVIEWED - Maybe useless)
-        abs_state (KepOrbElem): Absolute state at which the manoeuvre has to be executed.
-        description (string): Brief description of the manoeuvre.
+        initial_state (KepOrbElem or CartesianLVLH): State at which the manoeuvre has to be executed, can be either
+            defined in mean orbital elements or in cartesian LVLH reference frame.
+        description (str): Brief description of the manoeuvre.
     """
 
     def __init__(self):
         self.dV = np.array([0, 0, 0])
         self.duration = 0
-
-        # The state in which the manoeuvre should be executed
-        self.abs_state = KepOrbElem()
-
-        # Description on the manoeuvre purpose
+        self.initial_state = None
         self.description = None
 
-    def set_abs_state(self, abs_state):
-        """
-            Given absolute state in keplerian orbital elements, set the absolute state.
+    def set_initial_state(self, state):
+        """Set manoeuvre initial state in KepOrbElem or CartesianLVLH.
 
         Args:
             abs_state (KepOrbElem): Absolute state in keplerian orbital elements.
         """
 
-        self.abs_state.a = abs_state.a
-        self.abs_state.e = abs_state.e
-        self.abs_state.i = abs_state.i
-        self.abs_state.O = abs_state.O
-        self.abs_state.w = abs_state.w
-        self.abs_state.v = abs_state.v
+        state_type = type(state)
 
-    def remove_lock(self):
-        """
-            Remove thread lock from the KepOrbElem to be able to save it in a pickle file.
-        """
-        del self.abs_state._lock
+        if self.initial_state == None:
+            if state_type == KepOrbElem:
+                self.initial_state = KepOrbElem()
+                self.initial_state.a = state.a
+                self.initial_state.e = state.e
+                self.initial_state.i = state.i
+                self.initial_state.O = state.O
+                self.initial_state.w = state.w
+                self.initial_state.v = state.v
+            elif state_type == CartesianLVLH:
+                self.initial_state = CartesianLVLH()
+                self.initial_state.R = state.R
+                self.initial_state.V = state.V
+            else:
+                raise TypeError('State type not allowed!')
+        else:
+            raise AttributeError('Manoeuvre initial state has already been defined!')
 
-    def add_lock(self):
-        """
-            Re create the lock attribute.
-        """
-        self.abs_state._lock = RLock()
-
-
-class RelativeMan(Manoeuvre):
-    """
-        Extended class for manoeuvres in relative navigation.
-
-    Attributes:
-        rel_state (CartesianLVLH): Relative state at which manoeuvre should occur given in LVLH frame.
-    """
-
-    def __init__(self):
-        super(RelativeMan, self).__init__()
-
-        self.rel_state = CartesianLVLH()
-
-    def set_rel_state(self, rel_state):
-        """
-            Define the starting relative state of the manoeuvre.
-
-        Args:
-            rel_state (CartesianLVLH): Relative state given in LVLH frame.
-        """
-
-        self.rel_state.R = rel_state.R
-        self.rel_state.V = rel_state.V
+# class RelativeMan(Manoeuvre):
+#     """
+#         Extended class for manoeuvres in relative navigation.
+#
+#     Attributes:
+#         rel_state (CartesianLVLH): Relative state at which manoeuvre should occur given in LVLH frame.
+#     """
+#
+#     def __init__(self):
+#         super(RelativeMan, self).__init__()
+#
+#         self.rel_state = CartesianLVLH()
+#
+#     def set_rel_state(self, rel_state):
+#         """
+#             Define the starting relative state of the manoeuvre.
+#
+#         Args:
+#             rel_state (CartesianLVLH): Relative state given in LVLH frame.
+#         """
+#
+#         self.rel_state.R = rel_state.R
+#         self.rel_state.V = rel_state.V
