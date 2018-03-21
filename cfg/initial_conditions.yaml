@@ -11,11 +11,11 @@ target:
 chaser:
   kep:
     a: 7036.6
-    e: (target.abs_state.a * target.abs_state.e) / self.abs_state.a
-    i: target.abs_state.i
-    w: target.abs_state.w
-    O: target.abs_state.O
-    v: (target.abs_state.v - np.pi/2.0) % (2.0 * np.pi)
+    e: 0.000815369669722
+    i: 98.5062*np.pi/180.0
+    O: 22.7182*np.pi/180.0
+    w: 30.5945*np.pi/180.0
+    v: (5.75130069292 - np.pi/4.0) % (2.0 * np.pi)
 
 #chaser:
 #  tle:
