@@ -14,10 +14,9 @@ import pickle
 import sys
 
 from state import Satellite, Chaser
-from checkpoint import RelativeCP, AbsoluteCP
+from checkpoint import CheckPoint
 from propagator.OrekitPropagator import OrekitPropagator
 from datetime import datetime
-from space_tf import KepOrbElem
 
 
 class Scenario(object):
@@ -34,6 +33,9 @@ class Scenario(object):
             target_ic (Satellite): Target initial state.
             prop_chaser (OrekitPropagator): Chaser propagator.
             prop_target (OrekitPropagator): Target propagator.
+            date (timedelta): Time at which the simulation start.
+            prop_type (str): Propagator type that has to be used. It can be either 'real-world' - with all the
+                disturbances, or '2-body' - considering only the exact solution to the 2-body equation.
             approach_ellipsoid (np.array): Axis of the approach ellipsoid around the target [km].
             koz_r (float64): Radius of Keep-Out Zone drawn around the target [km].
     """
@@ -60,6 +62,70 @@ class Scenario(object):
         # Target Keep-Out Zones
         self.approach_ellipsoid = np.array([0.0, 0.0, 0.0])
         self.koz_r = 0.0
+
+    def _initialize_satellites(self):
+        """Initialize the chaser and target given their initial conditions."""
+
+        # Actual path
+        abs_path = sys.argv[0]
+        path_idx = abs_path.find('nodes')
+        abs_path = abs_path[0:path_idx]
+
+        # Opening initial conditions file
+        initial_conditions_path = abs_path + 'nodes/cso_path_planner/cfg/initial_conditions.yaml'
+        initial_conditions_file = file(initial_conditions_path, 'r')
+        initial_conditions = yaml.load(initial_conditions_file)
+        chaser_ic = initial_conditions['chaser']
+        target_ic = initial_conditions['target']
+
+        # Opening chaser and target settings file
+        file_name = ''
+        if self.prop_type == '2-body':
+            file_name = '_2body'
+        chaser_settings_path = abs_path + 'simulator/cso_gnc_sim/cfg/chaser' + file_name + '.yaml'
+        target_settings_path = abs_path + 'simulator/cso_gnc_sim/cfg/target' + file_name + '.yaml'
+        chaser_settings = file(chaser_settings_path, 'r')
+        target_settings = file(target_settings_path, 'r')
+        propSettings_chaser = yaml.load(chaser_settings)
+        propSettings_target = yaml.load(target_settings)
+
+        # Assign initial conditions, assuming target in tle and chaser in keplerian
+        self.target_ic.set_abs_state_from_tle(target_ic['tle'])
+        self.chaser_ic.set_abs_state_from_kep(chaser_ic['kep'])
+        self.chaser_ic.rel_state.from_cartesian_pair(self.chaser_ic.abs_state, self.target_ic.abs_state)
+
+        # Assign satellites mass
+        self.chaser_ic.mass = propSettings_chaser['propagator_settings']['orbitProp']['State']['settings']['mass']
+        self.target_ic.mass = propSettings_target['propagator_settings']['orbitProp']['State']['settings']['mass']
+
+    def _initialize_propagators(self):
+        """Initialize orekit propagators and satellite masses."""
+
+        # Actual path
+        abs_path = sys.argv[0]
+        path_idx = abs_path.find('nodes')
+        abs_path = abs_path[0:path_idx]
+
+        if self.prop_type == '2-body':
+            file_name = '_2body'
+        elif self.prop_type == 'real-world':
+            file_name = ''
+        else:
+            raise TypeError('Propagator type not recognized!')
+
+        chaser_settings_path = abs_path + 'simulator/cso_gnc_sim/cfg/chaser' + file_name + '.yaml'
+        target_settings_path = abs_path + 'simulator/cso_gnc_sim/cfg/target' + file_name + '.yaml'
+
+        chaser_settings = file(chaser_settings_path, 'r')
+        target_settings = file(target_settings_path, 'r')
+
+        propSettings_chaser = yaml.load(chaser_settings)
+        self.chaser_ic.mass = propSettings_chaser['propagator_settings']['orbitProp']['State']['settings']['mass']
+        self.prop_chaser.initialize(propSettings_chaser['propagator_settings'], self.chaser_ic.get_osc_oe(), self.date)
+
+        propSettings_target = yaml.load(target_settings)
+        self.target_ic.mass = propSettings_target['propagator_settings']['orbitProp']['State']['settings']['mass']
+        self.prop_target.initialize(propSettings_target['propagator_settings'], self.target_ic.get_osc_oe(), self.date)
 
     def import_solved_scenario(self):
         """
@@ -90,15 +156,8 @@ class Scenario(object):
                     self.date = obj['scenario_epoch']
                     self.prop_type = obj['prop_type']
 
-                    # Add lockers again
-                    for chkp in self.checkpoints:
-                        chkp.add_lock()
-
-                    self.chaser_ic.add_lock()
-                    self.target_ic.add_lock()
-
-                    #Initialize propagators
-                    self.initialize_propagators(self.chaser_ic.abs_state, self.target_ic.abs_state, self.date, self.prop_type)
+                    # Initialize propagators
+                    self._initialize_propagators()
 
                     return obj['manoeuvre_plan']
                 else:
@@ -122,16 +181,6 @@ class Scenario(object):
 
         with open(pickle_path, 'wb') as file:
 
-            # Remove locks
-            for man in manoeuvre_plan:
-                man.remove_lock()
-
-            for chkp in self.checkpoints:
-                chkp.remove_lock()
-
-            self.chaser_ic.remove_lock()
-            self.target_ic.remove_lock()
-
             obj = {'scenario_name': self.name, 'checkpoints': self.checkpoints, 'manoeuvre_plan': manoeuvre_plan,
                    'chaser_ic': self.chaser_ic, 'target_ic': self.target_ic, 'scenario_epoch': self.date,
                    'prop_type': self.prop_type}
@@ -150,20 +199,12 @@ class Scenario(object):
         path_idx = abs_path.find('cso_path_planner')
         abs_path = abs_path[0:path_idx + 16]
 
-        scenario_path = abs_path + '/cfg/scenario.yaml'
-        initial_conditions_path = abs_path + '/cfg/initial_conditions.yaml'
-
         # Opening scenario file
+        scenario_path = abs_path + '/cfg/scenario.yaml'
         scenario_file = file(scenario_path, 'r')
         scenario = yaml.load(scenario_file)
         scenario = scenario['scenario']
         checkpoints = scenario['CheckPoints']
-
-        # Opening initial conditions file
-        initial_conditions_file = file(initial_conditions_path, 'r')
-        initial_conditions = yaml.load(initial_conditions_file)
-        chaser_ic = initial_conditions['chaser']
-        target_ic = initial_conditions['target']
 
         # Assign variables
         self.name = scenario['name']
@@ -172,86 +213,32 @@ class Scenario(object):
         self.approach_ellipsoid = scenario['approach_ellipsoid']
         self.prop_type = scenario['prop_type']
 
-        # Assign initial conditions, assuming target in tle and chaser in keplerian
-        self.target_ic.set_abs_state_from_tle(target_ic['tle'])
-        self.chaser_ic.set_abs_state(chaser_ic['kep'], self.target_ic)
-        self.chaser_ic.set_rel_state_from_abs_state(self.target_ic)
-
-        # Evaluate mean orbital elements given initial conditions as osculating orbital elements
-        chaser_mean = KepOrbElem()
-        target_mean = KepOrbElem()
-        chaser_mean.from_osc_elems(self.chaser_ic.abs_state, self.prop_type)
-        target_mean.from_osc_elems(self.target_ic.abs_state, self.prop_type)
+        # Initialize satellites
+        self._initialize_satellites()
 
         # Initialize propagators
-        self.initialize_propagators(self.chaser_ic.abs_state, self.target_ic.abs_state, self.date, self.prop_type)
+        self._initialize_propagators()
 
         # Extract CheckPoints
         for i in xrange(0, len(checkpoints)):
             pos = checkpoints['S' + str(i)]['position']
-            ref_frame = pos.keys()[0]
-
             prev = self.checkpoints[-1] if len(self.checkpoints) > 0 else None
 
-            if ref_frame == 'lvlh':
-                checkpoint = RelativeCP()
-                checkpoint.set_rel_state(pos[ref_frame], chaser_mean, target_mean)
-                checkpoint.error_ellipsoid = checkpoints['S' + str(i)]['error_ellipsoid']
-                if 'manoeuvre' in checkpoints['S' + str(i)].keys():
-                    checkpoint.manoeuvre_type = checkpoints['S' + str(i)]['manoeuvre']
-                if 't_min' in checkpoints['S' + str(i)].keys():
-                    checkpoint.t_min = checkpoints['S' + str(i)]['t_min']
-                if 't_max' in checkpoints['S' + str(i)].keys():
-                    checkpoint.t_max = checkpoints['S' + str(i)]['t_max']
-            elif ref_frame == 'kep':
-                checkpoint = AbsoluteCP(prev)
-                checkpoint.set_abs_state(pos[ref_frame], chaser_mean, target_mean)
-
+            checkpoint = CheckPoint(prev)
             checkpoint.id = checkpoints['S' + str(i)]['id']
 
+            checkpoint.set_state(pos)
+
+            if 'error_ellipsoid' in checkpoints['S' + str(i)].keys():
+                checkpoint.error_ellipsoid = checkpoints['S' + str(i)]['error_ellipsoid']
+
+            if 'manoeuvre' in checkpoints['S' + str(i)].keys():
+                checkpoint.manoeuvre_type = checkpoints['S' + str(i)]['manoeuvre']
+
+            if 't_min' in checkpoints['S' + str(i)].keys():
+                checkpoint.t_min = checkpoints['S' + str(i)]['t_min']
+
+            if 't_max' in checkpoints['S' + str(i)].keys():
+                checkpoint.t_max = checkpoints['S' + str(i)]['t_max']
+
             self.checkpoints.append(checkpoint)
-
-    def initialize_propagators(self, chaser_ic, target_ic, date, prop_type):
-        """
-            Initialize orekit propagators and satellite masses.
-
-        Args:
-            chaser_ic (KepOrbElem): Initial conditions of chaser given in KepOrbElem.
-            target_ic (KepOrbElem): Initial conditions of target given in KepOrbElem.
-            epoch (datetime): Initialization date.
-            prop_type (string): Propagator that has to be used. Now there are two possibilities:
-                                - '2-body': Use the simple 2-body propagator without any kind of disturbance
-                                - 'real-world': Use the complete propagator with all the disturbances activated
-        """
-
-        # Actual path
-        abs_path = sys.argv[0]
-        path_idx = abs_path.find('nodes')
-        abs_path = abs_path[0:path_idx]
-
-        if prop_type == '2-body':
-            file_name = '_2body'
-        else:
-            file_name = ''
-
-        chaser_settings_path = abs_path + 'simulator/cso_gnc_sim/cfg/chaser' + file_name + '.yaml'
-        target_settings_path = abs_path + 'simulator/cso_gnc_sim/cfg/target' + file_name + '.yaml'
-
-        chaser_settings = file(chaser_settings_path, 'r')
-        target_settings = file(target_settings_path, 'r')
-
-        propSettings = yaml.load(chaser_settings)
-        propSettings = propSettings['propagator_settings']
-        self.chaser_ic.mass = propSettings['orbitProp']['State']['settings']['mass']
-
-        self.prop_chaser.initialize(propSettings,
-                               chaser_ic,
-                               date)
-
-        propSettings = yaml.load(target_settings)
-        propSettings = propSettings['propagator_settings']
-        self.target_ic.mass = propSettings['orbitProp']['State']['settings']['mass']
-
-        self.prop_target.initialize(propSettings,
-                               target_ic,
-                               date)

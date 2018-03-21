@@ -20,31 +20,26 @@ class Satellite(object):
 
         Attributes:
             mass (float64): Mass of the satellite in [kg].
-            abs_state (KepOrbElem): Osculating orbital elements of the satellite.
+            abs_state (Cartesian): Cartesian absolute position of the satellite with respect to Earth Inertial frame.
     """
 
     def __init__(self):
         self.mass = 0.0
-        self.abs_state = KepOrbElem()
+        self.abs_state = Cartesian()
 
-    def set_from_other_satellite(self, satellite):
+    def set_from_satellite(self, satellite):
         """
-            Create a copy of the given satellite.
+            Set attributes of the satellite using as reference another satellite.
 
         Args:
-            satellite (Chaser, Target, Satellite): State of a satellite
+            satellite (Satellite, Chaser): State of a satellite.
         """
 
         if type(self) != type(satellite):
             raise TypeError
 
-        self.abs_state.a = satellite.abs_state.a
-        self.abs_state.e = satellite.abs_state.e
-        self.abs_state.i = satellite.abs_state.i
-        self.abs_state.O = satellite.abs_state.O
-        self.abs_state.w = satellite.abs_state.w
-        self.abs_state.v = satellite.abs_state.v
-
+        self.abs_state.R = satellite.abs_state.R
+        self.abs_state.V = satellite.abs_state.V
         self.mass = satellite.mass
 
         if hasattr(satellite, 'rel_state'):
@@ -60,56 +55,59 @@ class Satellite(object):
         """
 
         if type(tle) == dict:
-            self.abs_state.from_tle(eval(str(tle['i'])),
-                                    eval(str(tle['O'])),
-                                    eval(str(tle['e'])),
-                                    eval(str(tle['m'])),
-                                    eval(str(tle['w'])),
-                                    eval(str(tle['n'])))
+            kep = KepOrbElem()
+            kep.from_tle(eval(str(tle['i'])),
+                         eval(str(tle['O'])),
+                         eval(str(tle['e'])),
+                         eval(str(tle['m'])),
+                         eval(str(tle['w'])),
+                         eval(str(tle['n'])))
+
+            self.abs_state.from_keporb(kep)
         else:
             raise TypeError
 
-    def set_abs_state(self, kep, target=None):
+    def set_abs_state_from_kep(self, kep):
         """
             Given keplerian orbital elements set the absolute state.
 
         Args:
             kep (Dictionary or KepOrbElem): Keplerian orbital elements stored either in a dictionary or in KepOrbElem.
-            target (Satellite): State of the target.
         """
 
         if type(kep) == dict:
-            # Note: "target" is needed because the initial conditions may be defined with respect to the target state.
-            # Therefore, when the string is evaluated you need to give also the target and to have the same name both
-            # in this function and in the initial_conditions.yaml file.
-            self.abs_state.a = eval(str(kep['a']))
-            self.abs_state.e = eval(str(kep['e']))
-            self.abs_state.i = eval(str(kep['i']))
-            self.abs_state.O = eval(str(kep['O']))
-            self.abs_state.w = eval(str(kep['w']))
-            self.abs_state.v = eval(str(kep['v']))
+            kep_state = KepOrbElem()
+            kep_state.a = eval(str(kep['a']))
+            kep_state.e = eval(str(kep['e']))
+            kep_state.i = eval(str(kep['i']))
+            kep_state.O = eval(str(kep['O']))
+            kep_state.w = eval(str(kep['w']))
+            kep_state.v = eval(str(kep['v']))
+            self.abs_state.from_keporb(kep_state)
         elif type(kep) == KepOrbElem:
-            self.abs_state.a = kep.a
-            self.abs_state.e = kep.e
-            self.abs_state.i = kep.i
-            self.abs_state.O = kep.O
-            self.abs_state.w = kep.w
-            self.abs_state.v = kep.v
+            self.abs_state.from_keporb(kep)
         else:
             raise TypeError
 
-    def remove_lock(self):
-        """
-            Remove thread lock from the KepOrbElem to be able to save it in a pickle file.
-        """
-        # TODO
-        del self.abs_state._lock
+    def get_osc_oe(self):
+        """Return the osculating orbital elements of the satellite."""
+        kep_osc = KepOrbElem()
+        kep_osc.from_cartesian(self.abs_state)
 
-    def add_lock(self):
-        """
-            Re create the lock attribute.
-        """
-        self.abs_state._lock = RLock()
+        return kep_osc
+
+    def get_mean_oe(self, prop_type='real-world'):
+        """Return mean orbital elements of the satellite."""
+        kep_osc = self.get_osc_oe()
+
+        if prop_type == 'real-world':
+            kep_mean = KepOrbElem()
+            kep_mean.from_osc_elems(kep_osc)
+            return kep_mean
+        elif prop_type == '2-body':
+            return kep_osc
+        else:
+            raise TypeError('Propagator type not recognized!')
 
 
 class Chaser(Satellite):
@@ -125,22 +123,6 @@ class Chaser(Satellite):
         super(Chaser, self).__init__()
 
         self.rel_state = CartesianLVLH()
-
-    def set_rel_state_from_abs_state(self, target):
-        """
-            Set relative state given target and chaser osculating orbital elements.
-
-        Args:
-            target (Satellite): State of the target.
-        """
-
-        target_cart = Cartesian()
-        chaser_cart = Cartesian()
-
-        target_cart.from_keporb(target.abs_state)
-        chaser_cart.from_keporb(self.abs_state)
-
-        self.rel_state.from_cartesian_pair(chaser_cart, target_cart)
 
     def set_abs_state_from_rel_state(self, target):
         """
