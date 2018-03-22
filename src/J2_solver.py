@@ -21,7 +21,7 @@ def linearized_including_J2(target, de0, v_f, N_orb):
 
     # Initial reference mean orbit
     target_mean = KepOrbElem()
-    target_mean.from_osc_elems(target, 'real-world')
+    target_mean.from_osc_elems(target)
 
     a_mean = target_mean.a
     i_mean = target_mean.i
@@ -32,19 +32,12 @@ def linearized_including_J2(target, de0, v_f, N_orb):
     n_mean = np.sqrt(mu_earth / a_mean ** 3)
 
     # Mean orbital element drift
-    a_mean_dot = 0.0
-    e_mean_dot = 0.0
-    i_mean_dot = 0.0
-    O_mean_dot = -1.5 * J_2 * n_mean * (R_earth / p_mean) ** 2 * np.cos(i_mean)
     w_mean_dot = 0.75 * J_2 * n_mean * (R_earth / p_mean) ** 2 * (5.0 * np.cos(i_mean) ** 2 - 1.0)
     M_mean_dot = n_mean + 0.75 * J_2 * n_mean * (R_earth / p_mean) ** 2 * eta_mean * \
                  (3.0 * np.cos(i_mean) ** 2 - 1.0)
 
     # Epsilon_a partial derivatives: TODO: v_0 or v???
     gamma_2 = -0.5 * J_2 * (R_earth / a_0) ** 2
-
-    depsda = 1.0 - gamma_2 * ((3.0 * np.cos(i_0) ** 2 - 1.0) * ((a_0 / r_0) ** 3 - 1.0 / eta_0 ** 3) +
-                              3.0 * (1.0 - np.cos(i_0) ** 2) * (a_0 / r_0) ** 3 * np.cos(2.0 * w_0 + 2.0 * v_0))
     depsde = a_0 * gamma_2 * ((2.0 - 3.0 * np.sin(i_0) ** 2) *
              (3.0 * np.cos(v_0) * (1.0 + e_0 * np.cos(v_0)) ** 2 / eta_0 ** 6 + 6.0 * e_0 * (1.0 + e_0 * np.cos(v_0)) ** 3 / eta_0 ** 8 - 3.0 * e_0 / eta_0 ** 5) +
              9.0 * np.sin(i_0) ** 2 * np.cos(2.0 * w_0 + 2.0 * v_0) * np.cos(v_0) * (1.0 + e_0 * np.cos(v_0)) ** 2 / eta_0 ** 6 +
@@ -72,10 +65,6 @@ def linearized_including_J2(target, de0, v_f, N_orb):
     # N_orb = ...
     E = lambda v: 2.0 * np.arctan(np.sqrt((1.0 - e_0) / (1.0 + e_0)) * np.tan(v / 2.0))
     M = lambda v: (E(v) - e_0 * np.sin(E(v))) % (2.0 * np.pi)
-
-    print M_0
-    print M(v)
-    print M_mean_dot
 
     tau = lambda v: (2.0 * np.pi * N_orb + M(v) - M_0) / M_mean_dot
 
@@ -243,30 +232,62 @@ def print_state(kep):
     print "      w :     " + str(kep.w)
     print "      v :     " + str(kep.v)
 
-start_date = datetime.utcnow()
+def travel_time(state, theta0, theta1):
+    """
+        Evaluate the travel time of a satellite from a starting true anomaly theta0 to an end anomaly theta1.
 
+    Reference:
+        Exercise of Nicollier's Lecture.
+        David A. Vallado, Fundamentals of Astrodynamics and Applications, Second Edition, Algorithm 11 (p. 133)
+
+    Args:
+        state (KepOrbElem): Satellite state in keplerian orbital elements.
+        theta0 (rad): Starting true anomaly.
+        theta1 (rad): Ending true anomaly.
+
+    Return:
+        Travel time (seconds)
+    """
+
+    a = state.a
+    e = state.e
+
+    T = 2.0 * np.pi * np.sqrt(a**3 / mu_earth)
+
+    theta0 = theta0 % (2.0 * np.pi)
+    theta1 = theta1 % (2.0 * np.pi)
+
+    t0 = np.sqrt(a**3/mu_earth) * (2.0 * np.arctan((np.sqrt((1.0 - e)/(1.0 + e)) * np.tan(theta0 / 2.0))) -
+                                   (e * np.sqrt(1.0 - e**2) * np.sin(theta0))/(1.0 + e * np.cos(theta0)))
+    t1 = np.sqrt(a**3/mu_earth) * (2.0 * np.arctan((np.sqrt((1.0 - e)/(1.0 + e)) * np.tan(theta1 / 2.0))) -
+                                   (e * np.sqrt(1.0 - e**2) * np.sin(theta1))/(1.0 + e * np.cos(theta1)))
+
+    dt = t1 - t0
+
+    if dt < 0:
+        dt += T
+
+    return dt
+
+start_date = datetime.utcnow()
 init_state_ch = KepOrbElem()
 init_state_ta = KepOrbElem()
-
 target_mean = KepOrbElem()
-
 chaser_cart = Cartesian()
 target_cart = Cartesian()
-
 chaser_kep = KepOrbElem()
 target_kep = KepOrbElem()
-
 chaser_LVLH = CartesianLVLH()
 
 # OSCULATING OE
-init_state_ta.a = 7066.09296657
-init_state_ta.e = 0.00540430198877
-init_state_ta.i = 1.72707085384
-init_state_ta.O = 0.740715584014
-init_state_ta.w = 1.60971872749
-init_state_ta.v = 3.12506797076
+init_state_ta.a = 7067.94135375
+init_state_ta.e = 0.000387549807193
+init_state_ta.i = 1.72273328395
+init_state_ta.O = 0.54965315202
+init_state_ta.w = 1.08302214192
+init_state_ta.v = 0.833317371615
 target_cart.from_keporb(init_state_ta)
-target_mean.from_osc_elems(init_state_ta, 'real-world')
+target_mean.from_osc_elems(init_state_ta)
 
 print "----------------------------------------------------------"
 print "Initial target cartesian position: "
@@ -280,8 +301,8 @@ print "----------------------------------------------------------\n"
 
 # Initial relative position
 init_lvlh_ch = CartesianLVLH()
-init_lvlh_ch.R = np.array([-3.94336142396, 7.99995939962, -0.0024119166679])
-init_lvlh_ch.V = np.array([-0.000214949519072, 0.00618618172046, -6.20933747525e-5])
+init_lvlh_ch.R = np.array([ -8.87017543e-4,   17.9770090,  -2.45741513e-3])
+init_lvlh_ch.V = np.array([  6.89534714e-5,  -1.76776403e-3,  -1.42231073e-3])
 chaser_cart.from_lvlh_frame(target_cart, init_lvlh_ch)
 init_state_ch.from_cartesian(chaser_cart)
 
@@ -322,25 +343,44 @@ print " >>> dm: " + str(de0_initial[5])
 print "----------------------------------------------------------\n"
 
 # Final wanted position
-state_final = np.array([0.0, 0.0, 0.0, 0.0, 18.0, 0.0])
+state_final = np.array([0.0, 0.0, 0.0, 0.0, -2.0, 0.0])
 
-tau = 3005.0
-vn = find_v(tau, target_mean.a, target_mean.e, target_mean.i, init_state_ta.m, init_state_ta.e)
+tau = 29000.0
+T_mean = 2.0*np.pi*np.sqrt(target_mean.a**3 / mu_earth)
+
+# print T_mean
+# print np.floor(tau / T_mean)
+# print tau - np.floor(tau / T_mean) * T_mean
+# print target_mean.v
+# print travel_time(target_mean, target_mean.v, 0.0)
+# print init_state_ta.v
+# print travel_time(init_state_ta, init_state_ta.v, 0.0)
 
 v = init_state_ta.v
 N_orb = 0.0
-
 st_0 = linearized_including_J2(init_state_ta, 0.0, v, N_orb)
-
 phi_0 = st_0[0]
 
-v = vn[0]
-N_orb = 1.0
+a_mean = target_mean.a
+i_mean = target_mean.i
+e_mean = target_mean.e
+eta_mean = np.sqrt(1.0 - e_mean ** 2)
+p_mean = a_mean * (1.0 - e_mean ** 2)
+n_mean = np.sqrt(mu_earth / a_mean ** 3)
+M_mean_dot = n_mean + 0.75 * J_2 * n_mean * (R_earth / p_mean) ** 2 * eta_mean * (3.0 * np.cos(i_mean) ** 2 - 1.0)
+
+m_0 = init_state_ta.m
+N_orb = 4.0
+deltaM_4 = M_mean_dot * tau - (2.0 * np.pi * N_orb)
+m_f_4 = deltaM_4 + m_0
+v_4 = calc_v_from_E(calc_E_from_m(tau * M_mean_dot + init_state_ta.m - 2.0 * np.pi * N_orb, init_state_ta.e), init_state_ta.e)
+N_orb = 5.0
+deltaM_5 = M_mean_dot * tau - (2.0 * np.pi * N_orb)
+m_f_5 = deltaM_5 + m_0
+v_5 = calc_v_from_E(calc_E_from_m(tau * M_mean_dot + init_state_ta.m - 2.0 * np.pi * N_orb, init_state_ta.e), init_state_ta.e)
 
 st = linearized_including_J2(init_state_ta, 0.0, v, N_orb)
-
 phi = st[0]
-tau = st[1]
 
 phi_comb = np.array([
     phi_0[0:6][3],
@@ -351,22 +391,7 @@ phi_comb = np.array([
     phi[0:6][5]
 ])
 
-state_comb = np.array([init_lvlh_ch.R[0], init_lvlh_ch.R[1], init_lvlh_ch.R[2], 0.0, 18.0, 0.0])
-
-print "Phi comb"
-print phi_comb
-
-print "----------------------------------------------------------"
-print "Model test with true anomaly = initial anomaly: "
-print " >>> R: " + str(phi.dot(de0_initial)[3:6])
-print " >>> V: " + str(phi.dot(de0_initial)[0:3])
-print "----------------------------------------------------------\n"
-
-print "----------------------------------------------------------"
-print "Initial error in relative position: "
-print " >>> dR: " + str(abs(phi.dot(de0_initial)[3:6] - init_lvlh_ch.R) * 1e3) + " [m]"
-print " >>> dV: " + str(abs(phi.dot(de0_initial)[0:3] - init_lvlh_ch.V) * 1e3) + " [m/s]"
-print "----------------------------------------------------------\n"
+state_comb = np.array([init_lvlh_ch.R[0], init_lvlh_ch.R[1], init_lvlh_ch.R[2], 0.0, -2.0, 0.0])
 
 # Wanted initial relative orbital elements
 de0_wanted = np.linalg.inv(phi_comb).dot(state_comb)
@@ -405,8 +430,8 @@ chaser_cart.from_keporb(chaser_kep_wanted)
 R_chaser_initial_wanted = chaser_cart.R
 V_chaser_initial_wanted = chaser_cart.V
 
-print R_chaser_initial
-print R_chaser_initial_wanted
+print "R_chaser_wanted: "  + str(R_chaser_initial)
+print "R_chaser:        " + str(R_chaser_initial_wanted)
 print "\n"
 print V_chaser_initial
 print V_chaser_initial_wanted
@@ -424,9 +449,6 @@ chaser_cart.R = R_chaser_initial_wanted
 chaser_cart.V = V_chaser_initial_wanted
 
 chaser_kep.from_cartesian(chaser_cart)
-
-print "R_chaser_wanted: "  + str(R_chaser_initial)
-print "R_chaser:        " + str(R_chaser_initial_wanted)
 
 # Propagate target by tau
 settings_path = '/home/dfrey/cso_ws/src/rdv-cap-sim/simulator/cso_gnc_sim/cfg/chaser.yaml'
@@ -451,21 +473,6 @@ prop_target.initialize(propSettings,
                        init_state_ta,
                        start_date)
 
-target_init = prop_target.propagate(start_date)
-chaser_init = prop_chaser.propagate(start_date)
-
-print "----------------------------------------------------------"
-print "Initial target cartesian position from propagator: "
-print " >>> R: " + str(target_init[0].R)
-print " >>> V: " + str(target_init[0].V)
-print "----------------------------------------------------------"
-
-print "----------------------------------------------------------"
-print "Initial chaser cartesian position from propagator: "
-print " >>> R: " + str(chaser_init[0].R)
-print " >>> V: " + str(chaser_init[0].V)
-print "----------------------------------------------------------"
-
 target = prop_target.propagate(start_date + timedelta(seconds=tau))
 chaser = prop_chaser.propagate(start_date + timedelta(seconds=tau))
 
@@ -479,51 +486,3 @@ chaser_LVLH.from_cartesian_pair(chaser_cart, target_cart)
 
 print "Chaser R: " + str(chaser_LVLH.R)
 print "Chaser V: " + str(chaser_LVLH.V)
-
-
-e = []
-e_mean = []
-sum_w_v = []
-sum_w_v_mean = []
-
-lvlh_r = []
-lvlh_v = []
-lvlh_h = []
-
-diff_r = []
-diff_r_pk = []
-
-mu_earth = 398600.4
-
-tmax = 10000
-dt = 10
-for i in xrange(1, tmax, dt):
-    chaser = prop_chaser.propagate(start_date + timedelta(seconds=i))
-    target = prop_target.propagate(start_date + timedelta(seconds=i))
-
-    chaser_cart = chaser[0]
-    target_cart = target[0]
-
-    diff_r.append(np.linalg.norm(chaser_cart.R) - np.linalg.norm(target_cart.R))
-
-    chaser_kep.from_cartesian(chaser_cart)
-
-    chaser_LVLH.from_cartesian_pair(chaser_cart, target_cart)
-
-    lvlh_r.append(chaser_LVLH.R[0])
-    lvlh_v.append(chaser_LVLH.R[1])
-    lvlh_h.append(chaser_LVLH.R[2])
-
-    e.append(chaser_kep.a)
-    # plt.plot(i, chaser_kep.a, 'k.', markersize=5)
-    sum_w_v.append(chaser_kep.v + chaser_kep.w)
-
-    i_osc = chaser_kep.i
-
-    chaser_kep.from_osc_elems(chaser_kep)
-    # e_mean.append((i_osc - chaser_kep.i)* np.linalg.norm(chaser_cart.R))
-    # plt.plot(i, chaser_kep.a, 'r.', markersize=5)
-    sum_w_v_mean.append(chaser_kep.v + chaser_kep.w)
-
-plt.plot(lvlh_v, lvlh_r, 'b-')
-plt.show()

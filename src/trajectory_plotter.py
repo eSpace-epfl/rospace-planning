@@ -66,13 +66,44 @@ def _change_propagator_ic(propagator, initial_state, epoch, mass):
     # Rewrite propagator initial conditions
     propagator._propagator_num.setInitialState(newSpacecraftState)
 
-def print_state(kep):
-    print "      a :     " + str(kep.a)
-    print "      e :     " + str(kep.e)
-    print "      i :     " + str(kep.i)
-    print "      O :     " + str(kep.O)
-    print "      w :     " + str(kep.w)
-    print "      v :     " + str(kep.v)
+def _print_state(satellite):
+    """Print out satellite state.
+
+    Args:
+        satellite (Satellite)
+    """
+
+    print " >> Cartesian: "
+    print "      R :      " + str(satellite.abs_state.R) + "   [km]"
+    print "      V :      " + str(satellite.abs_state.V) + "   [km/s]"
+    print ""
+
+    kep_osc = satellite.get_osc_oe()
+
+    print " >> Osculating orbital elements: "
+    print "      a :      " + str(kep_osc.a)
+    print "      e :      " + str(kep_osc.e)
+    print "      i :      " + str(kep_osc.i)
+    print "      O :      " + str(kep_osc.O)
+    print "      w :      " + str(kep_osc.w)
+    print "      v :      " + str(kep_osc.v)
+    print ""
+
+    kep_mean = satellite.get_mean_oe('real-world')
+
+    print " >> Mean orbital elements: "
+    print "      a :      " + str(kep_mean.a)
+    print "      e :      " + str(kep_mean.e)
+    print "      i :      " + str(kep_mean.i)
+    print "      O :      " + str(kep_mean.O)
+    print "      w :      " + str(kep_mean.w)
+    print "      v :      " + str(kep_mean.v)
+
+    if hasattr(satellite, 'rel_state'):
+        print ""
+        print " >> Cartesian LVLH: "
+        print "      R :      " + str(satellite.rel_state.R) + "   [km]"
+        print "      V :      " + str(satellite.rel_state.V) + "   [km/s]"
 
 def plot_result(manoeuvre_plan, scenario, save_path):
 
@@ -91,39 +122,20 @@ def plot_result(manoeuvre_plan, scenario, save_path):
     target = Satellite()
     chaser_extra = Chaser()
 
-    chaser.set_from_other_satellite(scenario.chaser_ic)
-    target.set_from_other_satellite(scenario.target_ic)
-
-    chaser_cart = Cartesian()
-    target_cart = Cartesian()
+    chaser.set_from_satellite(scenario.chaser_ic)
+    target.set_from_satellite(scenario.target_ic)
 
     chaser_cart_extra = Cartesian()
     target_cart_extra = Cartesian()
-
-    chaser_cart.from_keporb(chaser.abs_state)
-    target_cart.from_keporb(target.abs_state)
 
     epoch = scenario.date
 
     extra_propagation = 0
 
     print "--------------------Chaser initial state-------------------"
-    print " >> Osc Elements:"
-    print_state(chaser.abs_state)
-    print "\n >> Mean Elements:"
-    chaser_mean = KepOrbElem()
-    chaser_mean.from_osc_elems(chaser.abs_state, scenario.prop_type)
-    print_state(chaser_mean)
-    print "\n >> LVLH:"
-    print "     R: " + str(chaser.rel_state.R)
-    print "     V: " + str(chaser.rel_state.V)
+    _print_state(chaser)
     print "\n--------------------Target initial state-------------------"
-    print " >> Osc Elements:"
-    print_state(target.abs_state)
-    print "\n >> Mean Elements:"
-    target_mean = KepOrbElem()
-    target_mean.from_osc_elems(target.abs_state, scenario.prop_type)
-    print_state(target_mean)
+    _print_state(target)
     print "------------------------------------------------------------\n"
 
     L = len(manoeuvre_plan)
@@ -138,39 +150,47 @@ def plot_result(manoeuvre_plan, scenario, save_path):
 
         man = manoeuvre_plan[i]
 
-        for j in xrange(0, int(np.floor(man.duration)), 100):
-            chaser_prop = scenario.prop_chaser.propagate(epoch + timedelta(seconds=j))
-            target_prop = scenario.prop_target.propagate(epoch + timedelta(seconds=j))
+        dt = 100.0
+        step = man.duration / dt
+        t_d = man.duration - np.floor(step) * dt
+        dt_tot = 0
 
-            chaser_cart.R = chaser_prop[0].R
-            chaser_cart.V = chaser_prop[0].V
-            target_cart.R = target_prop[0].R
-            target_cart.V = target_prop[0].V
+        for j in xrange(0, int(np.floor(step))):
+            chaser_prop = scenario.prop_chaser.propagate(epoch)
+            target_prop = scenario.prop_target.propagate(epoch)
 
-            chaser.rel_state.from_cartesian_pair(chaser_cart, target_cart)
+            epoch += timedelta(seconds=100.0)
+            dt_tot += 100.0
 
-            R_chaser.append(chaser_cart.R)
-            R_target.append(target_cart.R)
+            chaser.abs_state.R = chaser_prop[0].R
+            chaser.abs_state.V = chaser_prop[0].V
+
+            target.abs_state.R = target_prop[0].R
+            target.abs_state.V = target_prop[0].V
+
+            chaser.rel_state.from_cartesian_pair(chaser.abs_state, target.abs_state)
+
+            R_chaser.append(chaser.abs_state.R)
+            R_target.append(target.abs_state.R)
             R_chaser_lvlh.append(chaser.rel_state.R)
 
         # Re-initialize propagators and update epoch
-        epoch += timedelta(seconds=man.duration)
+        epoch += timedelta(seconds=t_d)
 
         chaser_prop = scenario.prop_chaser.propagate(epoch)
         target_prop = scenario.prop_target.propagate(epoch)
 
-        chaser_cart.R = chaser_prop[0].R
-        chaser_cart.V = chaser_prop[0].V
+        chaser.abs_state.R = chaser_prop[0].R
+        chaser.abs_state.V = chaser_prop[0].V
 
-        target_cart.R = target_prop[0].R
-        target_cart.V = target_prop[0].V
+        target.abs_state.R = target_prop[0].R
+        target.abs_state.V = target_prop[0].V
+        chaser.abs_state.V += man.dV
 
-        chaser.rel_state.from_cartesian_pair(chaser_cart, target_cart)
+        chaser.rel_state.from_cartesian_pair(chaser.abs_state, target.abs_state)
 
-        chaser_cart.V += man.dV
-
-        _change_propagator_ic(scenario.prop_chaser, chaser_cart, epoch, chaser.mass)
-        _change_propagator_ic(scenario.prop_target, target_cart, epoch, target.mass)
+        _change_propagator_ic(scenario.prop_chaser, chaser.abs_state, epoch, chaser.mass)
+        _change_propagator_ic(scenario.prop_target, target.abs_state, epoch, target.mass)
 
         print "     End pos: " + str(chaser.rel_state.R)
 
@@ -223,13 +243,6 @@ def main():
 
     # Import scenario solution
     manoeuvre_plan = scenario.import_solved_scenario()
-
-    scenario.prop_chaser._propagator_num.resetAtEnd = False
-    scenario.prop_target._propagator_num.resetAtEnd = False
-
-    # Add lockers to manoeuvre plan
-    for man in manoeuvre_plan:
-        man.add_lock()
 
     # Path where the files should be stored
     save_path = '/home/dfrey/polybox/manoeuvre'
