@@ -185,7 +185,7 @@ class Solver(object):
             print "======================================================================="
             if type(checkpoint.state) == Cartesian or type(checkpoint.state) == CartesianLVLH:
                 # Relative navigation
-                self.relative_solver(checkpoint, approach_ellipsoid)
+                self.relative_solver(checkpoint)
             else:
                 # Absolute navigation
                 self.absolute_solver(checkpoint)
@@ -193,7 +193,7 @@ class Solver(object):
             print "[REACHED STATE]:"
             print "--------------------Chaser-------------------"
             self._print_state(self.chaser)
-            print "--------------------Target-------------------"
+            print "\n--------------------Target-------------------"
             self._print_state(self.target)
             print "=======================================================================\n"
 
@@ -498,10 +498,6 @@ class Solver(object):
             t_est (float64): Drifting time to reach the next checkpoint (in seconds). If not reachable, return None.
         """
 
-        # Creating cartesian coordinates
-        chaser_cart = Cartesian()
-        target_cart = Cartesian()
-
         # Creating old chaser and target objects to store their temporary value
         chaser_old = Chaser()
         target_old = Satellite()
@@ -514,9 +510,6 @@ class Solver(object):
             # Assign mean orbital elements
             chaser_mean = self.chaser.get_mean_oe(self.scenario.prop_type)
             target_mean = self.target.get_mean_oe(self.scenario.prop_type)
-
-            # Assign cartesian coordinates from mean-orbital (mean orbital radius needed)
-            chaser_cart.from_keporb(chaser_mean)
 
             # Assign information to the new chaser and target objects
             chaser_old.set_from_satellite(self.chaser)
@@ -533,7 +526,7 @@ class Solver(object):
 
             # Required true anomaly difference at the end of the manoeuvre, estimation assuming circular
             # orbit
-            r_C = np.linalg.norm(chaser_cart.R)
+            r_C = np.linalg.norm(self.chaser.abs_state.R)
             dv_req = checkpoint.state.R[1] / r_C
 
             # Evaluate the actual true anomaly difference
@@ -546,7 +539,7 @@ class Solver(object):
             chaser_tmp = Chaser()
             target_tmp = Satellite()
 
-            manoeuvre_plan_old = self.manoeuvre_plan
+            manoeuvre_plan_old = [man for man in self.manoeuvre_plan]
 
             t_est = (2.0 * np.pi * F(dv_req, actual_dv, n_rel) + dv_req - actual_dv) / n_rel
             ellipsoid_flag = False
@@ -559,24 +552,9 @@ class Solver(object):
                 target_tmp.set_from_satellite(self.target)
                 epoch_tmp = self.epoch
                 dr_next_tmp = dr_next
-                manoeuvre_plan_tmp = self.manoeuvre_plan
+                manoeuvre_plan_tmp = [man for man in self.manoeuvre_plan]
 
-                # Update epoch
-                self.epoch = self.epoch + timedelta(seconds=dt)
-
-                # Propagate
-                chaser_prop = self.scenario.prop_chaser.propagate(self.epoch)
-                target_prop = self.scenario.prop_target.propagate(self.epoch)
-
-                self.chaser.abs_state.R = chaser_prop[0].R
-                self.chaser.abs_state.V = chaser_prop[0].V
-                self.target.abs_state.R = target_prop[0].R
-                self.target.abs_state.V = target_prop[0].V
-                self.chaser.rel_state.from_cartesian_pair(self.chaser.abs_state, self.target.abs_state)
-
-                # Re-initialize propagators
-                self._change_propagator_ic(self.scenario.prop_chaser, chaser_prop[0], self.epoch, self.chaser.mass)
-                self._change_propagator_ic(self.scenario.prop_target, target_prop[0], self.epoch, self.target.mass)
+                self._propagator(dt)
 
                 dr_next = self.chaser.rel_state.R[1] - checkpoint.state.R[1]
 
@@ -875,43 +853,24 @@ class Solver(object):
         if abs(da) > tol_a or abs(de) > tol_e:
             self.adjust_eccentricity_semimajoraxis(checkpoint)
 
-    def relative_solver(self, checkpoint, approach_ellipsoid):
+    def relative_solver(self, checkpoint):
 
         # Mean orbital elements
         chaser_mean = self.chaser.get_mean_oe(self.scenario.prop_type)
         target_mean = self.target.get_mean_oe(self.scenario.prop_type)
 
-        # # Check if plane needs to be corrected again
-        # # TODO: Put as tolerance a number slightly bigger than the deviation of the estimation
-        # tol_i = 1.0 / chaser_mean.a
-        # tol_O = 1.0 / chaser_mean.a
-        #
-        # # At this point, inclination and raan should match the one of the target
-        # di = target_mean.i - chaser_mean.i
-        # dO = target_mean.O - chaser_mean.O
-        # if abs(di) > tol_i or abs(dO) > tol_O:
-        #     checkpoint_abs = CheckPoint()
-        #     checkpoint_abs.set_state(chaser_mean)
-        #     checkpoint_abs.state.i = target_mean.i
-        #     checkpoint_abs.state.O = target_mean.O
-        #     self.plane_correction(checkpoint_abs)
-
         if checkpoint.manoeuvre_type == 'standard':
-            # self.multi_lambert(checkpoint, approach_ellipsoid, False)
             self.linearized_including_J2(checkpoint)
-
         elif checkpoint.manoeuvre_type == 'radial':
             # Manoeuvre type is radial -> deltaT is calculated from CW-equations -> solved with multi-lambert
             dt = np.pi / np.sqrt(mu_earth / target_mean.a ** 3.0)
-
             checkpoint.t_min = dt
             checkpoint.t_max = dt + 1.0
-
-            # self.multi_lambert(checkpoint, approach_ellipsoid, True)
-            self.linearized_including_J2(checkpoint)
-
+            self.linearized_including_J2(checkpoint, False)
         elif checkpoint.manoeuvre_type == 'drift':
             self.drift_to(checkpoint)
+        else:
+            raise AssertionError('Manoeuvre not known!')
 
     def _propagator(self, dt, dv=np.array([0.0, 0.0, 0.0])):
         """
@@ -923,10 +882,21 @@ class Solver(object):
                 Earth Inertial reference frame.
         """
 
-        # Update time
-        self.epoch += timedelta(seconds=dt)
+        # Divide dt in 100.0 seconds timesteps
+        steps = int(np.floor(dt / 100.0))
+        dt_rest = dt - 100.0 * steps
 
-        # Propagate
+        for i in xrange(0, steps):
+            # Update time
+            self.epoch += timedelta(seconds=100.0)
+
+            # Propagate
+            self.scenario.prop_chaser.propagate(self.epoch)
+            self.scenario.prop_target.propagate(self.epoch)
+
+        self.epoch += timedelta(seconds=dt_rest)
+
+        # Propagate rest time
         chaser_prop = self.scenario.prop_chaser.propagate(self.epoch)
         target_prop = self.scenario.prop_target.propagate(self.epoch)
 
@@ -984,7 +954,7 @@ class Solver(object):
 
         return dt
 
-    def is_trajectory_safe(self, t_man, keep_out_zone):
+    def is_trajectory_safe(self, t_man):
         """
             Check if a trajectory is safe, i.e if it never violates a given keep-out zone.
 
@@ -995,22 +965,34 @@ class Solver(object):
                             ex: np.array([0.5,0.5,0.5]) is a sphere of radius 500 meter.
         """
 
+        keep_out_zone = self.scenario.approach_ellipsoid
+
         # Safety time, propagation continues up to t + t_SF to see if the trajectory is safe also afterwards
         t_SF = 7200.0
 
         # Time step of propagation
-        dt = 10.0
+        dt = 20.0
 
         # Time vector
         T = np.arange(0.0, t_man + t_SF, dt)
 
-        # Extract propagators
-        prop_chaser = self.scenario.prop_chaser
-        prop_target = self.scenario.prop_target
+        # Save initial state of chaser and target and epoch
+        chaser_old = Chaser()
+        chaser_old.set_from_satellite(self.chaser)
+
+        target_old = Satellite()
+        target_old.set_from_satellite(self.target)
+
+        epoch_old = self.epoch
+
+        # Extract epoch
+        epoch = self.epoch
 
         for t in T:
-            chaser = prop_chaser.propagate(self.epoch + timedelta(seconds=t))
-            target = prop_target.propagate(self.epoch + timedelta(seconds=t))
+            chaser = self.scenario.prop_chaser.propagate(epoch + timedelta(seconds=dt))
+            target = self.scenario.prop_target.propagate(epoch + timedelta(seconds=dt))
+
+            epoch += timedelta(seconds=dt)
 
             # Calculate relative position in LVLH frame
             dr_TEME = chaser[0].R - target[0].R
@@ -1018,17 +1000,27 @@ class Solver(object):
 
             if (dr_LVLH[0]**2 / keep_out_zone[0]**2 + dr_LVLH[1]**2 / keep_out_zone[1]**2 +
                 dr_LVLH[2]**2 / keep_out_zone[2]**2) <= 1.0:
+
+                # Re-initialize propagators
+                self._change_propagator_ic(self.scenario.prop_chaser, chaser_old.abs_state, epoch_old, chaser_old.mass)
+                self._change_propagator_ic(self.scenario.prop_target, target_old.abs_state, epoch_old, target_old.mass)
                 return False
+
+        # Re-initialize propagators
+        self._change_propagator_ic(self.scenario.prop_chaser, chaser_old.abs_state, epoch_old, chaser_old.mass)
+        self._change_propagator_ic(self.scenario.prop_target, target_old.abs_state, epoch_old, target_old.mass)
 
         return True
 
-    def linearized_including_J2(self, checkpoint):
+    def linearized_including_J2(self, checkpoint, safety_flag=True):
         """
             Using the linearized solution including J2 and elliptical orbits to estimate the deltaV needed.
 
         Args:
-            checkpoint (Checkpoint):
+            checkpoint (CheckPoint)
+            safety_flag (boolean)
         """
+
         # Initial chaser and target osculating orbital elements
         target_osc = self.target.get_osc_oe()
         chaser_osc = self.chaser.get_osc_oe()
@@ -1117,32 +1109,25 @@ class Solver(object):
         t_max = int(checkpoint.t_max)
 
         for dt in xrange(t_min, t_max):
+            N_orb_1 = (dt * M_mean_dot - (dt * M_mean_dot) % (2.0 * np.pi)) / (2.0 * np.pi)
+            N_orb_2 = N_orb_1 + 1
 
-            N_orb = np.floor(dt / T_mean) + int((self.travel_time(target_osc, target_osc.v, 0.0) < dt) and (dt / T_mean < 1.0))
-            M_f = (dt * M_mean_dot) + M_0 - 2.0 * np.pi * N_orb
+            M_f_1 = M_0 + M_mean_dot * dt - 2.0 * np.pi * N_orb_1
+            M_f_2 = M_0 + M_mean_dot * dt - 2.0 * np.pi * N_orb_2
+
+            if M_f_1 > 2.0 * np.pi or M_f_1 < 0.0:
+                M_f = M_f_2
+                N_orb = N_orb_2
+            else:
+                M_f = M_f_1
+                N_orb = N_orb_1
+
             E_f = self._calc_E_from_m(e_0, M_f)
             v_f = (2.0 * np.arctan(np.sqrt((1.0 + e_0) / (1.0 - e_0)) * np.tan(E_f / 2.0))) % (2.0 * np.pi)
 
             # Estimate flight time
             E = lambda v: 2.0 * np.arctan(np.sqrt((1.0 - e_0) / (1.0 + e_0)) * np.tan(v / 2.0))
             M = lambda v: (E(v) - e_0 * np.sin(E(v))) % (2.0 * np.pi)
-
-            # target_old = Cartesian()
-            # target_old.R = self.target.abs_state.R
-            # target_old.V = self.target.abs_state.V
-            #
-            # target_prop = self.scenario.prop_target.propagate(self.epoch + timedelta(seconds=dt))
-            # self.target.abs_state.R = target_prop[0].R
-            # self.target.abs_state.V = target_prop[0].V
-            #
-            # target_osc_prop = self.target.get_osc_oe()
-            # target_mean_prop = self.target.get_mean_oe(self.scenario.prop_type)
-            #
-            # v_f_prop = target_osc_prop.v
-            #
-            # self._change_propagator_ic(self.scenario.prop_target, target_old, self.epoch, self.target.mass)
-            # self.target.abs_state.R = target_old.R
-            # self.target.abs_state.V = target_old.V
 
             def tau(v):
                 if v != v_0:
@@ -1314,44 +1299,50 @@ class Solver(object):
             # Evaluate delta_V_1
             delta_V_1 = chaser_cart_wanted.V - self.chaser.abs_state.V
 
-
             # Evaluate delta_V_2
             state_f = phi_f.dot(de0_wanted)
             delta_V_2 = checkpoint.state.V - state_f[0:3]
 
+            # Evaluate total delta_V
             deltaV_tot = np.linalg.norm(delta_V_1) + np.linalg.norm(delta_V_2)
 
             if best_dV > deltaV_tot and np.linalg.norm(delta_V_1) > dV_min and np.linalg.norm(delta_V_2) > dV_min:
-                # if self.is_trajectory_safe(dt, approach_ellipsoid):
-                best_dV = deltaV_tot
-                best_dV_1 = delta_V_1
-                best_dV_2 = delta_V_2
-                best_dt = dt
-                N_orb_best = N_orb
+                if not safety_flag:
+                    best_dV = deltaV_tot
+                    best_dV_1 = delta_V_1
+                    best_dV_2 = delta_V_2
+                    best_dt = dt
+                else:
+                    if self.is_trajectory_safe(dt):
+                        best_dV = deltaV_tot
+                        best_dV_1 = delta_V_1
+                        best_dV_2 = delta_V_2
+                        best_dt = dt
 
         c1 = Manoeuvre()
         c1.dV = best_dV_1
         c1.set_initial_state(self.chaser.rel_state)
-        c1.duration = 1e-3
+        c1.duration = 0.0
         c1.description = 'Linearized-J2 solution'
-
-        # self._propagator(1e-3, best_dV_1)
-
         c1.initial_rel_state = self.chaser.rel_state.R
+
         # Propagate chaser and target
-        self._propagator(1e-3, best_dV_1)
+        self._propagator(0.0, best_dV_1)
         c1.final_rel_state = self.chaser.rel_state.R
         self.manoeuvre_plan.append(c1)
 
         c2 = Manoeuvre()
         c2.dV = best_dV_2
+        c2.dV = -self.chaser.rel_state.V
         c2.set_initial_state(self.chaser.rel_state)
         c2.duration = best_dt
         c2.description = 'Linearized-J2 solution'
-
         c2.initial_rel_state = self.chaser.rel_state.R
+
         # Propagate chaser and target
-        self._propagator(c2.duration, best_dV_2)
+        self._propagator(c2.duration)
+        c2.dV = -self.chaser.rel_state.V
+        self._propagator(0.0, c2.dV)
         c2.final_rel_state = self.chaser.rel_state.R
         self.manoeuvre_plan.append(c2)
 
