@@ -11,7 +11,6 @@
 import numpy as np
 
 from space_tf import KepOrbElem, CartesianLVLH, Cartesian
-from threading import RLock
 
 
 class Satellite(object):
