@@ -60,26 +60,27 @@ class Manoeuvre(object):
         else:
             raise AttributeError('Manoeuvre initial state has already been defined!')
 
-# class RelativeMan(Manoeuvre):
-#     """
-#         Extended class for manoeuvres in relative navigation.
-#
-#     Attributes:
-#         rel_state (CartesianLVLH): Relative state at which manoeuvre should occur given in LVLH frame.
-#     """
-#
-#     def __init__(self):
-#         super(RelativeMan, self).__init__()
-#
-#         self.rel_state = CartesianLVLH()
-#
-#     def set_rel_state(self, rel_state):
-#         """
-#             Define the starting relative state of the manoeuvre.
-#
-#         Args:
-#             rel_state (CartesianLVLH): Relative state given in LVLH frame.
-#         """
-#
-#         self.rel_state.R = rel_state.R
-#         self.rel_state.V = rel_state.V
+
+class RelativeMan(Manoeuvre):
+    """
+        Extended class for manoeuvres in relative navigation.
+
+    Attributes:
+        rel_state (CartesianLVLH): Relative state at which manoeuvre should occur given in LVLH frame.
+    """
+
+    def __init__(self):
+        super(RelativeMan, self).__init__()
+
+        self.rel_state = CartesianLVLH()
+
+    def set_rel_state(self, rel_state):
+        """
+            Define the starting relative state of the manoeuvre.
+
+        Args:
+            rel_state (CartesianLVLH): Relative state given in LVLH frame.
+        """
+
+        self.rel_state.R = rel_state.R
+        self.rel_state.V = rel_state.V
