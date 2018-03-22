@@ -7,7 +7,7 @@ scenario:
               3. Drift to S0.\n
               4. Do ARM1 to move on target's orbit.\n"
 
-  keep_out_zone: 0.2
+  keep_out_zone: [0.2, 0.2, 0.2]
 
   approach_ellipsoid: [0.5, 1.5, 0.5]
 
