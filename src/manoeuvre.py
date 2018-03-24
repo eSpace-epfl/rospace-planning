@@ -11,27 +11,23 @@
 import numpy as np
 
 from space_tf import KepOrbElem, CartesianLVLH
-from threading import RLock
-
 
 class Manoeuvre(object):
     """
         Base class that contains the definition of a manoeuvre.
 
     Attributes:
-        dV (array): Amount of delta-v needed to execute the burn. Given in kilometers per second with respect
+        deltaV (array): Amount of delta-v needed to execute the burn. Given in kilometers per second with respect
             to TEME reference frame.
-        duration (float64): Waiting time from last manoeuvre to the next one, given in seconds. (TO BE REVIEWED - Maybe useless)
         initial_state (KepOrbElem or CartesianLVLH): State at which the manoeuvre has to be executed, can be either
             defined in mean orbital elements or in cartesian LVLH reference frame.
-        description (str): Brief description of the manoeuvre.
+        execution_epoch (datetime): Epoch at which the manoeuvre should be executed.
     """
 
     def __init__(self):
-        self.dV = np.array([0, 0, 0])
-        self.duration = 0
+        self.deltaV = np.array([0, 0, 0])
         self.initial_state = None
-        self.description = None
+        self.execution_epoch = None
 
     def set_initial_state(self, state):
         """Set manoeuvre initial state in KepOrbElem or CartesianLVLH.
