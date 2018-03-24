@@ -1,8 +1,7 @@
 import numpy as np
 
 from space_tf import mu_earth
-from propagator_class import Propagator
-from manoeuvre import Manoeuvre
+
 
 class OrbitAdjuster(object):
 

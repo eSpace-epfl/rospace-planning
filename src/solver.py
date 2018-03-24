@@ -12,7 +12,7 @@ import numpy as np
 
 from space_tf import Cartesian, KepOrbElem, CartesianLVLH, mu_earth
 from manoeuvre import Manoeuvre
-from state import Satellite, Chaser
+from state import Satellite
 from checkpoint import CheckPoint
 from scenario import Scenario
 from datetime import timedelta, datetime
@@ -95,6 +95,13 @@ class Solver(object):
         self.target.set_abs_state_from_cartesian(target_prop[0])
 
     def create_manoeuvres(self, deltaV_list):
+        """
+            Given a list of deltaV's and true anomalies where they has to be executed, this function creates and add the
+            manoeuvres to the plan, while also applying them to keep the satellite state and propagator up to date.
+
+        Args:
+            deltaV_list (list)
+        """
 
         for deltaV in deltaV_list:
             # Create manoeuvre

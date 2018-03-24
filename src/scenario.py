@@ -13,9 +13,8 @@ import numpy as np
 import pickle
 import sys
 
-from state import Satellite, Chaser
+from state import Satellite
 from checkpoint import CheckPoint
-from propagator.OrekitPropagator import OrekitPropagator
 from datetime import datetime
 
 
@@ -29,10 +28,7 @@ class Scenario(object):
             name (str): Scenario name.
             overview (str): Brief scenario overview, explaining all the steps.
             checkpoints (list): A list containing all the checkpoints that has to be executed in the right order.
-            chaser_ic (Chaser): Chaser initial state.
             target_ic (Satellite): Target initial state.
-            prop_chaser (OrekitPropagator): Chaser propagator.
-            prop_target (OrekitPropagator): Target propagator.
             date (timedelta): Time at which the simulation start.
             prop_type (str): Propagator type that has to be used. It can be either 'real-world' - with all the
                 disturbances, or '2-body' - considering only the exact solution to the 2-body equation.
