@@ -48,7 +48,7 @@ class Scenario(object):
         # Checkpoint list
         self.checkpoints = []
 
-        # Chaser and target actual state
+        # Satellite initial states
         self.target_ic = Satellite()
 
         # Propagators informations
@@ -83,13 +83,9 @@ class Scenario(object):
 
                     self.checkpoints = obj['checkpoints']
                     self.name = obj['scenario_name']
-                    self.chaser_ic = obj['chaser_ic']
                     self.target_ic = obj['target_ic']
                     self.date = obj['scenario_epoch']
                     self.prop_type = obj['prop_type']
-
-                    # Initialize propagators
-                    self._initialize_propagators()
 
                     return obj['manoeuvre_plan']
                 else:
@@ -114,7 +110,7 @@ class Scenario(object):
         with open(pickle_path, 'wb') as file:
 
             obj = {'scenario_name': self.name, 'checkpoints': self.checkpoints, 'manoeuvre_plan': manoeuvre_plan,
-                   'chaser_ic': self.chaser_ic, 'target_ic': self.target_ic, 'scenario_epoch': self.date,
+                   'target_ic': self.target_ic, 'scenario_epoch': self.date,
                    'prop_type': self.prop_type}
 
             pickle.dump(obj, file, protocol=pickle.HIGHEST_PROTOCOL)
