@@ -94,6 +94,17 @@ class Satellite(object):
         self.abs_state.V = satellite.abs_state.V
         self.mass = satellite.mass
 
+    def set_abs_state_from_cartesian(self, cartesian):
+        """
+            Given some cartesian coordinates set the absolute state of the satellite.
+
+        Args:
+            cartesian (Cartesian)
+        """
+
+        self.abs_state.R = cartesian.R
+        self.abs_state.V = cartesian.V
+
     def get_osc_oe(self):
         """
             Return the osculating orbital elements of the satellite.
