@@ -49,83 +49,15 @@ class Scenario(object):
         self.checkpoints = []
 
         # Chaser and target actual state
-        self.chaser_ic = Chaser()
         self.target_ic = Satellite()
 
-        # Propagators
-        OrekitPropagator.init_jvm()
-        self.prop_chaser = OrekitPropagator()
-        self.prop_target = OrekitPropagator()
+        # Propagators informations
         self.date = datetime.utcnow()
         self.prop_type = 'real-world'
 
         # Target Keep-Out Zones
         self.approach_ellipsoid = np.array([0.0, 0.0, 0.0])
         self.koz_r = 0.0
-
-    def _initialize_satellites(self):
-        """Initialize the chaser and target given their initial conditions."""
-
-        # Actual path
-        abs_path = sys.argv[0]
-        path_idx = abs_path.find('nodes')
-        abs_path = abs_path[0:path_idx]
-
-        # Opening initial conditions file
-        initial_conditions_path = abs_path + 'nodes/cso_path_planner/cfg/initial_conditions.yaml'
-        initial_conditions_file = file(initial_conditions_path, 'r')
-        initial_conditions = yaml.load(initial_conditions_file)
-        chaser_ic = initial_conditions['chaser']
-        target_ic = initial_conditions['target']
-
-        # Opening chaser and target settings file
-        file_name = ''
-        if self.prop_type == '2-body':
-            file_name = '_2body'
-        chaser_settings_path = abs_path + 'simulator/cso_gnc_sim/cfg/chaser' + file_name + '.yaml'
-        target_settings_path = abs_path + 'simulator/cso_gnc_sim/cfg/target' + file_name + '.yaml'
-        chaser_settings = file(chaser_settings_path, 'r')
-        target_settings = file(target_settings_path, 'r')
-        propSettings_chaser = yaml.load(chaser_settings)
-        propSettings_target = yaml.load(target_settings)
-
-        # Assign initial conditions, assuming target in tle and chaser in keplerian
-        self.target_ic.set_abs_state_from_tle(target_ic['tle'])
-        self.chaser_ic.set_abs_state_from_kep(chaser_ic['kep'])
-        self.chaser_ic.rel_state.from_cartesian_pair(self.chaser_ic.abs_state, self.target_ic.abs_state)
-
-        # Assign satellites mass
-        self.chaser_ic.mass = propSettings_chaser['propagator_settings']['orbitProp']['State']['settings']['mass']
-        self.target_ic.mass = propSettings_target['propagator_settings']['orbitProp']['State']['settings']['mass']
-
-    def _initialize_propagators(self):
-        """Initialize orekit propagators and satellite masses."""
-
-        # Actual path
-        abs_path = sys.argv[0]
-        path_idx = abs_path.find('nodes')
-        abs_path = abs_path[0:path_idx]
-
-        if self.prop_type == '2-body':
-            file_name = '_2body'
-        elif self.prop_type == 'real-world':
-            file_name = ''
-        else:
-            raise TypeError('Propagator type not recognized!')
-
-        chaser_settings_path = abs_path + 'simulator/cso_gnc_sim/cfg/chaser' + file_name + '.yaml'
-        target_settings_path = abs_path + 'simulator/cso_gnc_sim/cfg/target' + file_name + '.yaml'
-
-        chaser_settings = file(chaser_settings_path, 'r')
-        target_settings = file(target_settings_path, 'r')
-
-        propSettings_chaser = yaml.load(chaser_settings)
-        self.chaser_ic.mass = propSettings_chaser['propagator_settings']['orbitProp']['State']['settings']['mass']
-        self.prop_chaser.initialize(propSettings_chaser['propagator_settings'], self.chaser_ic.get_osc_oe(), self.date)
-
-        propSettings_target = yaml.load(target_settings)
-        self.target_ic.mass = propSettings_target['propagator_settings']['orbitProp']['State']['settings']['mass']
-        self.prop_target.initialize(propSettings_target['propagator_settings'], self.target_ic.get_osc_oe(), self.date)
 
     def import_solved_scenario(self):
         """
@@ -209,15 +141,10 @@ class Scenario(object):
         # Assign variables
         self.name = scenario['name']
         self.overview = scenario['overview']
-        self.koz_r = scenario['keep_out_zone']
-        self.approach_ellipsoid = scenario['approach_ellipsoid']
         self.prop_type = scenario['prop_type']
 
         # Initialize satellites
-        self._initialize_satellites()
-
-        # Initialize propagators
-        self._initialize_propagators()
+        self.target_ic.initialize_satellite('target')
 
         # Extract CheckPoints
         for i in xrange(0, len(checkpoints)):

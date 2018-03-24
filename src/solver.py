@@ -17,6 +17,7 @@ from state import Satellite, Chaser
 from checkpoint import CheckPoint
 from scenario import Scenario
 from datetime import timedelta, datetime
+from propagator_class import Propagator
 
 from org.orekit.propagation import SpacecraftState
 from org.orekit.frames import FramesFactory
@@ -45,24 +46,25 @@ class Solver(object):
         epoch (datetime): Actual epoch, evolving in time according to the solver.
     """
 
-    def __init__(self, scenario=None):
-        """Initialize solver attributes given the scenario to be solved.
+    def __init__(self):
+        self.manoeuvre_plan = []
+        self.scenario = None
+        self.target = Satellite()
+        self.prop_target = Propagator()
+        self.epoch = datetime.utcnow()
+
+    def initialize_solver(self, scenario):
+        """
+            Given the scenario to be solved initialize the solver attributes.
 
         Args:
             scenario (Scenario)
         """
 
-        self.manoeuvre_plan = []
-        self.scenario = Scenario()
-        self.chaser = Chaser()
-        self.target = Satellite()
-        self.epoch = datetime.utcnow()
-
-        if scenario != None:
-            self.scenario = scenario
-            self.epoch = scenario.date
-            self.chaser.set_from_satellite(scenario.chaser_ic)
-            self.target.set_from_satellite(scenario.target_ic)
+        self.scenario = scenario
+        self.epoch = scenario.date
+        self.target.set_from_satellite(scenario.target_ic)
+        self.prop_target.initialize_propagator('target', self.target.get_osc_oe(), self.epoch)
 
     def _print_state(self, satellite):
         """Print out satellite state.
@@ -166,11 +168,6 @@ class Solver(object):
         # Extract scenario checkpoints
         checkpoints = self.scenario.checkpoints
 
-        # Extract the approach ellipsoid
-        approach_ellipsoid = self.scenario.approach_ellipsoid
-
-        print "--------------------Chaser initial state-------------------"
-        self._print_state(self.chaser)
         print "\n--------------------Target initial state-------------------"
         self._print_state(self.target)
         print "------------------------------------------------------------\n"
@@ -825,7 +822,7 @@ class Solver(object):
              checkpoint (CheckPoint): CheckPoint with the state defined in terms of Mean Orbital Elements.
         """
         # Extract mean orbital elements
-        chaser_mean = self.chaser.get_mean_oe(self.scenario.prop_type)
+        chaser_mean = self.target.get_mean_oe(self.scenario.prop_type)
 
         # Define tolerances, if we get deviations greater than ~1 km then correct
         tol_i = 1.0 / chaser_mean.a

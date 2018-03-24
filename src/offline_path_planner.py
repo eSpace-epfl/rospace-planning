@@ -17,7 +17,8 @@ def main():
     scenario.import_yaml_scenario()
 
     # Solve scenario
-    solver = Solver(scenario)
+    solver = Solver()
+    solver.initialize_solver(scenario)
     solver.solve_scenario()
 
     # Save manoeuvre plan

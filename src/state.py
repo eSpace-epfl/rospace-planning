@@ -8,95 +8,117 @@
 
 """Class defining the state of a satellite."""
 
+import sys
+import yaml
 import numpy as np
 
-from space_tf import KepOrbElem, CartesianLVLH, Cartesian
+from space_tf import KepOrbElem, Cartesian
 
 
 class Satellite(object):
     """
-        Class that holds the basic information of a Satellite.
+        Class that holds the basic information of a Satellite, its cartesian absolute position, its mass and its
+        identification name.
 
-        Attributes:
-            mass (float64): Mass of the satellite in [kg].
-            abs_state (Cartesian): Cartesian absolute position of the satellite with respect to Earth Inertial frame.
+    Attributes:
+        mass (float64): Mass of the satellite in [kg].
+        abs_state (Cartesian): Cartesian absolute position of the satellite with respect to Earth Inertial frame.
+        name (str): Name of the satellite.
     """
 
     def __init__(self):
         self.mass = 0.0
         self.abs_state = Cartesian()
+        self.name = ''
+
+    def initialize_satellite(self, name):
+        """
+            Initialize satellite attributes from the configuration files.
+
+        Args:
+            name (str): Name of the satellite, which should be stated as well in initial_conditions.yaml file.
+        """
+
+        # Actual path
+        abs_path = sys.argv[0]
+        path_idx = abs_path.find('nodes')
+        abs_path = abs_path[0:path_idx]
+
+        # Opening initial conditions file
+        initial_conditions_path = abs_path + 'nodes/cso_path_planner/cfg/initial_conditions.yaml'
+        initial_conditions_file = file(initial_conditions_path, 'r')
+        initial_conditions = yaml.load(initial_conditions_file)
+
+        # Check if the satellite initial conditions are stated in the configuration file
+        if name in initial_conditions.keys():
+            initial_conditions = initial_conditions[name]
+        else:
+            raise AttributeError('[ERROR]: Initial conditions for satellite ' + name +
+                                 ' not stated in initial_conditions.yaml!')
+
+        # Create a KepOrbElem to contain the initial conditions
+        kep_ic = initial_conditions['kep']
+        satellite_ic = KepOrbElem()
+        satellite_ic.a = eval(str(kep_ic['a']))
+        satellite_ic.e = eval(str(kep_ic['e']))
+        satellite_ic.i = eval(str(kep_ic['i']))
+        satellite_ic.O = eval(str(kep_ic['O']))
+        satellite_ic.w = eval(str(kep_ic['w']))
+        if 'v' in kep_ic.keys():
+            satellite_ic.v = eval(str(kep_ic['v']))
+        elif 'm' in kep_ic.keys():
+            satellite_ic.m = eval(str(kep_ic['m']))
+        elif 'E' in kep_ic.keys():
+            satellite_ic.E = eval(str(kep_ic['E']))
+        else:
+            raise AttributeError('[ERROR]: Anomaly initial condition for satellite ' + name + ' not defined properly!')
+
+        # Assign absolute state
+        self.abs_state.from_keporb(satellite_ic)
+
+        # Assign mass
+        self.mass = eval(str(initial_conditions['mass']))
 
     def set_from_satellite(self, satellite):
         """
             Set attributes of the satellite using as reference another satellite.
 
         Args:
-            satellite (Satellite, Chaser): State of a satellite.
+            satellite (Satellite)
         """
 
         if type(self) != type(satellite):
-            raise TypeError
+            raise TypeError()
 
         self.abs_state.R = satellite.abs_state.R
         self.abs_state.V = satellite.abs_state.V
         self.mass = satellite.mass
 
-        if hasattr(satellite, 'rel_state'):
-            self.rel_state.R = satellite.rel_state.R
-            self.rel_state.V = satellite.rel_state.V
-
-    def set_abs_state_from_tle(self, tle):
-        """
-            Given TLE coordinates set the absolute state.
-
-        Args:
-            tle (Dictionary): TLE coordinates.
-        """
-
-        if type(tle) == dict:
-            kep = KepOrbElem()
-            kep.from_tle(eval(str(tle['i'])),
-                         eval(str(tle['O'])),
-                         eval(str(tle['e'])),
-                         eval(str(tle['m'])),
-                         eval(str(tle['w'])),
-                         eval(str(tle['n'])))
-
-            self.abs_state.from_keporb(kep)
-        else:
-            raise TypeError
-
-    def set_abs_state_from_kep(self, kep):
-        """
-            Given keplerian orbital elements set the absolute state.
-
-        Args:
-            kep (Dictionary or KepOrbElem): Keplerian orbital elements stored either in a dictionary or in KepOrbElem.
-        """
-
-        if type(kep) == dict:
-            kep_state = KepOrbElem()
-            kep_state.a = eval(str(kep['a']))
-            kep_state.e = eval(str(kep['e']))
-            kep_state.i = eval(str(kep['i']))
-            kep_state.O = eval(str(kep['O']))
-            kep_state.w = eval(str(kep['w']))
-            kep_state.v = eval(str(kep['v']))
-            self.abs_state.from_keporb(kep_state)
-        elif type(kep) == KepOrbElem:
-            self.abs_state.from_keporb(kep)
-        else:
-            raise TypeError
-
     def get_osc_oe(self):
-        """Return the osculating orbital elements of the satellite."""
+        """
+            Return the osculating orbital elements of the satellite.
+
+        Return:
+              kep_osc (KepOrbElem): Osculating orbital elements.
+        """
+
         kep_osc = KepOrbElem()
         kep_osc.from_cartesian(self.abs_state)
 
         return kep_osc
 
     def get_mean_oe(self, prop_type='real-world'):
-        """Return mean orbital elements of the satellite."""
+        """
+            Return mean orbital elements of the satellite.
+
+        Args:
+            prop_type (str): Propagator type that has to be used, can be either a real-world propagator (standard) or
+                a 2-body propagator.
+
+        Return:
+            kep_mean (KepOrbElem): Mean orbital elements.
+        """
+
         kep_osc = self.get_osc_oe()
 
         if prop_type == 'real-world':
@@ -110,31 +132,6 @@ class Satellite(object):
 
 
 class Chaser(Satellite):
-    """
-        Class that holds the information for a chaser. In addition to the Satellite information, also the relative
-        position with respect to another satellite (target) is needed.
-
-        Attributes:
-            rel_state (CartesianLVLH): Holds the relative coordinates with respect to another satellite.
-    """
 
     def __init__(self):
-        super(Chaser, self).__init__()
-
-        self.rel_state = CartesianLVLH()
-
-    def set_abs_state_from_rel_state(self, target):
-        """
-            Set keplerian elements given target absolute state and chaser relative state.
-
-        Args:
-             target (Satellite): State of the target.
-        """
-
-        target_cart = Cartesian()
-        chaser_cart = Cartesian()
-
-        target_cart.from_keporb(target.abs_state)
-        chaser_cart.from_lvlh_frame(target_cart, self.rel_state)
-
-        self.abs_state.from_cartesian(chaser_cart)
+        pass

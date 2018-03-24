@@ -13,47 +13,60 @@ from org.orekit.time import AbsoluteDate, TimeScalesFactory
 
 
 class Propagator(object):
-    """Class that holds the definition of the orekit propagator."""
+    """
+        Class that holds the definition of the orekit propagator.
+
+    Attributes:
+        propagator (OrekitPropagator): The propagator created from orekit.
+        prop_type (str): Propagator type.
+        name (str): Name of the satellite of this propagator.
+        date (datetime): Propagator actual date.
+
+    """
 
     def __init__(self):
         OrekitPropagator.init_jvm()
         self.propagator = OrekitPropagator()
         self.prop_type = ''
-        self.spacecraft = 'Satellite'
-        self.date = datetime.utcnow()
+        self.name = ''
+        self.date = None
 
-    def set_spacecraft(self, spacecraft):
-        self.spacecraft = spacecraft
+    def initialize_propagator(self, name, initial_state, start_date=datetime.utcnow()):
+        """
+            Initialize the propagator.
 
-    def set_prop_type(self, prop_type):
-        self.prop_type = prop_type
-        print "Propagator type for spacecraft " + self.spacecraft + " set to: " + prop_type
-        print "[WARNING]: Check if cfg file match the type and if all propagators share the same type!"
+        Args:
+            name (str): Name of the satellite referring to this propagator, should correspond to the name of the
+                propagator configuration file!
+            initial_state (KepOrbElem): Initial osculating orbital elements of the satellite.
+            start_date (datetime): Initial date of the propagator.
+        """
 
-    def initialize_propagator(self, cfg_filename, satellite_osc_oe, date=datetime.utcnow()):
+        # Set name
+        self.name = name
+
         # Set date
-        self.date = date
+        self.date = start_date
 
-        # Search for the configuration file
+        # Open the configuration file
         abs_path = sys.argv[0]
         path_idx = abs_path.find('nodes')
         abs_path = abs_path[0:path_idx]
-        settings_path = abs_path + 'simulator/cso_gnc_sim/cfg/' + cfg_filename
+        settings_path = abs_path + 'simulator/cso_gnc_sim/cfg/' + name + '.yaml'
         settings = file(settings_path, 'r')
         propSettings = yaml.load(settings)
 
         # Initialize propagator
-        self.propagator.initialize(propSettings['propagator_settings'], satellite_osc_oe, self.date)
+        self.propagator.initialize(propSettings['propagator_settings'], initial_state, self.date)
 
     def change_initial_conditions(self, initial_state, date, mass):
         """
             Allows to change the initial conditions given to the propagator without initializing it again.
 
         Args:
-            propagator (OrekitPropagator): The propagator that has to be changed.
-            initial_state (Cartesian): New cartesian coordinates of the initial state.
-            date (datetime): New starting epoch.
-            mass (float64): Satellite mass.
+            initial_state (Cartesian): New initial state of the satellite in cartesian coordinates.
+            date (datetime): New starting date of the propagator.
+            mass (float64): New satellite mass.
         """
         # Redefine the start date
         self.date = date

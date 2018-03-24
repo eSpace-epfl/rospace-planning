@@ -1,14 +1,31 @@
+# Set initial conditions of satellite inside this configuration file.
+#
+# ---------------------------------- Template ----------------------------------
+#
+# satellite_name:
+#  mass: Satellite mass in [kg]
+#  kep: Initial conditions has to be given in OSCULATING orbital elements
+#   a: Semi-major axis in [km]
+#   e: Eccentricity
+#   i: Inclination in [rad]
+#   O: RAAN in [rad]
+#   w: Argument of perigee in [rad]
+#   v or m or E: Either one of true, mean or eccentric anomaly in [rad]
+#
+# ------------------------------------------------------------------------------
 
 target:
-  tle:
-    i: 98.5062*np.pi/180.0
-    O: 22.7182*np.pi/180.0
+  mass: 0.82
+  kep:
+    a: 7084.12176561
     e: 0.0008099
-    w: 30.5945*np.pi/180.0
-    m: 329.5723*np.pi/180.0
-    n: 14.56041441
+    i: 1.71925752363
+    O: 0.396507390127
+    w: 0.533974758001
+    v: 5.75130069292
 
 chaser:
+  mass: 30.0
   kep:
     a: 7036.6
     e: 0.000815369669722
@@ -17,11 +34,3 @@ chaser:
     w: 30.5945*np.pi/180.0
     v: (5.75130069292 - np.pi/4.0) % (2.0 * np.pi)
 
-#chaser:
-#  tle:
-#    i: 96.5062*np.pi/180.0
-#    O: 22.7182*np.pi/180.0
-#    e: 0.0008099
-#    w: 30.5945*np.pi/180.0
-#    m: 300.9750*np.pi/180.0
-#    n: 14.56041441
