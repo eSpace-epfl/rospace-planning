@@ -1,0 +1,29 @@
+scenario:
+  name: 'Scenario Absolute'
+
+  overview:  "Sample absolute scenario which does two orbit changes."
+
+  prop_type: real-world
+
+  CheckPoints:
+    S0:
+      id: 0
+      position:
+        kep:
+          a: 7074.98734967 - 47.0
+          e: 7074.98734967 * 0.00047348810605 / (7074.98734967 - 47.0)
+          i: 1.71935390223
+          w: 1.0441635363
+          O: 0.396508063906
+          v: 0.0
+
+    S1:
+      id: 1
+      position:
+        kep:
+          a: 7074.98734967 - 16.0
+          e: 7074.98734967 * 0.00047348810605 / (7074.98734967 - 16.0)
+          i: 1.71935390223
+          w: 1.0441635363
+          O: 0.396508063906
+          v: 0.0
