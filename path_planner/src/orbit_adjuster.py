@@ -18,7 +18,7 @@ class HohmannTransfer(OrbitAdjuster):
 
     def is_necessary(self):
 
-        mean_oe = self.satellite.get_mean_oe(self.prop_type)
+        mean_oe = self.satellite.get_mean_oe()
 
         da = self.checkpoint.state.a - mean_oe.a
         de = self.checkpoint.state.e - mean_oe.e
@@ -43,7 +43,7 @@ class HohmannTransfer(OrbitAdjuster):
         """
 
         # Evaluating mean orbital elements
-        mean_oe = self.satellite.get_mean_oe(self.prop_type)
+        mean_oe = self.satellite.get_mean_oe()
 
         # Extract initial and final semi-major axis and eccentricities
         a_i = mean_oe.a
@@ -73,6 +73,10 @@ class HohmannTransfer(OrbitAdjuster):
             # First burn at apogee, then perigee
             theta_1 = np.pi
             theta_2 = 0.0
+
+        print "A_INT:" + str(a_int)
+        print "E_INT:" + str(e_int)
+
 
         # Calculate delta-V's in perifocal frame of reference
         # First burn

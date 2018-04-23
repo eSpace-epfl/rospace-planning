@@ -47,10 +47,6 @@ class Scenario(object):
         # Satellite initial states
         self.target_ic = Satellite()
 
-        # Propagators informations
-        self.date = datetime.utcnow()
-        self.prop_type = 'real-world'
-
         # Target Keep-Out Zones
         self.approach_ellipsoid = np.array([0.0, 0.0, 0.0])
         self.koz_r = 0.0
@@ -98,10 +94,10 @@ class Scenario(object):
 
         # Actual path
         abs_path = sys.argv[0]
-        path_idx = abs_path.find('cso_path_planner')
-        abs_path = abs_path[0:path_idx + 16]
+        path_idx = abs_path.find('path_planner')
+        abs_path = abs_path[0:path_idx]
 
-        pickle_path = abs_path + '/example/scenario.pickle'
+        pickle_path = abs_path + 'path_planner/example/scenario.pickle'
 
         with open(pickle_path, 'wb') as file:
 
@@ -120,11 +116,11 @@ class Scenario(object):
 
         # Actual path
         abs_path = sys.argv[0]
-        path_idx = abs_path.find('cso_path_planner')
-        abs_path = abs_path[0:path_idx + 16]
+        path_idx = abs_path.find('path_planner')
+        abs_path = abs_path[0:path_idx]
 
         # Opening scenario file
-        scenario_path = abs_path + '/cfg/scenario.yaml'
+        scenario_path = abs_path + 'path_planner/cfg/scenario.yaml'
         scenario_file = file(scenario_path, 'r')
         scenario = yaml.load(scenario_file)
         scenario = scenario['scenario']

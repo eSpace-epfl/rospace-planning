@@ -15,7 +15,7 @@ from org.hipparchus.geometry.euclidean.threed import Vector3D
 from org.orekit.time import AbsoluteDate, TimeScalesFactory
 
 
-class OfflinePropagator(object):
+class Propagator(object):
     """
         Class that holds the definition of the orekit propagator.
 
@@ -31,14 +31,8 @@ class OfflinePropagator(object):
         # Initialize Propagator settings
         OrekitPropagator.init_jvm()
 
-        SimTime = rospace_lib.clock.SimTimePublisher()
-        SimTime.set_up_simulation_time()
-        FileDataHandler.load_magnetic_field_models(SimTime.datetime_oe_epoch)
-        FileDataHandler.create_data_validity_checklist()
-
-        self.propagator = OrekitPropagator()
+        self.orekit_prop = OrekitPropagator()
         self.prop_type = ''
-        self.name = ''
         self.date = None
 
     def initialize_propagator(self, name, initial_state, prop_type, start_date=datetime.utcnow()):
@@ -46,20 +40,18 @@ class OfflinePropagator(object):
             Initialize the propagator.
 
         Args:
-            name (str): Name of the satellite referring to this propagator, should correspond to the name of the
-                propagator configuration file!
             initial_state (KepOrbElem): Initial osculating orbital elements of the satellite.
             start_date (datetime): Initial date of the propagator.
         """
-
-        # Set name
-        self.name = name
-
         # Set date
         self.date = start_date
 
         # Set type
         self.prop_type = prop_type
+
+        # Set magnetic field to the propagator date
+        # FileDataHandler.load_magnetic_field_models(self.date)
+        # FileDataHandler.create_data_validity_checklist()
 
         # Open the configuration file
         abs_path = sys.argv[0]
@@ -70,7 +62,7 @@ class OfflinePropagator(object):
         propSettings = yaml.load(settings)
 
         # Initialize propagator
-        self.propagator.initialize(propSettings['propagator_settings'], initial_state, self.date)
+        self.orekit_prop.initialize(propSettings['propagator_settings'], initial_state, self.date)
 
     def change_initial_conditions(self, initial_state, date, mass):
         """
@@ -110,4 +102,4 @@ class OfflinePropagator(object):
         newSpacecraftState = SpacecraftState(initialOrbit, mass)
 
         # Rewrite propagator initial conditions
-        self.propagator._propagator_num.setInitialState(newSpacecraftState)
+        self.orekit_prop._propagator_num.setInitialState(newSpacecraftState)

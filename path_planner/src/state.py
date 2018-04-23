@@ -12,7 +12,8 @@ import sys
 import yaml
 import numpy as np
 
-from space_tf import KepOrbElem, Cartesian
+from rospace_lib import KepOrbElem, CartesianTEME, OscKepOrbElem
+from path_planning_propagator import Propagator
 
 
 class Satellite(object):
@@ -28,10 +29,11 @@ class Satellite(object):
 
     def __init__(self):
         self.mass = 0.0
-        self.abs_state = Cartesian()
+        self.abs_state = CartesianTEME()
         self.name = ''
+        self.prop = Propagator()
 
-    def initialize_satellite(self, name):
+    def initialize_satellite(self, name, date, prop_type='real-world'):
         """
             Initialize satellite attributes from the configuration files.
 
@@ -41,11 +43,11 @@ class Satellite(object):
 
         # Actual path
         abs_path = sys.argv[0]
-        path_idx = abs_path.find('nodes')
+        path_idx = abs_path.find('path_planner')
         abs_path = abs_path[0:path_idx]
 
         # Opening initial conditions file
-        initial_conditions_path = abs_path + 'nodes/cso_path_planner/cfg/initial_conditions.yaml'
+        initial_conditions_path = abs_path + 'path_planner/cfg/initial_conditions.yaml'
         initial_conditions_file = file(initial_conditions_path, 'r')
         initial_conditions = yaml.load(initial_conditions_file)
 
@@ -79,6 +81,9 @@ class Satellite(object):
         # Assign mass
         self.mass = eval(str(initial_conditions['mass']))
 
+        # Assign propagator
+        self.prop.initialize_propagator(name, satellite_ic, prop_type, date)
+
     def set_from_satellite(self, satellite):
         """
             Set attributes of the satellite using as reference another satellite.
@@ -93,6 +98,8 @@ class Satellite(object):
         self.abs_state.R = satellite.abs_state.R
         self.abs_state.V = satellite.abs_state.V
         self.mass = satellite.mass
+        self.prop = satellite.prop
+
 
     def set_abs_state_from_cartesian(self, cartesian):
         """
@@ -113,7 +120,7 @@ class Satellite(object):
               kep_osc (KepOrbElem): Osculating orbital elements.
         """
 
-        kep_osc = KepOrbElem()
+        kep_osc = OscKepOrbElem()
         kep_osc.from_cartesian(self.abs_state)
 
         return kep_osc
@@ -132,14 +139,16 @@ class Satellite(object):
 
         kep_osc = self.get_osc_oe()
 
+        kep_mean = KepOrbElem()
+
         if prop_type == 'real-world':
-            kep_mean = KepOrbElem()
             kep_mean.from_osc_elems(kep_osc)
-            return kep_mean
         elif prop_type == '2-body':
-            return kep_osc
+            kep_mean.from_osc_elems(kep_osc, 'null')
         else:
             raise TypeError('Propagator type not recognized!')
+
+        return kep_mean
 
 
 class Chaser(Satellite):

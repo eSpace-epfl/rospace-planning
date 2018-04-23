@@ -16,7 +16,6 @@ from state import Satellite
 from checkpoint import CheckPoint
 from scenario import Scenario
 from datetime import timedelta, datetime
-from propagator_class import Propagator
 from orbit_adjuster import HohmannTransfer, PlaneOrientation, ArgumentOfPerigee
 
 
@@ -34,7 +33,6 @@ class Solver(object):
         manoeuvre_plan (list): List of the manoeuvre that has to be executed to perform the scenario.
         scenario (Scenario): The scenario that has to be solved.
         target (Satellite): Target actual state, evolving in time according to the solver.
-        prop_target (Propagator): Target's propagator.
         epoch (datetime): Actual epoch, evolving in time according to the solver.
     """
 
@@ -42,7 +40,6 @@ class Solver(object):
         self.manoeuvre_plan = []
         self.scenario = None
         self.target = Satellite()
-        self.prop_target = Propagator()
         self.epoch = datetime.utcnow()
 
     def initialize_solver(self, scenario):
@@ -54,9 +51,8 @@ class Solver(object):
         """
 
         self.scenario = scenario
-        self.epoch = scenario.date
+        self.epoch = scenario.target_ic.prop.date
         self.target.set_from_satellite(scenario.target_ic)
-        self.prop_target.initialize_propagator('target', self.target.get_osc_oe(), self.epoch)
 
     def apply_manoeuvre(self, manoeuvre):
         """
@@ -79,17 +75,17 @@ class Solver(object):
             self.epoch += timedelta(seconds=100.0)
 
             # Propagate
-            self.prop_target.propagator.propagate(self.epoch)
+            self.target.prop.orekit_prop.propagate(self.epoch)
 
         # Update epoch
         self.epoch += timedelta(seconds=dt_rest)
 
         # Propagate to the execution epoch
-        target_prop = self.prop_target.propagator.propagate(self.epoch)
+        target_prop = self.target.prop.orekit_prop.propagate(self.epoch)
 
         # Apply impulsive deltaV and apply it to the propagator initial conditions
         target_prop[0].V += manoeuvre.deltaV
-        self.prop_target.change_initial_conditions(target_prop[0], self.epoch, self.target.mass)
+        self.target.prop.change_initial_conditions(target_prop[0], self.epoch, self.target.mass)
 
         # Update target state
         self.target.set_abs_state_from_cartesian(target_prop[0])
@@ -104,17 +100,25 @@ class Solver(object):
         """
 
         for deltaV in deltaV_list:
+            osc_oe = self.target.get_osc_oe()
+
             # Create manoeuvre
             man = Manoeuvre()
             man.deltaV = deltaV[0]
-            man.initial_state = self.target.get_mean_oe(self.scenario.prop_type)
-            man.execution_epoch = self.epoch + timedelta(seconds=self.travel_time(man.initial_state, man.initial_state.v, deltaV[1]))
+            print self.target.prop.prop_type
+            man.initial_state = self.target.get_mean_oe(self.target.prop.prop_type)
+            man.execution_epoch = self.epoch + timedelta(seconds=self.travel_time(osc_oe, osc_oe.v, deltaV[1]))
 
             # Apply manoeuvre
             self.apply_manoeuvre(man)
 
             # Add manoeuvre to the plan
             self.manoeuvre_plan.append(man)
+
+            print "======================================================================="
+            print "[REACHED STATE]:"
+            print "\n--------------------Target-------------------"
+            self._print_state(self.target)
 
     def solve_scenario(self):
         """
@@ -166,15 +170,15 @@ class Solver(object):
              checkpoint (CheckPoint): CheckPoint with the state defined in terms of Mean Orbital Elements.
         """
 
-        orbit_adj = PlaneOrientation(self.target, checkpoint, self.scenario.prop_type)
-        if orbit_adj.is_necessary():
-            man = orbit_adj.evaluate_manoeuvre()
-            self.create_manoeuvres(man)
-
-        orbit_adj = ArgumentOfPerigee(self.target, checkpoint, self.scenario.prop_type)
-        if orbit_adj.is_necessary():
-            man = orbit_adj.evaluate_manoeuvre()
-            self.create_manoeuvres(man)
+        # orbit_adj = PlaneOrientation(self.target, checkpoint, self.scenario.prop_type)
+        # if orbit_adj.is_necessary():
+        #     man = orbit_adj.evaluate_manoeuvre()
+        #     self.create_manoeuvres(man)
+        #
+        # orbit_adj = ArgumentOfPerigee(self.target, checkpoint, self.scenario.prop_type)
+        # if orbit_adj.is_necessary():
+        #     man = orbit_adj.evaluate_manoeuvre()
+        #     self.create_manoeuvres(man)
 
         orbit_adj = HohmannTransfer(self.target, checkpoint, self.scenario.prop_type)
         if orbit_adj.is_necessary():
@@ -241,7 +245,7 @@ class Solver(object):
         print "      v :      " + str(kep_osc.v)
         print ""
 
-        kep_mean = satellite.get_mean_oe(self.scenario.prop_type)
+        kep_mean = satellite.get_mean_oe(self.target.prop.prop_type)
 
         print " >> Mean orbital elements: "
         print "      a :      " + str(kep_mean.a)

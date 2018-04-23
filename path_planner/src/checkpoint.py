@@ -10,7 +10,7 @@
 
 import numpy as np
 
-from space_tf import Cartesian, KepOrbElem, CartesianLVLH
+from rospace_lib import Cartesian, KepOrbElem, CartesianLVLH
 
 
 class CheckPoint(object):
