@@ -1,7 +1,10 @@
 import sys
 import yaml
+import rospace_lib
 
 from datetime import datetime
+
+from propagator.FileDataHandler import FileDataHandler
 from propagator.OrekitPropagator import OrekitPropagator
 from org.orekit.propagation import SpacecraftState
 from org.orekit.frames import FramesFactory
@@ -12,7 +15,7 @@ from org.hipparchus.geometry.euclidean.threed import Vector3D
 from org.orekit.time import AbsoluteDate, TimeScalesFactory
 
 
-class Propagator(object):
+class OfflinePropagator(object):
     """
         Class that holds the definition of the orekit propagator.
 
@@ -25,13 +28,20 @@ class Propagator(object):
     """
 
     def __init__(self):
+        # Initialize Propagator settings
         OrekitPropagator.init_jvm()
+
+        SimTime = rospace_lib.clock.SimTimePublisher()
+        SimTime.set_up_simulation_time()
+        FileDataHandler.load_magnetic_field_models(SimTime.datetime_oe_epoch)
+        FileDataHandler.create_data_validity_checklist()
+
         self.propagator = OrekitPropagator()
         self.prop_type = ''
         self.name = ''
         self.date = None
 
-    def initialize_propagator(self, name, initial_state, start_date=datetime.utcnow()):
+    def initialize_propagator(self, name, initial_state, prop_type, start_date=datetime.utcnow()):
         """
             Initialize the propagator.
 
@@ -48,11 +58,14 @@ class Propagator(object):
         # Set date
         self.date = start_date
 
+        # Set type
+        self.prop_type = prop_type
+
         # Open the configuration file
         abs_path = sys.argv[0]
-        path_idx = abs_path.find('nodes')
+        path_idx = abs_path.find('planning')
         abs_path = abs_path[0:path_idx]
-        settings_path = abs_path + 'simulator/cso_gnc_sim/cfg/' + name + '.yaml'
+        settings_path = abs_path + 'rdv-cap-sim/rospace_simulator/cfg/' + name + '.yaml'
         settings = file(settings_path, 'r')
         propSettings = yaml.load(settings)
 
