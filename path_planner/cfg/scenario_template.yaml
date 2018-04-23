@@ -17,6 +17,11 @@ scenario:
   # [dr, dv, dh] [km]
   approach_ellipsoid: [0.3, 1.5, 0.3]
 
+  # Propagator type. At the moment, the following types are available:
+  # - 2-body:     Propagator that solves the 2-body problem
+  # - real-world: Propagator that takes in consideration all the disturbances
+  prop_type: real-world
+
   # Check points definitions
   CheckPoints:
 
