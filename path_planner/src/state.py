@@ -10,9 +10,8 @@
 
 import sys
 import yaml
-import numpy as np
 
-from rospace_lib import KepOrbElem, CartesianTEME, OscKepOrbElem
+from rospace_lib import KepOrbElem, CartesianTEME, OscKepOrbElem, CartesianLVLH
 from path_planning_propagator import Propagator
 
 
@@ -23,7 +22,7 @@ class Satellite(object):
 
     Attributes:
         mass (float64): Mass of the satellite in [kg].
-        abs_state (Cartesian): Cartesian absolute position of the satellite with respect to Earth Inertial frame.
+        abs_state (CartesianTEME): Cartesian absolute position of the satellite with respect to Earth Inertial frame.
         name (str): Name of the satellite.
         prop (Propagator): Propagator of this satellite.
     """
@@ -34,7 +33,7 @@ class Satellite(object):
         self.name = ''
         self.prop = Propagator()
 
-    def initialize_satellite(self, name, date, prop_type='real-world'):
+    def initialize_satellite(self, name, date, prop_type):
         """
             Initialize satellite attributes from the configuration files.
 
@@ -154,6 +153,35 @@ class Satellite(object):
 
 
 class Chaser(Satellite):
+    """
+        Class that holds the information for a chaser. In addition to the Satellite information, also the relative
+        position with respect to another satellite (target) is needed.
+
+        Attributes:
+            rel_state (CartesianLVLH): Holds the relative coordinates with respect to another satellite.
+    """
 
     def __init__(self):
-        pass
+        super(Chaser, self).__init__()
+
+        self.rel_state = CartesianLVLH()
+
+    def set_rel_state_from_target(self, target):
+        """
+            Set relative state given target and chaser absolute states.
+
+        Args:
+            target (Satellite): State of the target.
+        """
+
+        self.rel_state.from_cartesian_pair(self.abs_state, target.abs_state)
+
+    def set_abs_state_from_target(self, target):
+        """
+            Set absolute state given target absolute state and chaser relative state.
+
+        Args:
+             target (Satellite): State of the target.
+        """
+
+        self.abs_state.from_lvlh_frame(target.abs_state, self.rel_state)
