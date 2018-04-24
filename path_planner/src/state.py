@@ -25,6 +25,7 @@ class Satellite(object):
         mass (float64): Mass of the satellite in [kg].
         abs_state (Cartesian): Cartesian absolute position of the satellite with respect to Earth Inertial frame.
         name (str): Name of the satellite.
+        prop (Propagator): Propagator of this satellite.
     """
 
     def __init__(self):
@@ -39,6 +40,8 @@ class Satellite(object):
 
         Args:
             name (str): Name of the satellite, which should be stated as well in initial_conditions.yaml file.
+            date (datetime): Date at which the satellite (the propagator) has to be initialized.
+            prop_type (str): Define the type of propagator to be used (2-body or real-world).
         """
 
         # Actual path
@@ -66,6 +69,7 @@ class Satellite(object):
         satellite_ic.i = eval(str(kep_ic['i']))
         satellite_ic.O = eval(str(kep_ic['O']))
         satellite_ic.w = eval(str(kep_ic['w']))
+
         if 'v' in kep_ic.keys():
             satellite_ic.v = eval(str(kep_ic['v']))
         elif 'm' in kep_ic.keys():
@@ -100,7 +104,6 @@ class Satellite(object):
         self.mass = satellite.mass
         self.prop = satellite.prop
 
-
     def set_abs_state_from_cartesian(self, cartesian):
         """
             Given some cartesian coordinates set the absolute state of the satellite.
@@ -109,15 +112,18 @@ class Satellite(object):
             cartesian (Cartesian)
         """
 
-        self.abs_state.R = cartesian.R
-        self.abs_state.V = cartesian.V
+        if cartesian.frame == self.abs_state.frame:
+            self.abs_state.R = cartesian.R
+            self.abs_state.V = cartesian.V
+        else:
+            raise TypeError()
 
     def get_osc_oe(self):
         """
             Return the osculating orbital elements of the satellite.
 
         Return:
-              kep_osc (KepOrbElem): Osculating orbital elements.
+              kep_osc (OscKepOrbElem): Osculating orbital elements.
         """
 
         kep_osc = OscKepOrbElem()
@@ -125,13 +131,9 @@ class Satellite(object):
 
         return kep_osc
 
-    def get_mean_oe(self, prop_type='real-world'):
+    def get_mean_oe(self):
         """
             Return mean orbital elements of the satellite.
-
-        Args:
-            prop_type (str): Propagator type that has to be used, can be either a real-world propagator (standard) or
-                a 2-body propagator.
 
         Return:
             kep_mean (KepOrbElem): Mean orbital elements.
@@ -141,9 +143,9 @@ class Satellite(object):
 
         kep_mean = KepOrbElem()
 
-        if prop_type == 'real-world':
+        if self.prop.prop_type == 'real-world':
             kep_mean.from_osc_elems(kep_osc)
-        elif prop_type == '2-body':
+        elif self.prop.prop_type == '2-body':
             kep_mean.from_osc_elems(kep_osc, 'null')
         else:
             raise TypeError('Propagator type not recognized!')
