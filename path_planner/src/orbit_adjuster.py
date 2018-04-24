@@ -1,22 +1,50 @@
+# @copyright Copyright (c) 2017, Davide Frey (frey.davide.ae@gmail.com)
+#
+# @license zlib license
+#
+# This file is licensed under the terms of the zlib license.
+# See the LICENSE.md file in the root of this repository
+# for complete details.
+
+"""Class to create an object capable of calculating the correction from an orbit to another."""
+
 import numpy as np
 
-from space_tf import mu_earth
+from state import Satellite
+from checkpoint import CheckPoint
+from rospace_lib import mu_earth
 
 
 class OrbitAdjuster(object):
+    """
+        Base class to create an orbit adjuster.
 
-    def __init__(self, satellite, checkpoint, prop_type='real-world'):
-        self.satellite = satellite
-        self.checkpoint = checkpoint
-        self.prop_type = prop_type
+    Attributes:
+        satellite (Satellite): The reference satellite which will execute a manoeuvre.
+        checkpoint (CheckPoint): The next checkpoint that has to be reached.
+    """
+
+    def __init__(self, sat, chkp):
+        self.satellite = Satellite()
+        self.checkpoint = CheckPoint()
+
+        # Initialization of both checkpoint and satellite
+        self.satellite.set_from_satellite(sat)
+        self.checkpoint.set_from_checkpoint(chkp)
 
 
 class HohmannTransfer(OrbitAdjuster):
+    """
+        Subclass holding the function to evaluate a Hohmann Transfer.
+    """
 
-    def __init__(self, satellite, checkpoint, prop_type='real-world'):
-        super(HohmannTransfer, self).__init__(satellite, checkpoint, prop_type)
+    def __init__(self, sat, chkp):
+        super(HohmannTransfer, self).__init__(sat, chkp)
 
     def is_necessary(self):
+        """
+            Function to test if this type of orbit adjuster is needed.
+        """
 
         mean_oe = self.satellite.get_mean_oe()
 
@@ -74,10 +102,6 @@ class HohmannTransfer(OrbitAdjuster):
             theta_1 = np.pi
             theta_2 = 0.0
 
-        print "A_INT:" + str(a_int)
-        print "E_INT:" + str(e_int)
-
-
         # Calculate delta-V's in perifocal frame of reference
         # First burn
         V_PERI_i_1 = np.sqrt(mu_earth / (a_i * (1.0 - e_i**2))) * np.array([-np.sin(theta_1), e_i + np.cos(theta_1), 0.0])
@@ -93,13 +117,19 @@ class HohmannTransfer(OrbitAdjuster):
 
 
 class ArgumentOfPerigee(OrbitAdjuster):
+    """
+        Subclass holding the function to evaluate the deltaV needed to change the argument of perigee.
+    """
 
-    def __init__(self, satellite, checkpoint, prop_type='real-world'):
-        super(ArgumentOfPerigee, self).__init__(satellite, checkpoint, prop_type)
+    def __init__(self, sat, chkp):
+        super(ArgumentOfPerigee, self).__init__(sat, chkp)
 
     def is_necessary(self):
+        """
+            Function to test if this type of orbit adjuster is needed.
+        """
 
-        mean_oe = self.satellite.get_mean_oe(self.prop_type)
+        mean_oe = self.satellite.get_mean_oe()
 
         dw = self.checkpoint.state.w - mean_oe.w
 
@@ -119,7 +149,7 @@ class ArgumentOfPerigee(OrbitAdjuster):
             David A. Vallado, Fundamentals of Astrodynamics and Applications, Second Edition, Chapter 6
         """
         # Mean orbital elements
-        mean_oe = self.satellite.get_mean_oe(self.prop_type)
+        mean_oe = self.satellite.get_mean_oe()
 
         # Extract constants
         a = mean_oe.a
@@ -167,19 +197,25 @@ class ArgumentOfPerigee(OrbitAdjuster):
 
 
 class PlaneOrientation(OrbitAdjuster):
+    """
+        Subclass holding the function to evaluate the deltaV needed to change in plane orientation.
+    """
 
-    def __init__(self, satellite, checkpoint, prop_type='real-world'):
-        super(PlaneOrientation, self).__init__(satellite, checkpoint, prop_type)
+    def __init__(self, sat, chkp):
+        super(PlaneOrientation, self).__init__(sat, chkp)
 
     def is_necessary(self):
+        """
+            Function to test if this type of orbit adjuster is needed.
+        """
 
-        mean_oe = self.satellite.get_mean_oe(self.prop_type)
+        mean_oe = self.satellite.get_mean_oe()
 
         di = self.checkpoint.state.i - mean_oe.i
         dO = self.checkpoint.state.O - mean_oe.O
 
-        tol_i = 1.0 / mean_oe.i
-        tol_O = 1.0 / mean_oe.O
+        tol_i = 1.0 / mean_oe.a
+        tol_O = 1.0 / mean_oe.a
 
         if abs(di) > tol_i or abs(dO) > tol_O:
             return True
@@ -195,7 +231,7 @@ class PlaneOrientation(OrbitAdjuster):
             David A. Vallado, Fundamentals of Astrodynamics and Applications, Second Edition, Chapter 6
         """
         # Mean orbital elements
-        mean_oe = self.satellite.get_mean_oe(self.prop_type)
+        mean_oe = self.satellite.get_mean_oe()
 
         # Extract values
         a = mean_oe.a
