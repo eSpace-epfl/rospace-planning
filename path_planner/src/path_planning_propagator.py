@@ -1,6 +1,15 @@
+# @copyright Copyright (c) 2017, Davide Frey (frey.davide.ae@gmail.com)
+#
+# @license zlib license
+#
+# This file is licensed under the terms of the zlib license.
+# See the LICENSE.md file in the root of this repository
+# for complete details.
+
+"""Class containing a propagator object that holds the orekit propagator itself and other useful information."""
+
 import sys
 import yaml
-import rospace_lib
 
 from datetime import datetime
 
@@ -20,9 +29,8 @@ class Propagator(object):
         Class that holds the definition of the orekit propagator.
 
     Attributes:
-        propagator (OrekitPropagator): The propagator created from orekit.
+        orekit_prop (OrekitPropagator): The propagator created from orekit.
         prop_type (str): Propagator type.
-        name (str): Name of the satellite of this propagator.
         date (datetime): Propagator actual date.
 
     """
@@ -40,7 +48,10 @@ class Propagator(object):
             Initialize the propagator.
 
         Args:
+            name (str): Name of the satellite (connected to cfg files).
             initial_state (KepOrbElem): Initial osculating orbital elements of the satellite.
+            prop_type (str): Propagator type. Can be either 2-body or real-world (depending on which one a cfg file is
+                chosen).
             start_date (datetime): Initial date of the propagator.
         """
         # Set date
@@ -48,6 +59,9 @@ class Propagator(object):
 
         # Set type
         self.prop_type = prop_type
+
+        if prop_type == '2-body':
+            name += '_2body'
 
         # Set magnetic field to the propagator date
         # FileDataHandler.load_magnetic_field_models(self.date)
