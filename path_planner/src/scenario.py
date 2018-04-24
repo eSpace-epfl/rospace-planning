@@ -30,8 +30,6 @@ class Scenario(object):
             checkpoints (list): A list containing all the checkpoints that has to be executed in the right order.
             target_ic (Satellite): Target initial state.
             date (timedelta): Time at which the simulation start.
-            prop_type (str): Propagator type that has to be used. It can be either 'real-world' - with all the
-                disturbances, or '2-body' - considering only the exact solution to the 2-body equation.
             approach_ellipsoid (np.array): Axis of the approach ellipsoid around the target [km].
             koz_r (float64): Radius of Keep-Out Zone drawn around the target [km].
     """
@@ -50,6 +48,9 @@ class Scenario(object):
         # Target Keep-Out Zones
         self.approach_ellipsoid = np.array([0.0, 0.0, 0.0])
         self.koz_r = 0.0
+
+        # Scenario starting date
+        self.date = datetime.utcnow()
 
     def import_solved_scenario(self):
         """
@@ -75,9 +76,8 @@ class Scenario(object):
 
                     self.checkpoints = obj['checkpoints']
                     self.name = obj['scenario_name']
-                    self.target_ic = obj['target_ic']
+                    self.target_ic.set_from_satellite(obj['target_ic'])
                     self.date = obj['scenario_epoch']
-                    self.prop_type = obj['prop_type']
 
                     return obj['manoeuvre_plan']
                 else:
@@ -101,9 +101,11 @@ class Scenario(object):
 
         with open(pickle_path, 'wb') as file:
 
+            # Delete propagator to be able to dump satellite in pickle file
+            del self.target_ic.prop
+
             obj = {'scenario_name': self.name, 'checkpoints': self.checkpoints, 'manoeuvre_plan': manoeuvre_plan,
-                   'target_ic': self.target_ic, 'scenario_epoch': self.date,
-                   'prop_type': self.prop_type}
+                   'target_ic': self.target_ic, 'scenario_epoch': self.date}
 
             pickle.dump(obj, file, protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -129,10 +131,9 @@ class Scenario(object):
         # Assign variables
         self.name = scenario['name']
         self.overview = scenario['overview']
-        self.prop_type = scenario['prop_type']
 
         # Initialize satellites
-        self.target_ic.initialize_satellite('target')
+        self.target_ic.initialize_satellite('target', self.date, scenario['prop_type'])
 
         # Extract CheckPoints
         for i in xrange(0, len(checkpoints)):
