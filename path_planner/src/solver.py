@@ -10,7 +10,7 @@
 
 import numpy as np
 
-from space_tf import Cartesian, KepOrbElem, CartesianLVLH, mu_earth
+from rospace_lib import Cartesian, KepOrbElem, CartesianLVLH, mu_earth
 from manoeuvre import Manoeuvre
 from state import Satellite
 from checkpoint import CheckPoint
@@ -100,14 +100,13 @@ class Solver(object):
         """
 
         for deltaV in deltaV_list:
-            osc_oe = self.target.get_osc_oe()
+            mean_oe = self.target.get_mean_oe()
 
             # Create manoeuvre
             man = Manoeuvre()
             man.deltaV = deltaV[0]
-            print self.target.prop.prop_type
-            man.initial_state = self.target.get_mean_oe(self.target.prop.prop_type)
-            man.execution_epoch = self.epoch + timedelta(seconds=self.travel_time(osc_oe, osc_oe.v, deltaV[1]))
+            man.initial_state = mean_oe
+            man.execution_epoch = self.epoch + timedelta(seconds=self.travel_time(mean_oe, mean_oe.v, deltaV[1]))
 
             # Apply manoeuvre
             self.apply_manoeuvre(man)
@@ -115,17 +114,9 @@ class Solver(object):
             # Add manoeuvre to the plan
             self.manoeuvre_plan.append(man)
 
-            print "======================================================================="
-            print "[REACHED STATE]:"
-            print "\n--------------------Target-------------------"
-            self._print_state(self.target)
-
     def solve_scenario(self):
         """
-            Function that solve a given scenario.
-
-        Args:
-            scenario (Scenario): Planned scenario exported from yaml configuration file.
+            Function that solve the scenario given in the solver object.
         """
 
         print "\n+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
@@ -170,17 +161,17 @@ class Solver(object):
              checkpoint (CheckPoint): CheckPoint with the state defined in terms of Mean Orbital Elements.
         """
 
-        # orbit_adj = PlaneOrientation(self.target, checkpoint, self.scenario.prop_type)
-        # if orbit_adj.is_necessary():
-        #     man = orbit_adj.evaluate_manoeuvre()
-        #     self.create_manoeuvres(man)
-        #
-        # orbit_adj = ArgumentOfPerigee(self.target, checkpoint, self.scenario.prop_type)
-        # if orbit_adj.is_necessary():
-        #     man = orbit_adj.evaluate_manoeuvre()
-        #     self.create_manoeuvres(man)
+        orbit_adj = PlaneOrientation(self.target, checkpoint)
+        if orbit_adj.is_necessary():
+            man = orbit_adj.evaluate_manoeuvre()
+            self.create_manoeuvres(man)
 
-        orbit_adj = HohmannTransfer(self.target, checkpoint, self.scenario.prop_type)
+        orbit_adj = ArgumentOfPerigee(self.target, checkpoint)
+        if orbit_adj.is_necessary():
+            man = orbit_adj.evaluate_manoeuvre()
+            self.create_manoeuvres(man)
+
+        orbit_adj = HohmannTransfer(self.target, checkpoint)
         if orbit_adj.is_necessary():
             man = orbit_adj.evaluate_manoeuvre()
             self.create_manoeuvres(man)
@@ -223,7 +214,8 @@ class Solver(object):
         return dt
 
     def _print_state(self, satellite):
-        """Print out satellite state.
+        """
+            Print out satellite state.
 
         Args:
             satellite (Satellite)
@@ -245,7 +237,7 @@ class Solver(object):
         print "      v :      " + str(kep_osc.v)
         print ""
 
-        kep_mean = satellite.get_mean_oe(self.target.prop.prop_type)
+        kep_mean = satellite.get_mean_oe()
 
         print " >> Mean orbital elements: "
         print "      a :      " + str(kep_mean.a)
@@ -262,7 +254,8 @@ class Solver(object):
             print "      V :      " + str(satellite.rel_state.V) + "   [km/s]"
 
     def _print_checkpoint(self, checkpoint):
-        """Print out checkpoint informations.
+        """
+            Print out checkpoint informations.
 
         Args:
             checkpoint (CheckPoint)
@@ -292,6 +285,9 @@ class Solver(object):
             raise TypeError('CheckPoint state type not recognized!')
 
     def _print_result(self):
+        """
+            Print out results of the simulation and all the manoeuvres.
+        """
         tot_dv = 0
 
         for it, man in enumerate(self.manoeuvre_plan):
