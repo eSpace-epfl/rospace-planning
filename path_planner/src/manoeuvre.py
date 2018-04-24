@@ -10,7 +10,8 @@
 
 import numpy as np
 
-from space_tf import KepOrbElem, CartesianLVLH
+from rospace_lib import KepOrbElem, CartesianLVLH
+
 
 class Manoeuvre(object):
     """
