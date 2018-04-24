@@ -94,6 +94,15 @@ class CheckPoint(object):
         else:
             raise AttributeError('Checkpoint state has already been defined!')
 
+    def set_from_checkpoint(self, chkp):
+        self.set_state(chkp.state)
+        self.id = chkp.id
+        self.error_ellipsoid = chkp.error_ellipsoid
+        self.manoeuvre_type = chkp.manoeuvre_type
+        self.t_min = chkp.t_min
+        self.t_max = chkp.t_max
+
+
 class RelativeCP(CheckPoint):
     """
         Relative checkpoint class, based on Checkpoint.
