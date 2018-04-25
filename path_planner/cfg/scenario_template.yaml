@@ -47,23 +47,23 @@ scenario:
           # Notes:
           #   -> In the first checkpoint (S0) every element has to be defined singularly, otherwise they will
           #      be initialized at 0.0.
-          #   -> In the next checkpoints if an element is not defined it will be assumed to be the same as the
-          #      previous one.
-          i: target.abs_state.i
-          O: target.abs_state.O
-          w: chaser.abs_state.w
-          a: chaser.abs_state.a
-          e: chaser.abs_state.e
+          i: #####
+          O: #####
+          w: #####
+          a: #####
+          e: #####
+          v: #####
 
     S1:
       id: 1
       state:
         kep:
-          # Semi-major axis is the same as the INITIAL target semi-major axis minus 35.0 km
-          a: target.abs_state.a - 35.0
-          # Eccentricity is calculated such that the orbit will be coelliptic to the INITIAL target orbit, i.e:
-          # (a_t*e_t = a*e)
-          e: target.abs_state.a * target.abs_state.e / self.abs_state.a
+          i: #####
+          O: #####
+          w: #####
+          a: #####
+          e: #####
+          v: #####
 
     S2:
       id: 2
