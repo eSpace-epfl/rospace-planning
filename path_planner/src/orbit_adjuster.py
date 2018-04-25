@@ -11,7 +11,6 @@
 import numpy as np
 
 from state import Satellite, Chaser
-from checkpoint import AbsoluteCP, RelativeCP
 from rospace_lib import mu_earth
 from datetime import timedelta
 from manoeuvre import Manoeuvre
@@ -19,13 +18,10 @@ from manoeuvre import Manoeuvre
 
 class OrbitAdjuster(object):
     """
-        Base class to create an orbit adjuster.
-
-    Attributes:
-        checkpoint (CheckPoint): The next checkpoint that has to be reached.
+        Base class of an orbit adjuster.
     """
 
-    def travel_time(self, state, theta0, theta1):
+    def travel_time(self, abs_state, theta0, theta1):
         """
             Evaluate the travel time of a satellite from a starting true anomaly theta0 to an end anomaly theta1.
 
@@ -34,7 +30,7 @@ class OrbitAdjuster(object):
             David A. Vallado, Fundamentals of Astrodynamics and Applications, Second Edition, Algorithm 11 (p. 133)
 
         Args:
-            state (KepOrbElem): Satellite state in keplerian orbital elements.
+            abs_state (KepOrbElem): Satellite state in keplerian orbital elements.
             theta0 (rad): Starting true anomaly.
             theta1 (rad): Ending true anomaly.
 
@@ -42,8 +38,8 @@ class OrbitAdjuster(object):
             Travel time (seconds)
         """
 
-        a = state.a
-        e = state.e
+        a = abs_state.a
+        e = abs_state.e
 
         T = 2.0 * np.pi * np.sqrt(a**3 / mu_earth)
 
@@ -61,6 +57,42 @@ class OrbitAdjuster(object):
             dt += T
 
         return dt
+
+    def create_and_apply_manoeuvre(self, chaser, target, deltaV, dt):
+        """
+            Take the amount of deltaV needed and the waiting time up to when the manoeuvre should be executed, create
+            the manoeuvre and apply it, propagating chaser and target.
+
+        Args:
+            chaser (Chaser)
+            target (Satellite)
+            deltaV (np.array): Array in TEME reference frame cointaing the deltaV in [km/s]
+            dt (float): Waiting time in [s] up to when the burn should be executed.
+
+        Return:
+            man (Manoeuvre): The manoeuvre to be added to manoeuvre plan
+        """
+
+        new_date = chaser.prop.date + timedelta(seconds=dt)
+        satellite_prop = chaser.prop.orekit_prop.propagate(new_date)
+        target_prop = target.prop.orekit_prop.propagate(new_date)
+
+        satellite_prop[0].V += deltaV
+        chaser.set_abs_state_from_cartesian(satellite_prop[0])
+        target.set_abs_state_from_cartesian(target_prop[0])
+
+        chaser.prop.change_initial_conditions(satellite_prop[0], new_date, chaser.mass)
+        target.prop.change_initial_conditions(target_prop[0], new_date, target.mass)
+
+        chaser.prop.date = new_date
+        target.prop.date = new_date
+
+        # Create manoeuvre
+        man = Manoeuvre()
+        man.deltaV = deltaV
+        man.execution_epoch = new_date
+
+        return man
 
 
 class HohmannTransfer(OrbitAdjuster):
@@ -136,56 +168,25 @@ class HohmannTransfer(OrbitAdjuster):
         V_PERI_f_1 = np.sqrt(mu_earth / (a_int * (1.0 - e_int**2))) * np.array([-np.sin(theta_1), e_int + np.cos(theta_1), 0.0])
         deltaV_C_1 = np.linalg.inv(mean_oe.get_pof()).dot(V_PERI_f_1 - V_PERI_i_1)
 
-        # Apply first deltaV
+        # Apply first deltaV and give some amount of time (at least 10 seconds) to react
         dt = self.travel_time(mean_oe, mean_oe.v, theta_1)
-        if dt == 0:
-            dt = self.travel_time(mean_oe, 0.0, 2.0*np.pi)
-        new_date = chaser.prop.date + timedelta(seconds=dt)
-        satellite_prop = chaser.prop.orekit_prop.propagate(new_date)
-        target_prop = target.prop.orekit_prop.propagate(new_date)
+        if dt < 10.0:
+            dt += self.travel_time(mean_oe, 0.0, 2.0*np.pi)
 
-        satellite_prop[0].V += deltaV_C_1
-        chaser.set_abs_state_from_cartesian(satellite_prop[0])
-        target.set_abs_state_from_cartesian(target_prop[0])
-
-        chaser.prop.change_initial_conditions(satellite_prop[0], new_date, chaser.mass)
-        target.prop.change_initial_conditions(target_prop[0], new_date, target.mass)
-
-        mean_oe = chaser.get_mean_oe()
-        chaser.prop.date = new_date
-        target.prop.date = new_date
-
-        # Create manoeuvre
-        man1 = Manoeuvre()
-        man1.deltaV = deltaV_C_1
-        man1.execution_epoch = new_date
+        man1 = self.create_and_apply_manoeuvre(chaser, target, deltaV_C_1, dt)
 
         # Second burn
         V_PERI_i_2 = np.sqrt(mu_earth / (a_int * (1.0 - e_int ** 2))) * np.array([-np.sin(theta_2), e_int + np.cos(theta_2), 0.0])
         V_PERI_f_2 = np.sqrt(mu_earth / (a_f * (1.0 - e_f ** 2))) * np.array([-np.sin(theta_2), e_f + np.cos(theta_2), 0.0])
         deltaV_C_2 = np.linalg.inv(mean_oe.get_pof()).dot(V_PERI_f_2 - V_PERI_i_2)
 
-        # Apply second deltaV
-        dt = self.travel_time(mean_oe, mean_oe.v, theta_2)
-        new_date = chaser.prop.date + timedelta(seconds=dt)
-        satellite_prop = chaser.prop.orekit_prop.propagate(new_date)
-        target_prop = target.prop.orekit_prop.propagate(new_date)
-
-        satellite_prop[0].V += deltaV_C_2
-        chaser.set_abs_state_from_cartesian(satellite_prop[0])
-        target.set_abs_state_from_cartesian(target_prop[0])
-
+        # Apply second deltaV and give some amount of time (at least 10 seconds) to react
         mean_oe = chaser.get_mean_oe()
-        chaser.prop.date = new_date
-        target.prop.date = new_date
+        dt = self.travel_time(mean_oe, mean_oe.v, theta_2)
+        if dt < 10.0:
+            dt += self.travel_time(mean_oe, 0.0, 2.0*np.pi)
 
-        chaser.prop.change_initial_conditions(satellite_prop[0], new_date, chaser.mass)
-        target.prop.change_initial_conditions(target_prop[0], new_date, target.mass)
-
-        # Create manoeuvre
-        man2 = Manoeuvre()
-        man2.deltaV = deltaV_C_2
-        man2.execution_epoch = new_date
+        man2 = self.create_and_apply_manoeuvre(chaser, target, deltaV_C_2, dt)
 
         return [man1, man2]
 
@@ -267,25 +268,8 @@ class ArgumentOfPerigee(OrbitAdjuster):
 
         # Apply deltaV
         dt = self.travel_time(mean_oe, mean_oe.v, theta_i)
-        new_date = chaser.prop.date + timedelta(seconds=dt)
-        satellite_prop = chaser.prop.orekit_prop.propagate(new_date)
-        target_prop = target.prop.orekit_prop.propagate(new_date)
 
-        satellite_prop[0].V += deltaV_C
-        chaser.set_abs_state_from_cartesian(satellite_prop[0])
-        target.set_abs_state_from_cartesian(target_prop[0])
-
-        chaser.prop.change_initial_conditions(satellite_prop[0], new_date, chaser.mass)
-        target.prop.change_initial_conditions(target_prop[0], new_date, target.mass)
-
-        mean_oe = chaser.get_mean_oe()
-        chaser.prop.date = new_date
-        target.prop.date = new_date
-
-        # Create manoeuvre
-        man = Manoeuvre()
-        man.deltaV = deltaV_C
-        man.execution_epoch = new_date
+        man = self.create_and_apply_manoeuvre(chaser, target, deltaV_C, dt)
 
         return [man]
 
@@ -417,25 +401,8 @@ class PlaneOrientation(OrbitAdjuster):
 
         # Apply first deltaV
         dt = self.travel_time(mean_oe, mean_oe.v, theta_1)
-        new_date = chaser.prop.date + timedelta(seconds=dt)
-        satellite_prop = chaser.prop.orekit_prop.propagate(new_date)
-        target_prop = target.prop.orekit_prop.propagate(new_date)
 
-        satellite_prop[0].V += deltaV_C
-        chaser.set_abs_state_from_cartesian(satellite_prop[0])
-        target.set_abs_state_from_cartesian(target_prop[0])
-
-        chaser.prop.change_initial_conditions(satellite_prop[0], new_date, chaser.mass)
-        target.prop.change_initial_conditions(target_prop[0], new_date, target.mass)
-
-        mean_oe = chaser.get_mean_oe()
-        chaser.prop.date = new_date
-        target.prop.date = new_date
-
-        # Create manoeuvre
-        man = Manoeuvre()
-        man.deltaV = deltaV_C
-        man.execution_epoch = new_date
+        man = self.create_and_apply_manoeuvre(chaser, target, deltaV_C, dt)
 
         return [man]
 
