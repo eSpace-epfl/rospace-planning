@@ -4,7 +4,7 @@ scenario:
   overview:  "Sample scenario which does two orbit changes and do a drifting manoeuvre to reach a specific relative
               position with respect to another spacecraft."
 
-  prop_type: 2-body
+  prop_type: real-world
 
   CheckPoints:
     S0:
@@ -29,10 +29,10 @@ scenario:
           O: 0.396507390127
           v: 0.0
 
-    S2:
-      id: 2
-      position:
-        lvlh:
-          R: [-4.0, -10.0, 0.0]
-      error_ellipsoid: [0.4, 1.5, 0.4]
-      manoeuvre: drift
+#    S2:
+#      id: 2
+#      position:
+#        lvlh:
+#          R: [-4.0, -10.0, 0.0]
+#      error_ellipsoid: [0.4, 1.5, 0.4]
+#      manoeuvre: drift
