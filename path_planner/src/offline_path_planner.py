@@ -11,10 +11,10 @@
 from scenario import Scenario
 from solver import Solver
 
-def main():
+def main(filename, save=False):
     # Import scenario and initial conditions
     scenario = Scenario()
-    scenario.import_yaml_scenario('scenario_camille')
+    scenario.import_yaml_scenario(filename)
 
     # Solve scenario
     solver = Solver()
@@ -22,8 +22,11 @@ def main():
     solver.solve_scenario()
 
     # Save manoeuvre plan
-    scenario.export_solved_scenario(solver.manoeuvre_plan)
+    if save:
+        scenario.export_solved_scenario(solver.manoeuvre_plan)
+
+    return solver.tot_dV
 
 if __name__ == "__main__":
-    main()
+    main('scenario_camille')
 
