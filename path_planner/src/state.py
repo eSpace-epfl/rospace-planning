@@ -33,7 +33,7 @@ class Satellite(object):
         self.name = ''
         self.prop = Propagator()
 
-    def initialize_satellite(self, name, date, prop_type):
+    def initialize_satellite(self, name, date, prop_type, target=None):
         """
             Initialize satellite attributes from the configuration files.
 
@@ -41,6 +41,8 @@ class Satellite(object):
             name (str): Name of the satellite, which should be stated as well in initial_conditions.yaml file.
             date (datetime): Date at which the satellite (the propagator) has to be initialized.
             prop_type (str): Define the type of propagator to be used (2-body or real-world).
+            target (Satellite): If self is a chaser type satellite, the reference target is needed to define the
+                relative state with respect to it.
         """
 
         # Actual path
@@ -81,6 +83,13 @@ class Satellite(object):
         # Assign absolute state
         self.abs_state.from_keporb(satellite_ic)
 
+        # Assign relative state
+        if type(self) == Chaser:
+            if target != None:
+                self.set_rel_state_from_target(target)
+            else:
+                raise IOError('Missing target input to initialize chaser!')
+
         # Assign mass
         self.mass = eval(str(initial_conditions['mass']))
 
@@ -92,7 +101,7 @@ class Satellite(object):
             Set attributes of the satellite using as reference another satellite.
 
         Args:
-            satellite (Satellite)
+            satellite (Satellite or Chaser)
         """
 
         if type(self) != type(satellite):
@@ -102,6 +111,10 @@ class Satellite(object):
         self.abs_state.V = satellite.abs_state.V
         self.mass = satellite.mass
         self.prop = satellite.prop
+
+        if hasattr(self, 'rel_state'):
+            self.rel_state.R = satellite.rel_state.R
+            self.rel_state.V = satellite.rel_state.V
 
     def set_abs_state_from_cartesian(self, cartesian):
         """
