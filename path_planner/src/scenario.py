@@ -13,8 +13,8 @@ import numpy as np
 import pickle
 import sys
 
-from state import Satellite
-from checkpoint import CheckPoint
+from state import Satellite, Chaser
+from checkpoint import AbsoluteCP, RelativeCP
 from datetime import datetime
 
 
@@ -43,6 +43,7 @@ class Scenario(object):
         self.checkpoints = []
 
         # Satellite initial states
+        self.chaser_ic = Chaser()
         self.target_ic = Satellite()
 
         # Target Keep-Out Zones
@@ -77,6 +78,7 @@ class Scenario(object):
                     self.checkpoints = obj['checkpoints']
                     self.name = obj['scenario_name']
                     self.target_ic.set_from_satellite(obj['target_ic'])
+                    self.chaser_ic.set_from_satellite(obj['chaser_ic'])
                     self.date = obj['scenario_epoch']
 
                     return obj['manoeuvre_plan']
@@ -103,9 +105,10 @@ class Scenario(object):
 
             # Delete propagator to be able to dump satellite in pickle file
             del self.target_ic.prop
+            del self.chaser_ic.prop
 
             obj = {'scenario_name': self.name, 'checkpoints': self.checkpoints, 'manoeuvre_plan': manoeuvre_plan,
-                   'target_ic': self.target_ic, 'scenario_epoch': self.date}
+                   'target_ic': self.target_ic, 'chaser_ic': self.chaser_ic, 'scenario_epoch': self.date}
 
             pickle.dump(obj, file, protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -134,16 +137,22 @@ class Scenario(object):
 
         # Initialize satellites
         self.target_ic.initialize_satellite('target', self.date, scenario['prop_type'])
+        self.chaser_ic.initialize_satellite('chaser', self.date, scenario['prop_type'], self.target_ic)
 
         # Extract CheckPoints
         for i in xrange(0, len(checkpoints)):
             pos = checkpoints['S' + str(i)]['position']
-            prev = self.checkpoints[-1] if len(self.checkpoints) > 0 else None
 
-            checkpoint = CheckPoint(prev)
+            if 'kep' in pos.keys():
+                checkpoint = AbsoluteCP()
+                checkpoint.set_abs_state(pos['kep'])
+            elif 'lvlh' in pos.keys():
+                checkpoint = RelativeCP()
+                checkpoint.set_rel_state(pos['lvlh'])
+            else:
+                raise TypeError()
+
             checkpoint.id = checkpoints['S' + str(i)]['id']
-
-            checkpoint.set_state(pos)
 
             if 'error_ellipsoid' in checkpoints['S' + str(i)].keys():
                 checkpoint.error_ellipsoid = checkpoints['S' + str(i)]['error_ellipsoid']
