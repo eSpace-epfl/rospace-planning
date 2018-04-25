@@ -12,8 +12,8 @@ import numpy as np
 
 from rospace_lib import Cartesian, KepOrbElem, CartesianLVLH, mu_earth
 from manoeuvre import Manoeuvre
-from state import Satellite
-from checkpoint import CheckPoint
+from state import Satellite, Chaser
+from checkpoint import AbsoluteCP, RelativeCP
 from scenario import Scenario
 from datetime import timedelta, datetime
 from orbit_adjuster import HohmannTransfer, PlaneOrientation, ArgumentOfPerigee
@@ -32,6 +32,7 @@ class Solver(object):
     Attributes:
         manoeuvre_plan (list): List of the manoeuvre that has to be executed to perform the scenario.
         scenario (Scenario): The scenario that has to be solved.
+        chaser (Chaser): Chaser actual state, evolving in time according to the solver.
         target (Satellite): Target actual state, evolving in time according to the solver.
         epoch (datetime): Actual epoch, evolving in time according to the solver.
     """
@@ -39,6 +40,7 @@ class Solver(object):
     def __init__(self):
         self.manoeuvre_plan = []
         self.scenario = None
+        self.chaser = Chaser()
         self.target = Satellite()
         self.epoch = datetime.utcnow()
 
@@ -52,6 +54,8 @@ class Solver(object):
 
         self.scenario = scenario
         self.epoch = scenario.target_ic.prop.date
+
+        self.chaser.set_from_satellite(scenario.chaser_ic)
         self.target.set_from_satellite(scenario.target_ic)
 
     def apply_manoeuvre(self, manoeuvre):
@@ -76,18 +80,21 @@ class Solver(object):
 
             # Propagate
             self.target.prop.orekit_prop.propagate(self.epoch)
+            self.chaser.prop.orekit_prop.propagate(self.epoch)
 
         # Update epoch
         self.epoch += timedelta(seconds=dt_rest)
 
         # Propagate to the execution epoch
         target_prop = self.target.prop.orekit_prop.propagate(self.epoch)
+        chaser_prop = self.chaser.prop.orekit_prop.propagate(self.epoch)
 
         # Apply impulsive deltaV and apply it to the propagator initial conditions
-        target_prop[0].V += manoeuvre.deltaV
-        self.target.prop.change_initial_conditions(target_prop[0], self.epoch, self.target.mass)
+        chaser_prop[0].V += manoeuvre.deltaV
+        self.chaser.prop.change_initial_conditions(chaser_prop[0], self.epoch, self.chaser.mass)
 
-        # Update target state
+        # Update target and chaser states
+        self.chaser.set_abs_state_from_cartesian(chaser_prop[0])
         self.target.set_abs_state_from_cartesian(target_prop[0])
 
     def create_manoeuvres(self, deltaV_list):
@@ -100,12 +107,12 @@ class Solver(object):
         """
 
         for deltaV in deltaV_list:
-            mean_oe = self.target.get_mean_oe()
+            mean_oe = self.chaser.get_mean_oe()
 
             # Create manoeuvre
             man = Manoeuvre()
             man.deltaV = deltaV[0]
-            man.initial_state = mean_oe
+            # man.initial_state = mean_oe
             man.execution_epoch = self.epoch + timedelta(seconds=self.travel_time(mean_oe, mean_oe.v, deltaV[1]))
 
             # Apply manoeuvre
@@ -132,6 +139,10 @@ class Solver(object):
         self._print_state(self.target)
         print "---------------------------------------------------------------------\n"
 
+        print "\n------------------------Chaser initial state------------------------"
+        self._print_state(self.chaser)
+        print "---------------------------------------------------------------------\n"
+
         # Start solving scenario by popping positions from position list
         for checkpoint in checkpoints:
             print "\n\n======================================================================="
@@ -140,9 +151,19 @@ class Solver(object):
             print "[CHECKPOINT]:"
             self._print_checkpoint(checkpoint)
             print "======================================================================="
-            self.absolute_solver(checkpoint)
+
+            if type(checkpoint) == AbsoluteCP:
+                self.absolute_solver(checkpoint)
+            elif type(checkpoint) == RelativeCP:
+                self.relative_solver(checkpoint)
+            else:
+                raise TypeError()
+
             print "======================================================================="
             print "[REACHED STATE]:"
+            print "\n--------------------Chaser-------------------"
+            self._print_state(self.chaser)
+
             print "\n--------------------Target-------------------"
             self._print_state(self.target)
             print "=======================================================================\n"
@@ -158,23 +179,26 @@ class Solver(object):
             Absolute solver. Calculate the manoeuvre needed to go from an absolute position to another.
 
         Args:
-             checkpoint (CheckPoint): CheckPoint with the state defined in terms of Mean Orbital Elements.
+             checkpoint (AbsoluteCP): Absolute checkpoint with the state defined as Mean Orbital Elements.
         """
 
-        orbit_adj = PlaneOrientation(self.target, checkpoint)
+        orbit_adj = PlaneOrientation(self.chaser, checkpoint)
         if orbit_adj.is_necessary():
             man = orbit_adj.evaluate_manoeuvre()
             self.create_manoeuvres(man)
 
-        orbit_adj = ArgumentOfPerigee(self.target, checkpoint)
+        orbit_adj = ArgumentOfPerigee(self.chaser, checkpoint)
         if orbit_adj.is_necessary():
             man = orbit_adj.evaluate_manoeuvre()
             self.create_manoeuvres(man)
 
-        orbit_adj = HohmannTransfer(self.target, checkpoint)
+        orbit_adj = HohmannTransfer(self.chaser, checkpoint)
         if orbit_adj.is_necessary():
             man = orbit_adj.evaluate_manoeuvre()
             self.create_manoeuvres(man)
+
+    def relative_solver(self, checkpoint):
+        pass
 
     def travel_time(self, state, theta0, theta1):
         """
@@ -261,28 +285,23 @@ class Solver(object):
             checkpoint (CheckPoint)
         """
 
-        state_type = type(checkpoint.state)
+        checkpoint_type = type(checkpoint)
 
-        if state_type == Cartesian:
-            print " >> Cartesian: "
-            print "      R :      " + str(checkpoint.state.R) + "   [km]"
-            print "      V :      " + str(checkpoint.state.V) + "   [km/s]"
-            print ""
-        elif state_type == KepOrbElem:
-            print " >> Mean orbital elements: "
-            print "      a :      " + str(checkpoint.state.a)
-            print "      e :      " + str(checkpoint.state.e)
-            print "      i :      " + str(checkpoint.state.i)
-            print "      O :      " + str(checkpoint.state.O)
-            print "      w :      " + str(checkpoint.state.w)
-            print "      v :      " + str(checkpoint.state.v)
-        elif state_type == CartesianLVLH:
+        if checkpoint_type == RelativeCP:
             print " >> Cartesian LVLH: "
-            print "      R :      " + str(checkpoint.state.R) + "   [km]"
-            print "      V :      " + str(checkpoint.state.V) + "   [km/s]"
+            print "      R :      " + str(checkpoint.rel_state.R) + "   [km]"
+            print "      V :      " + str(checkpoint.rel_state.V) + "   [km/s]"
             print ""
+        elif checkpoint_type == AbsoluteCP:
+            print " >> Mean orbital elements: "
+            print "      a :      " + str(checkpoint.abs_state.a)
+            print "      e :      " + str(checkpoint.abs_state.e)
+            print "      i :      " + str(checkpoint.abs_state.i)
+            print "      O :      " + str(checkpoint.abs_state.O)
+            print "      w :      " + str(checkpoint.abs_state.w)
+            print "      v :      " + str(checkpoint.abs_state.v)
         else:
-            raise TypeError('CheckPoint state type not recognized!')
+            raise TypeError('CheckPoint type not recognized!')
 
     def _print_result(self):
         """
