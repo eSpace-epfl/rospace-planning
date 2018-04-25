@@ -14,7 +14,7 @@ from solver import Solver
 def main():
     # Import scenario and initial conditions
     scenario = Scenario()
-    scenario.import_yaml_scenario()
+    scenario.import_yaml_scenario('scenario_camille')
 
     # Solve scenario
     solver = Solver()

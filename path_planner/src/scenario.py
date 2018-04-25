@@ -114,9 +114,12 @@ class Scenario(object):
 
             print "Manoeuvre plan saved..."
 
-    def import_yaml_scenario(self):
+    def import_yaml_scenario(self, filename):
         """
             Parse scenario and import initial conditions from .yaml files in the /cfg folder.
+
+        Args:
+            filename (str): name of the scenario yaml configuration file.
         """
 
         # Actual path
@@ -125,7 +128,7 @@ class Scenario(object):
         abs_path = abs_path[0:path_idx]
 
         # Opening scenario file
-        scenario_path = abs_path + 'path_planner/cfg/scenario.yaml'
+        scenario_path = abs_path + 'path_planner/cfg/' + filename + '.yaml'
         scenario_file = file(scenario_path, 'r')
         scenario = yaml.load(scenario_file)
         scenario = scenario['scenario']
