@@ -1,7 +1,8 @@
 scenario:
-  name: 'Scenario Absolute'
+  name: 'Scenario Absolute and Relative'
 
-  overview:  "Sample absolute scenario which does two orbit changes."
+  overview:  "Sample scenario which does two orbit changes and do a drifting manoeuvre to reach a specific relative
+              position with respect to another spacecraft."
 
   prop_type: 2-body
 
@@ -10,20 +11,28 @@ scenario:
       id: 0
       position:
         kep:
-          a: 7284.12176561
-          e: 0.001099
-          i: 1.890223
-          w: 0.63974758001
-          O: 0.508063906
+          a: 7084.12176561 - 20.0
+          e: 7084.12176561 * 0.0008099 / (7084.12176561 - 47.0)
+          i: 1.71925752363
+          w: 0.533974758001
+          O: 0.396507390127
           v: 0.0
 
     S1:
       id: 1
       position:
         kep:
-          a: 7074.98734967
-          e: 7074.98734967 * 0.00047348810605 / (7074.98734967 - 16.0)
-          i: 1.71935390223
-          w: 1.0441635363
-          O: 0.396508063906
+          a: 7084.12176561 - 16.0
+          e: 7084.12176561 * 0.0008099 / (7084.12176561 - 16.0)
+          i: 1.71925752363
+          w: 0.533974758001
+          O: 0.396507390127
           v: 0.0
+
+    S2:
+      id: 2
+      position:
+        lvlh:
+          R: [-4.0, -10.0, 0.0]
+      error_ellipsoid: [0.4, 1.5, 0.4]
+      manoeuvre: drift
