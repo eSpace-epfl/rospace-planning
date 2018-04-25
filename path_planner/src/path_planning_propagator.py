@@ -71,6 +71,10 @@ class Propagator(object):
         abs_path = sys.argv[0]
         path_idx = abs_path.find('planning')
         abs_path = abs_path[0:path_idx]
+
+        if 'unittest' in abs_path:
+            abs_path = '/home/dfrey/rospace_ws/src/'
+
         settings_path = abs_path + 'rdv-cap-sim/rospace_simulator/cfg/' + name + '.yaml'
         settings = file(settings_path, 'r')
         propSettings = yaml.load(settings)

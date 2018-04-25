@@ -50,6 +50,9 @@ class Satellite(object):
         path_idx = abs_path.find('path_planner')
         abs_path = abs_path[0:path_idx]
 
+        if 'unittest' in abs_path:
+            abs_path = '/home/dfrey/rospace_ws/src/planning/'
+
         # Opening initial conditions file
         initial_conditions_path = abs_path + 'path_planner/cfg/initial_conditions.yaml'
         initial_conditions_file = file(initial_conditions_path, 'r')

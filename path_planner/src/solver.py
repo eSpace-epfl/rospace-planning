@@ -44,6 +44,8 @@ class Solver(object):
         self.target = Satellite()
         self.epoch = datetime.utcnow()
 
+        self.tot_dV = 0.0
+
     def initialize_solver(self, scenario):
         """
             Given the scenario to be solved initialize the solver attributes.
@@ -105,11 +107,11 @@ class Solver(object):
             self._print_state(self.target)
             print "=======================================================================\n"
 
-        tot_dV, tot_dt = self._print_result()
+        self.tot_dV, tot_dt = self._print_result()
 
         print "\n\n-----------------> Manoeuvre elaborated <--------------------\n"
         print "---> Manoeuvre duration:    " + str(tot_dt) + " seconds"
-        print "---> Total deltaV:          " + str(tot_dV) + " km/s"
+        print "---> Total deltaV:          " + str(self.tot_dV) + " km/s"
 
     def absolute_solver(self, checkpoint):
         """

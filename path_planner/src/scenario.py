@@ -127,6 +127,9 @@ class Scenario(object):
         path_idx = abs_path.find('path_planner')
         abs_path = abs_path[0:path_idx]
 
+        if 'unittest' in abs_path:
+            abs_path = '/home/dfrey/rospace_ws/src/planning/'
+
         # Opening scenario file
         scenario_path = abs_path + 'path_planner/cfg/' + filename + '.yaml'
         scenario_file = file(scenario_path, 'r')
