@@ -58,69 +58,6 @@ class Solver(object):
         self.chaser.set_from_satellite(scenario.chaser_ic)
         self.target.set_from_satellite(scenario.target_ic)
 
-    def apply_manoeuvre(self, manoeuvre):
-        """
-            Given a manoeuvre the satellite is propagated according to it.
-
-        Args:
-            manoeuvre (Manoeuvre)
-        """
-
-        # Waiting time to get to the proper state in seconds
-        idle_time = (manoeuvre.execution_epoch - self.epoch).total_seconds()
-
-        # Divide propagation time in steps of dt seconds to increase accuracy
-        dt = 100.0
-        steps = int(np.floor(idle_time / 100.0))
-        dt_rest = idle_time - 100.0 * steps
-
-        for i in xrange(0, steps):
-            # Update epoch
-            self.epoch += timedelta(seconds=100.0)
-
-            # Propagate
-            self.target.prop.orekit_prop.propagate(self.epoch)
-            self.chaser.prop.orekit_prop.propagate(self.epoch)
-
-        # Update epoch
-        self.epoch += timedelta(seconds=dt_rest)
-
-        # Propagate to the execution epoch
-        target_prop = self.target.prop.orekit_prop.propagate(self.epoch)
-        chaser_prop = self.chaser.prop.orekit_prop.propagate(self.epoch)
-
-        # Apply impulsive deltaV and apply it to the propagator initial conditions
-        chaser_prop[0].V += manoeuvre.deltaV
-        self.chaser.prop.change_initial_conditions(chaser_prop[0], self.epoch, self.chaser.mass)
-
-        # Update target and chaser states
-        self.chaser.set_abs_state_from_cartesian(chaser_prop[0])
-        self.target.set_abs_state_from_cartesian(target_prop[0])
-
-    def create_manoeuvres(self, deltaV_list):
-        """
-            Given a list of deltaV's and true anomalies where they has to be executed, this function creates and add the
-            manoeuvres to the plan, while also applying them to keep the satellite state and propagator up to date.
-
-        Args:
-            deltaV_list (list)
-        """
-
-        for deltaV in deltaV_list:
-            mean_oe = self.chaser.get_mean_oe()
-
-            # Create manoeuvre
-            man = Manoeuvre()
-            man.deltaV = deltaV[0]
-            # man.initial_state = mean_oe
-            man.execution_epoch = self.epoch + timedelta(seconds=self.travel_time(mean_oe, mean_oe.v, deltaV[1]))
-
-            # Apply manoeuvre
-            self.apply_manoeuvre(man)
-
-            # Add manoeuvre to the plan
-            self.manoeuvre_plan.append(man)
-
     def solve_scenario(self):
         """
             Function that solve the scenario given in the solver object.
@@ -182,60 +119,20 @@ class Solver(object):
              checkpoint (AbsoluteCP): Absolute checkpoint with the state defined as Mean Orbital Elements.
         """
 
-        orbit_adj = PlaneOrientation(self.chaser, checkpoint)
-        if orbit_adj.is_necessary():
-            man = orbit_adj.evaluate_manoeuvre()
-            self.create_manoeuvres(man)
+        orbit_adj = PlaneOrientation()
+        if orbit_adj.is_necessary(self.chaser, checkpoint):
+            self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
 
-        orbit_adj = ArgumentOfPerigee(self.chaser, checkpoint)
-        if orbit_adj.is_necessary():
-            man = orbit_adj.evaluate_manoeuvre()
-            self.create_manoeuvres(man)
+        orbit_adj = ArgumentOfPerigee()
+        if orbit_adj.is_necessary(self.chaser, checkpoint):
+            self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
 
-        orbit_adj = HohmannTransfer(self.chaser, checkpoint)
-        if orbit_adj.is_necessary():
-            man = orbit_adj.evaluate_manoeuvre()
-            self.create_manoeuvres(man)
+        orbit_adj = HohmannTransfer()
+        if orbit_adj.is_necessary(self.chaser, checkpoint):
+            self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
 
     def relative_solver(self, checkpoint):
         pass
-
-    def travel_time(self, state, theta0, theta1):
-        """
-            Evaluate the travel time of a satellite from a starting true anomaly theta0 to an end anomaly theta1.
-
-        Reference:
-            Exercise of Nicollier's Lecture.
-            David A. Vallado, Fundamentals of Astrodynamics and Applications, Second Edition, Algorithm 11 (p. 133)
-
-        Args:
-            state (KepOrbElem): Satellite state in keplerian orbital elements.
-            theta0 (rad): Starting true anomaly.
-            theta1 (rad): Ending true anomaly.
-
-        Return:
-            Travel time (seconds)
-        """
-
-        a = state.a
-        e = state.e
-
-        T = 2.0 * np.pi * np.sqrt(a**3 / mu_earth)
-
-        theta0 = theta0 % (2.0 * np.pi)
-        theta1 = theta1 % (2.0 * np.pi)
-
-        t0 = np.sqrt(a**3/mu_earth) * (2.0 * np.arctan((np.sqrt((1.0 - e)/(1.0 + e)) * np.tan(theta0 / 2.0))) -
-                                       (e * np.sqrt(1.0 - e**2) * np.sin(theta0))/(1.0 + e * np.cos(theta0)))
-        t1 = np.sqrt(a**3/mu_earth) * (2.0 * np.arctan((np.sqrt((1.0 - e)/(1.0 + e)) * np.tan(theta1 / 2.0))) -
-                                       (e * np.sqrt(1.0 - e**2) * np.sin(theta1))/(1.0 + e * np.cos(theta1)))
-
-        dt = t1 - t0
-
-        if dt < 0:
-            dt += T
-
-        return dt
 
     def _print_state(self, satellite):
         """

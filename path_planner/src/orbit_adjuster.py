@@ -13,6 +13,8 @@ import numpy as np
 from state import Satellite, Chaser
 from checkpoint import AbsoluteCP, RelativeCP
 from rospace_lib import mu_earth
+from datetime import timedelta
+from manoeuvre import Manoeuvre
 
 
 class OrbitAdjuster(object):
@@ -20,29 +22,45 @@ class OrbitAdjuster(object):
         Base class to create an orbit adjuster.
 
     Attributes:
-        satellite (Satellite): The reference satellite which will execute a manoeuvre.
         checkpoint (CheckPoint): The next checkpoint that has to be reached.
     """
 
-    def __init__(self, sat, chkp):
+    def travel_time(self, state, theta0, theta1):
+        """
+            Evaluate the travel time of a satellite from a starting true anomaly theta0 to an end anomaly theta1.
 
-        if type(sat) == Satellite:
-            self.satellite = Satellite()
-        elif type(sat) == Chaser:
-            self.satellite = Chaser()
-        else:
-            raise TypeError()
+        Reference:
+            Exercise of Nicollier's Lecture.
+            David A. Vallado, Fundamentals of Astrodynamics and Applications, Second Edition, Algorithm 11 (p. 133)
 
-        if type(chkp) == AbsoluteCP:
-            self.checkpoint = AbsoluteCP()
-        elif type(chkp) == RelativeCP:
-            self.checkpoint = RelativeCP()
-        else:
-            raise TypeError()
+        Args:
+            state (KepOrbElem): Satellite state in keplerian orbital elements.
+            theta0 (rad): Starting true anomaly.
+            theta1 (rad): Ending true anomaly.
 
-        # Initialization of both checkpoint and satellite
-        self.satellite.set_from_satellite(sat)
-        self.checkpoint.set_from_checkpoint(chkp)
+        Return:
+            Travel time (seconds)
+        """
+
+        a = state.a
+        e = state.e
+
+        T = 2.0 * np.pi * np.sqrt(a**3 / mu_earth)
+
+        theta0 = theta0 % (2.0 * np.pi)
+        theta1 = theta1 % (2.0 * np.pi)
+
+        t0 = np.sqrt(a**3/mu_earth) * (2.0 * np.arctan((np.sqrt((1.0 - e)/(1.0 + e)) * np.tan(theta0 / 2.0))) -
+                                       (e * np.sqrt(1.0 - e**2) * np.sin(theta0))/(1.0 + e * np.cos(theta0)))
+        t1 = np.sqrt(a**3/mu_earth) * (2.0 * np.arctan((np.sqrt((1.0 - e)/(1.0 + e)) * np.tan(theta1 / 2.0))) -
+                                       (e * np.sqrt(1.0 - e**2) * np.sin(theta1))/(1.0 + e * np.cos(theta1)))
+
+        dt = t1 - t0
+
+        if dt < 0:
+            dt += T
+
+        return dt
 
 
 class HohmannTransfer(OrbitAdjuster):
@@ -51,18 +69,15 @@ class HohmannTransfer(OrbitAdjuster):
         Can be used to do corrections during absolute navigation.
     """
 
-    def __init__(self, sat, chkp):
-        super(HohmannTransfer, self).__init__(sat, chkp)
-
-    def is_necessary(self):
+    def is_necessary(self, chaser, checkpoint):
         """
             Function to test if this type of orbit adjuster is needed.
         """
 
-        mean_oe = self.satellite.get_mean_oe()
+        mean_oe = chaser.get_mean_oe()
 
-        da = self.checkpoint.abs_state.a - mean_oe.a
-        de = self.checkpoint.abs_state.e - mean_oe.e
+        da = checkpoint.abs_state.a - mean_oe.a
+        de = checkpoint.abs_state.e - mean_oe.e
 
         tol_a = 0.2
         tol_e = 1.0 / mean_oe.a
@@ -72,7 +87,7 @@ class HohmannTransfer(OrbitAdjuster):
         else:
             return False
 
-    def evaluate_manoeuvre(self):
+    def evaluate_manoeuvre(self, chaser, checkpoint, target):
         """
             Adjust eccentricity and semi-major axis at the same time with an Hohmann-Transfer like manoeuvre:
             1) Burn at perigee to match the needed intermediate orbit
@@ -84,13 +99,13 @@ class HohmannTransfer(OrbitAdjuster):
         """
 
         # Evaluating mean orbital elements
-        mean_oe = self.satellite.get_mean_oe()
+        mean_oe = chaser.get_mean_oe()
 
         # Extract initial and final semi-major axis and eccentricities
         a_i = mean_oe.a
         e_i = mean_oe.e
-        a_f = self.checkpoint.abs_state.a
-        e_f = self.checkpoint.abs_state.e
+        a_f = checkpoint.abs_state.a
+        e_f = checkpoint.abs_state.e
 
         r_p_i = a_i * (1.0 - e_i)
         r_p_f = a_f * (1.0 - e_f)
@@ -121,12 +136,58 @@ class HohmannTransfer(OrbitAdjuster):
         V_PERI_f_1 = np.sqrt(mu_earth / (a_int * (1.0 - e_int**2))) * np.array([-np.sin(theta_1), e_int + np.cos(theta_1), 0.0])
         deltaV_C_1 = np.linalg.inv(mean_oe.get_pof()).dot(V_PERI_f_1 - V_PERI_i_1)
 
+        # Apply first deltaV
+        dt = self.travel_time(mean_oe, mean_oe.v, theta_1)
+        if dt == 0:
+            dt = self.travel_time(mean_oe, 0.0, 2.0*np.pi)
+        new_date = chaser.prop.date + timedelta(seconds=dt)
+        satellite_prop = chaser.prop.orekit_prop.propagate(new_date)
+        target_prop = target.prop.orekit_prop.propagate(new_date)
+
+        satellite_prop[0].V += deltaV_C_1
+        chaser.set_abs_state_from_cartesian(satellite_prop[0])
+        target.set_abs_state_from_cartesian(target_prop[0])
+
+        chaser.prop.change_initial_conditions(satellite_prop[0], new_date, chaser.mass)
+        target.prop.change_initial_conditions(target_prop[0], new_date, target.mass)
+
+        mean_oe = chaser.get_mean_oe()
+        chaser.prop.date = new_date
+        target.prop.date = new_date
+
+        # Create manoeuvre
+        man1 = Manoeuvre()
+        man1.deltaV = deltaV_C_1
+        man1.execution_epoch = new_date
+
         # Second burn
         V_PERI_i_2 = np.sqrt(mu_earth / (a_int * (1.0 - e_int ** 2))) * np.array([-np.sin(theta_2), e_int + np.cos(theta_2), 0.0])
         V_PERI_f_2 = np.sqrt(mu_earth / (a_f * (1.0 - e_f ** 2))) * np.array([-np.sin(theta_2), e_f + np.cos(theta_2), 0.0])
         deltaV_C_2 = np.linalg.inv(mean_oe.get_pof()).dot(V_PERI_f_2 - V_PERI_i_2)
 
-        return [(deltaV_C_1, theta_1), (deltaV_C_2, theta_2)]
+        # Apply second deltaV
+        dt = self.travel_time(mean_oe, mean_oe.v, theta_2)
+        new_date = chaser.prop.date + timedelta(seconds=dt)
+        satellite_prop = chaser.prop.orekit_prop.propagate(new_date)
+        target_prop = target.prop.orekit_prop.propagate(new_date)
+
+        satellite_prop[0].V += deltaV_C_2
+        chaser.set_abs_state_from_cartesian(satellite_prop[0])
+        target.set_abs_state_from_cartesian(target_prop[0])
+
+        mean_oe = chaser.get_mean_oe()
+        chaser.prop.date = new_date
+        target.prop.date = new_date
+
+        chaser.prop.change_initial_conditions(satellite_prop[0], new_date, chaser.mass)
+        target.prop.change_initial_conditions(target_prop[0], new_date, target.mass)
+
+        # Create manoeuvre
+        man2 = Manoeuvre()
+        man2.deltaV = deltaV_C_2
+        man2.execution_epoch = new_date
+
+        return [man1, man2]
 
 
 class ArgumentOfPerigee(OrbitAdjuster):
@@ -135,17 +196,14 @@ class ArgumentOfPerigee(OrbitAdjuster):
         Can be used to do corrections during absolute navigation.
     """
 
-    def __init__(self, sat, chkp):
-        super(ArgumentOfPerigee, self).__init__(sat, chkp)
-
-    def is_necessary(self):
+    def is_necessary(self, chaser, checkpoint):
         """
             Function to test if this type of orbit adjuster is needed.
         """
 
-        mean_oe = self.satellite.get_mean_oe()
+        mean_oe = chaser.get_mean_oe()
 
-        dw = self.checkpoint.abs_state.w - mean_oe.w
+        dw = checkpoint.abs_state.w - mean_oe.w
 
         tol_w = 1.0 / mean_oe.a
 
@@ -154,7 +212,7 @@ class ArgumentOfPerigee(OrbitAdjuster):
         else:
             return False
 
-    def evaluate_manoeuvre(self):
+    def evaluate_manoeuvre(self, chaser, checkpoint, target):
         """
             Given the chaser relative orbital elements with respect to the target adjust the perigee argument.
 
@@ -163,14 +221,14 @@ class ArgumentOfPerigee(OrbitAdjuster):
             David A. Vallado, Fundamentals of Astrodynamics and Applications, Second Edition, Chapter 6
         """
         # Mean orbital elements
-        mean_oe = self.satellite.get_mean_oe()
+        mean_oe = chaser.get_mean_oe()
 
         # Extract constants
         a = mean_oe.a
         e = mean_oe.e
 
         # Evaluate perigee difference to correct
-        dw = (self.checkpoint.abs_state.w - mean_oe.w) % (2.0 * np.pi)
+        dw = (checkpoint.abs_state.w - mean_oe.w) % (2.0 * np.pi)
 
         # Positions where burn can occur
         theta_i_1 = dw / 2.0
@@ -202,12 +260,34 @@ class ArgumentOfPerigee(OrbitAdjuster):
 
         # Final velocity
         V_PERI_f = np.sqrt(mu_earth / (a * (1.0 - e**2))) * np.array([-np.sin(theta_f), e + np.cos(theta_f), 0.0])
-        V_TEM_f = np.linalg.inv(self.checkpoint.abs_state.get_pof()).dot(V_PERI_f)
+        V_TEM_f = np.linalg.inv(checkpoint.abs_state.get_pof()).dot(V_PERI_f)
 
         # Delta-V
         deltaV_C = V_TEM_f - V_TEM_i
 
-        return [(deltaV_C, theta_i)]
+        # Apply deltaV
+        dt = self.travel_time(mean_oe, mean_oe.v, theta_i)
+        new_date = chaser.prop.date + timedelta(seconds=dt)
+        satellite_prop = chaser.prop.orekit_prop.propagate(new_date)
+        target_prop = target.prop.orekit_prop.propagate(new_date)
+
+        satellite_prop[0].V += deltaV_C
+        chaser.set_abs_state_from_cartesian(satellite_prop[0])
+        target.set_abs_state_from_cartesian(target_prop[0])
+
+        chaser.prop.change_initial_conditions(satellite_prop[0], new_date, chaser.mass)
+        target.prop.change_initial_conditions(target_prop[0], new_date, target.mass)
+
+        mean_oe = chaser.get_mean_oe()
+        chaser.prop.date = new_date
+        target.prop.date = new_date
+
+        # Create manoeuvre
+        man = Manoeuvre()
+        man.deltaV = deltaV_C
+        man.execution_epoch = new_date
+
+        return [man]
 
 
 class PlaneOrientation(OrbitAdjuster):
@@ -216,18 +296,15 @@ class PlaneOrientation(OrbitAdjuster):
         Can be used to do corrections during absolute navigation.
     """
 
-    def __init__(self, sat, chkp):
-        super(PlaneOrientation, self).__init__(sat, chkp)
-
-    def is_necessary(self):
+    def is_necessary(self, chaser, checkpoint):
         """
             Function to test if this type of orbit adjuster is needed.
         """
 
-        mean_oe = self.satellite.get_mean_oe()
+        mean_oe = chaser.get_mean_oe()
 
-        di = self.checkpoint.abs_state.i - mean_oe.i
-        dO = self.checkpoint.abs_state.O - mean_oe.O
+        di = checkpoint.abs_state.i - mean_oe.i
+        dO = checkpoint.abs_state.O - mean_oe.O
 
         tol_i = 1.0 / mean_oe.a
         tol_O = 1.0 / mean_oe.a
@@ -237,7 +314,7 @@ class PlaneOrientation(OrbitAdjuster):
         else:
             return False
 
-    def evaluate_manoeuvre(self):
+    def evaluate_manoeuvre(self, chaser, checkpoint, target):
         """
             Correct plane inclination and RAAN with a single manoeuvre at the node between the two orbital planes.
 
@@ -246,7 +323,7 @@ class PlaneOrientation(OrbitAdjuster):
             David A. Vallado, Fundamentals of Astrodynamics and Applications, Second Edition, Chapter 6
         """
         # Mean orbital elements
-        mean_oe = self.satellite.get_mean_oe()
+        mean_oe = chaser.get_mean_oe()
 
         # Extract values
         a = mean_oe.a
@@ -255,8 +332,8 @@ class PlaneOrientation(OrbitAdjuster):
         O_i = mean_oe.O
 
         # Final values
-        O_f = self.checkpoint.abs_state.O
-        i_f = self.checkpoint.abs_state.i
+        O_f = checkpoint.abs_state.O
+        i_f = checkpoint.abs_state.i
 
         # Difference between initial and final values
         dO = O_f - O_i
@@ -338,7 +415,29 @@ class PlaneOrientation(OrbitAdjuster):
         # Evaluate deltaV
         deltaV_C = V_TEM_f - V_TEM_i
 
-        return [(deltaV_C, theta_i)]
+        # Apply first deltaV
+        dt = self.travel_time(mean_oe, mean_oe.v, theta_1)
+        new_date = chaser.prop.date + timedelta(seconds=dt)
+        satellite_prop = chaser.prop.orekit_prop.propagate(new_date)
+        target_prop = target.prop.orekit_prop.propagate(new_date)
+
+        satellite_prop[0].V += deltaV_C
+        chaser.set_abs_state_from_cartesian(satellite_prop[0])
+        target.set_abs_state_from_cartesian(target_prop[0])
+
+        chaser.prop.change_initial_conditions(satellite_prop[0], new_date, chaser.mass)
+        target.prop.change_initial_conditions(target_prop[0], new_date, target.mass)
+
+        mean_oe = chaser.get_mean_oe()
+        chaser.prop.date = new_date
+        target.prop.date = new_date
+
+        # Create manoeuvre
+        man = Manoeuvre()
+        man.deltaV = deltaV_C
+        man.execution_epoch = new_date
+
+        return [man]
 
 
 class AnomalySynchronisation(OrbitAdjuster):
