@@ -16,7 +16,7 @@ from state import Satellite, Chaser
 from checkpoint import AbsoluteCP, RelativeCP
 from scenario import Scenario
 from datetime import timedelta, datetime
-from orbit_adjuster import HohmannTransfer, PlaneOrientation, ArgumentOfPerigee
+from orbit_adjuster import *
 
 
 class Solver(object):
@@ -94,7 +94,7 @@ class Solver(object):
             if type(checkpoint) == AbsoluteCP:
                 self.absolute_solver(checkpoint)
             elif type(checkpoint) == RelativeCP:
-                self.relative_solver(checkpoint)
+                self.relative_solver(checkpoint, self.scenario.approach_ellipsoid)
             else:
                 raise TypeError()
 
@@ -133,8 +133,54 @@ class Solver(object):
         if orbit_adj.is_necessary(self.chaser, checkpoint):
             self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
 
-    def relative_solver(self, checkpoint):
-        pass
+    def relative_solver(self, checkpoint, approach_ellipsoid):
+        """
+            Relative solver. Calculate the manoeuvre needed to go from a relative position to another.
+
+        Args:
+            checkpoint (RelativeCP)
+            approach_ellipsoid (np.array): Allowed error on a checkpoint.
+        """
+
+        # Mean orbital elements
+        chaser_mean = self.chaser.get_mean_oe()
+        target_mean = self.target.get_mean_oe()
+
+        # Check if plane needs to be corrected again
+        # TODO: Put as tolerance a number slightly bigger than the deviation of the estimation
+        # TODO: Remove changes in plane if it is drifting autonomously to the wanted direction
+        tol_i = 1.0 / chaser_mean.a
+        tol_O = 1.0 / chaser_mean.a
+
+        # At this point, inclination and raan should match the one of the target
+        di = target_mean.i - chaser_mean.i
+        dO = target_mean.O - chaser_mean.O
+        if abs(di) > tol_i or abs(dO) > tol_O:
+            checkpoint_abs = AbsoluteCP()
+            checkpoint_abs.abs_state.i = target_mean.i
+            checkpoint_abs.abs_state.O = target_mean.O
+
+            orbit_adj = PlaneOrientation()
+            orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint_abs, self.target)
+
+        if checkpoint.manoeuvre_type == 'standard':
+            self.multi_lambert(checkpoint, approach_ellipsoid, False)
+            # self.linearized_including_J2(checkpoint, approach_ellipsoid)
+
+        elif checkpoint.manoeuvre_type == 'radial':
+            # Manoeuvre type is radial -> deltaT is calculated from CW-equations -> solved with multi-lambert
+            a = self.target.abs_state.a
+            dt = np.pi / np.sqrt(mu_earth / a ** 3.0)
+
+            checkpoint.t_min = dt
+            checkpoint.t_max = dt + 1.0
+
+            self.multi_lambert(checkpoint, approach_ellipsoid, True)
+            # self.linearized_including_J2(checkpoint, approach_ellipsoid)
+
+        elif checkpoint.manoeuvre_type == 'drift':
+            orbit_adj = Drift()
+            orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target, self.manoeuvre_plan)
 
     def _print_state(self, satellite):
         """
@@ -210,8 +256,9 @@ class Solver(object):
 
         for it, man in enumerate(self.manoeuvre_plan):
             print '\n Manoeuvre nr. ' + str(it) + ':'
-            print '--> DeltaV:            ' + str(man.deltaV)
-            print '--> Normalized DeltaV: ' + str(np.linalg.norm(man.deltaV))
+            print '>>>   DeltaV:            ' + str(man.deltaV)
+            print '>>>   Normalized DeltaV: ' + str(np.linalg.norm(man.deltaV))
+            print '>>>   Execution Epoch:   ' + str(man.execution_epoch)
             tot_dv += np.linalg.norm(man.deltaV)
 
         return tot_dv, (man.execution_epoch - self.scenario.date).total_seconds()
