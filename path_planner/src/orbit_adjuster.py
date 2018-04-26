@@ -9,12 +9,13 @@
 """Class to create an object capable of calculating the correction from an orbit to another."""
 
 import numpy as np
+import pykep as pk
 
 from state import Satellite, Chaser
 from rospace_lib import mu_earth
 from datetime import timedelta
 from manoeuvre import Manoeuvre, RelativeMan
-from rospace_lib import CartesianTEME
+from rospace_lib import CartesianTEME, KepOrbElem
 from checkpoint import AbsoluteCP
 
 
@@ -650,12 +651,105 @@ class Drift(OrbitAdjuster):
 
 
 class MultiLambert(OrbitAdjuster):
+    """
+        Subclass holding the function to evaluate the deltaV needed to do a manoeuvre in LVLH frame, using the
+        exact solution to the 2-body problem through a multi-lambert solver implemented in the pykep library.
 
-    def __init__(self):
-        pass
+        NOT suited when using real-world propagator, error can become very large!
 
-    def evaluate_manoeuvre(self):
-        pass
+        Can be used to do corrections during relative navigation.
+    """
+
+    def evaluate_manoeuvre(self, chaser, checkpoint, target, approach_ellipsoid, safety_flag):
+        """
+            Solve the Multi-Lambert Problem.
+
+        Args:
+            chaser (Chaser): Chaser state.
+            checkpoint (RelativeCP): Next checkpoint.
+            target (Satellite): Target state.
+            approach_ellipsoid: Approach ellipsoid drawn around the target to be avoided during manoeuvering.
+        """
+
+        mean_oe = chaser.get_mean_oe()
+
+        # Check if trajectory is retrograde
+        retrograde = False
+        if mean_oe.i > np.pi / 2.0:
+            retrograde = True
+
+        # Absolute position of chaser at t = t0
+        R_C_i = chaser.abs_state.R
+        V_C_i = chaser.abs_state.V
+
+        # Absolute position of the target at t = t0
+        R_T_i = target.abs_state.R
+        V_T_i = target.abs_state.V
+
+        # Create temporary target that will keep the initial conditions
+        target_ic = CartesianTEME()
+        chaser_ic = CartesianTEME()
+        target_ic.R = R_T_i
+        target_ic.V = V_T_i
+
+        # Initialize best dV and dt
+        best_dV = 1e12
+        best_dt = 0.0
+
+        # Minimum deltaV deliverable -> 5 mm/s
+        dV_min = 5e-6
+
+        # Check all the possible transfers time from tmin to tmax (seconds)
+        t_min = int(checkpoint.t_min)
+        t_max = int(checkpoint.t_max)
+        for dt in xrange(t_min, t_max):
+            # r_T, v_T = pk.propagate_lagrangian(R_T_i, V_T_i, dt, mu_earth)
+
+            target_prop = target.prop.orekit_prop.propagate(chaser.prop.date + timedelta(seconds=dt))
+
+            target.set_abs_state_from_cartesian(target_prop[0])
+
+            # Transformation matrix from TEME to LVLH at time t1
+            B_LVLH_TEME_f = target.abs_state.get_lof()
+
+            # Evaluate final wanted absolute position of the chaser
+            R_C_f = np.array(target.abs_state.R) + np.linalg.inv(B_LVLH_TEME_f).dot(checkpoint.rel_state.R)
+            O_T_f = np.cross(target.abs_state.R, target.abs_state.V) / np.linalg.norm(target.abs_state.R) ** 2
+            V_C_f = np.array(target.abs_state.V) + np.linalg.inv(B_LVLH_TEME_f).dot(checkpoint.rel_state.V) + \
+                    np.cross(O_T_f, np.linalg.inv(B_LVLH_TEME_f).dot(checkpoint.rel_state.R))
+
+            # Solve lambert in dt starting from the chaser position at t0 going to t1
+            sol = pk.lambert_problem(R_C_i, R_C_f, dt, mu_earth, retrograde, 10)
+
+            # Check for the best solution for this dt
+            for i in xrange(0, len(sol.get_v1())):
+                dV_1 = np.array(sol.get_v1()[i]) - V_C_i
+                dV_2 = V_C_f - np.array(sol.get_v2()[i])
+                dV_tot = np.linalg.norm(dV_1) + np.linalg.norm(dV_2)
+
+                # Check if the deltaV is above the minimum deliverable by thrusters
+                if np.linalg.norm(dV_1) > dV_min and np.linalg.norm(dV_2) > dV_min:
+                    # Check if the new deltaV is less than previous
+                    if dV_tot < best_dV and safety_flag:
+                        # Approach ellipsoid can be entered
+                        best_dV = dV_tot
+                        best_dV_1 = dV_1
+                        best_dV_2 = dV_2
+                        best_dt = dt
+                    elif dV_tot < best_dV and not safety_flag:
+                        # Check if the trajectory is safe
+                        chaser_ic.R = R_C_i
+                        chaser_ic.V = np.array(sol.get_v1()[i])
+                        if self.is_trajectory_safe(dt, approach_ellipsoid):
+                            best_dV = dV_tot
+                            best_dV_1 = dV_1
+                            best_dV_2 = dV_2
+                            best_dt = dt
+
+        man1 = self.create_and_apply_manoeuvre(chaser, target, best_dV_1, 1e-3)
+        man2 = self.create_and_apply_manoeuvre(chaser, target, best_dV_2, best_dt)
+
+        return [man1, man2]
 
 
 class ClohessyWiltshire(OrbitAdjuster):
