@@ -89,7 +89,7 @@ class Satellite(object):
         # Assign relative state
         if type(self) == Chaser:
             if target != None:
-                self.set_rel_state_from_target(target)
+                self.rel_state.from_cartesian_pair(self.abs_state, target.abs_state)
             else:
                 raise IOError('Missing target input to initialize chaser!')
 
@@ -113,7 +113,11 @@ class Satellite(object):
         self.abs_state.R = satellite.abs_state.R
         self.abs_state.V = satellite.abs_state.V
         self.mass = satellite.mass
-        self.prop = satellite.prop
+
+        if hasattr(satellite, 'prop'):
+            self.prop = satellite.prop
+        else:
+            print '[WARNING]: Propagator not setted!!'
 
         if hasattr(self, 'rel_state'):
             self.rel_state.R = satellite.rel_state.R
@@ -181,16 +185,6 @@ class Chaser(Satellite):
         super(Chaser, self).__init__()
 
         self.rel_state = CartesianLVLH()
-
-    def set_rel_state_from_target(self, target):
-        """
-            Set relative state given target and chaser absolute states.
-
-        Args:
-            target (Satellite): State of the target.
-        """
-
-        self.rel_state.from_cartesian_pair(self.abs_state, target.abs_state)
 
     def set_abs_state_from_target(self, target):
         """
