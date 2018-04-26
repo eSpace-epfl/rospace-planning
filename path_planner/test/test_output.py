@@ -24,7 +24,7 @@ class SolverTest(unittest.TestCase):
             Total DeltaV :
         """
 
-        dvtot = offline_path_planner.main('scenario_camille')
+        dvtot = offline_path_planner.main('scenario_sample_absolute')
 
         self.assertAlmostEqual(dvtot, 0.0176018439814, 5)
 
