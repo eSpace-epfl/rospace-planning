@@ -66,6 +66,8 @@ class OrbitAdjuster(object):
             Take the amount of deltaV needed and the waiting time up to when the manoeuvre should be executed, create
             the manoeuvre and apply it, propagating chaser and target.
 
+            The target and chaser absolute and relative state are automatically upgraded in this function!
+
         Args:
             chaser (Chaser)
             target (Satellite)
@@ -777,8 +779,6 @@ class ClohessyWiltshire(OrbitAdjuster):
             target (Satellite): Target state.
         """
 
-        #TODO: Fix it -> not giving the right result at the moment
-
         target_mean = target.get_mean_oe()
 
         t_min = int(checkpoint.t_min)
@@ -856,8 +856,6 @@ class TschaunerHempel(OrbitAdjuster):
         Reference:
             Guidance, Navigation and Control for Satellite Proximity Operations using Tschauner-Hempel equations.
         """
-
-        # TODO: Fix it -> not giving the right result at the moment
 
         # Get initial mean orbital elements of target
         mean_oe_target = target.get_mean_oe()

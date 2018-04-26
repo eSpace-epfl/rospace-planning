@@ -87,7 +87,7 @@ class Propagator(object):
             Allows to change the initial conditions given to the propagator without initializing it again.
 
         Args:
-            initial_state (Cartesian): New initial state of the satellite in cartesian coordinates.
+            initial_state (CartesianTEME): New initial state of the satellite in cartesian coordinates.
             date (datetime): New starting date of the propagator.
             mass (float64): New satellite mass.
         """
