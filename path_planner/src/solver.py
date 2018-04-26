@@ -164,18 +164,19 @@ class Solver(object):
             orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint_abs, self.target)
 
         if checkpoint.manoeuvre_type == 'standard':
-            self.multi_lambert(checkpoint, approach_ellipsoid, False)
+            orbit_adj = MultiLambert()
+            self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target, approach_ellipsoid, True)
             # self.linearized_including_J2(checkpoint, approach_ellipsoid)
 
         elif checkpoint.manoeuvre_type == 'radial':
             # Manoeuvre type is radial -> deltaT is calculated from CW-equations -> solved with multi-lambert
-            a = self.target.abs_state.a
-            dt = np.pi / np.sqrt(mu_earth / a ** 3.0)
+            dt = np.pi / np.sqrt(mu_earth / target_mean.a ** 3.0)
 
             checkpoint.t_min = dt
             checkpoint.t_max = dt + 1.0
 
-            self.multi_lambert(checkpoint, approach_ellipsoid, True)
+            orbit_adj = MultiLambert()
+            self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target, approach_ellipsoid, True)
             # self.linearized_including_J2(checkpoint, approach_ellipsoid)
 
         elif checkpoint.manoeuvre_type == 'drift':
