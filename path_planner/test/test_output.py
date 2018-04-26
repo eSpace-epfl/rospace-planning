@@ -1,5 +1,3 @@
-# Note: these tests are quite preliminary....
-
 import unittest
 import sys
 import os
@@ -12,7 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)) + "/../../../rdv-
 import offline_path_planner
 import rospace_lib
 
-class SolverTest(unittest.TestCase):
+class OutputTest(unittest.TestCase):
     """
         Test output of the simulation using some predefined scenario
     """
