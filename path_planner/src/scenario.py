@@ -51,7 +51,7 @@ class Scenario(object):
         self.koz_r = 0.0
 
         # Scenario starting date
-        self.date = datetime.utcnow()
+        self.date = datetime(2017, 1, 1, 12, 0, 0)
 
     def import_solved_scenario(self):
         """
@@ -63,10 +63,10 @@ class Scenario(object):
 
         # Actual path
         abs_path = sys.argv[0]
-        path_idx = abs_path.find('cso_path_planner')
-        abs_path = abs_path[0:path_idx + 16]
+        path_idx = abs_path.find('planning')
+        abs_path = abs_path[0:path_idx]
 
-        scenario_path = abs_path + '/example/scenario.pickle'
+        scenario_path = abs_path + 'planning/path_planner/example/scenario.pickle'
 
         # Try to import the file
         try:
@@ -77,8 +77,13 @@ class Scenario(object):
 
                     self.checkpoints = obj['checkpoints']
                     self.name = obj['scenario_name']
+
                     self.target_ic.set_from_satellite(obj['target_ic'])
                     self.chaser_ic.set_from_satellite(obj['chaser_ic'])
+
+                    self.target_ic.prop.initialize_propagator('target', self.target_ic.get_osc_oe(), 'real-world')
+                    self.chaser_ic.prop.initialize_propagator('chaser', self.chaser_ic.get_osc_oe(), 'real-world')
+
                     self.date = obj['scenario_epoch']
 
                     return obj['manoeuvre_plan']
