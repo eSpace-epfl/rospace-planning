@@ -1,0 +1,40 @@
+scenario:
+  name: 'Scenario Sample Absolute'
+
+  overview:  "Sample scenario to do unit test on absolute changes with 2-body propagator."
+
+  prop_type: 2-body
+
+  CheckPoints:
+    S0:
+      id: 0
+      position:
+        kep:
+          a: 7032.4 + 8.75
+          e: 1.0 - (7032.4 * (1.0 - 0.0006)) / (7032.4 + 8.75)
+          i: 1.71935390223
+          w: 0.533974758001
+          O: 0.396508063906
+          v: 0.0
+
+    S1:
+      id: 1
+      position:
+        kep:
+          a: 7032.4 + 21.0
+          e: 1.0 - (7032.4 * (1.0 - 0.0006) + 17.0) / (7032.4 + 21.0)
+          i: 1.71935390223
+          w: 0.533974758001
+          O: 0.396508063906
+          v: 0.0
+
+    S2:
+      id: 2
+      position:
+        kep:
+          a: 7067.4 - 2.0
+          e: 7067.4 * 0.0008099 / (7067.4 - 2.0)
+          i: 1.71935390223
+          w: 0.533974758001
+          O: 0.396508063906
+          v: 0.0
