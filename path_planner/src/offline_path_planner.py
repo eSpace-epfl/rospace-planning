@@ -28,5 +28,5 @@ def main(filename, save=False):
     return solver.tot_dV
 
 if __name__ == "__main__":
-    main('scenario_camille')
+    main('scenario')
 

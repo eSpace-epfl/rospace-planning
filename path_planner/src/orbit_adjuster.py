@@ -76,25 +76,31 @@ class OrbitAdjuster(object):
             man (Manoeuvre): The manoeuvre to be added to manoeuvre plan
         """
 
-        new_date = chaser.prop.date + timedelta(seconds=dt)
-        satellite_prop = chaser.prop.orekit_prop.propagate(new_date)
-        target_prop = target.prop.orekit_prop.propagate(new_date)
+        # Define new starting epoch
+        new_epoch = chaser.prop.date + timedelta(seconds=dt)
 
+        # Propagate both satellite and target to the new epoch
+        satellite_prop = chaser.prop.orekit_prop.propagate(new_epoch)
+        target_prop = target.prop.orekit_prop.propagate(new_epoch)
+
+        # Apply deltaV to satellite and update absolute and relative states of target and satellite
         satellite_prop[0].V += deltaV
         chaser.set_abs_state_from_cartesian(satellite_prop[0])
         target.set_abs_state_from_cartesian(target_prop[0])
         chaser.rel_state.from_cartesian_pair(chaser.abs_state, target.abs_state)
 
-        chaser.prop.change_initial_conditions(satellite_prop[0], new_date, chaser.mass)
-        target.prop.change_initial_conditions(target_prop[0], new_date, target.mass)
+        # Reset propagators initial conditions
+        chaser.prop.change_initial_conditions(satellite_prop[0], new_epoch, chaser.mass)
+        target.prop.change_initial_conditions(target_prop[0], new_epoch, target.mass)
 
-        chaser.prop.date = new_date
-        target.prop.date = new_date
+        # Reset propagators initial starting date
+        chaser.prop.date = new_epoch
+        target.prop.date = new_epoch
 
         # Create manoeuvre
         man = Manoeuvre()
         man.deltaV = deltaV
-        man.execution_epoch = new_date
+        man.execution_epoch = new_epoch
 
         return man
 
@@ -413,9 +419,6 @@ class PlaneOrientation(OrbitAdjuster):
 
 
 class AnomalySynchronisation(OrbitAdjuster):
-
-    def __init__(self):
-        pass
 
     def evaluate_manoeuvre(self):
         pass
@@ -756,10 +759,14 @@ class ClohessyWiltshire(OrbitAdjuster):
     """
         Subclass holding the function to evaluate the deltaV needed to do a manoeuvre in LVLH frame, using the
         linearized solution of Clohessy-Wiltshire.
+
+        NOT suited when using real-world propagator, error can become very large. Moreover not suited also when the
+        distance over the orbit radius is too big!
+
         Can be used to do corrections during relative navigation.
     """
 
-    def evaluate_manoeuvre(self, target):
+    def evaluate_manoeuvre(self, chaser, checkpoint, target):
         """
             Solve Hill's Equation to get the amount of DeltaV needed to go to the next checkpoint.
 
@@ -770,18 +777,20 @@ class ClohessyWiltshire(OrbitAdjuster):
             target (Satellite): Target state.
         """
 
-        a = target.abs_state.a
+        #TODO: Fix it -> not giving the right result at the moment
 
-        t_min = self.checkpoint.t_min
-        t_max = self.checkpoint.t_max
+        target_mean = target.get_mean_oe()
 
-        r_rel_c_0 = self.rel_state.R
-        v_rel_c_0 = self.rel_state.V
+        t_min = int(checkpoint.t_min)
+        t_max = int(checkpoint.t_max)
 
-        r_rel_c_n = self.checkpoint.rel_state.R
-        v_rel_c_n = self.checkpoint.rel_state.V
+        R_C_LVLH = chaser.rel_state.R
+        V_C_LVLH = chaser.rel_state.V
 
-        n = np.sqrt(mu_earth / a ** 3.0)
+        R_LVLH = checkpoint.rel_state.R
+        V_LVLH = checkpoint.rel_state.V
+
+        n = np.sqrt(mu_earth / target_mean.a ** 3.0)
 
         phi_rr = lambda t: np.array([
             [4.0 - 3.0 * np.cos(n * t), 0.0, 0.0],
@@ -812,8 +821,8 @@ class ClohessyWiltshire(OrbitAdjuster):
 
         for t_ in xrange(t_min, t_max):
             rv_t = phi_rv(t_)
-            deltaV_1 = np.linalg.inv(rv_t).dot(r_rel_c_n - np.dot(phi_rr(t_), r_rel_c_0)) - v_rel_c_0
-            deltaV_2 = np.dot(phi_vr(t_), r_rel_c_0) + np.dot(phi_vv(t_), v_rel_c_0 + deltaV_1) - v_rel_c_n
+            deltaV_1 = np.linalg.inv(rv_t).dot(R_LVLH - phi_rr(t_).dot(R_C_LVLH)) - V_C_LVLH
+            deltaV_2 = np.dot(phi_vr(t_), R_C_LVLH) + np.dot(phi_vv(t_), V_C_LVLH + deltaV_1) - V_LVLH
 
             deltaV_tot = np.linalg.norm(deltaV_1) + np.linalg.norm(deltaV_2)
 
@@ -823,60 +832,144 @@ class ClohessyWiltshire(OrbitAdjuster):
                 best_deltaV_2 = deltaV_2
                 delta_T = t_
 
-        target_cart = Cartesian()
-        target_cart.from_keporb(target.abs_state)
-
         # Change frame of reference of deltaV. From LVLH to Earth-Inertial
-        B = target_cart.get_lof()
+        B = target.abs_state.get_lof()
         deltaV_C_1 = np.linalg.inv(B).dot(best_deltaV_1)
 
-        # Create command
-        c1 = RelativeMan()
-        c1.dV = deltaV_C_1
-        c1.set_abs_state(chaser.abs_state)
-        c1.set_rel_state(chaser.rel_state)
-        c1.duration = 0
-        c1.description = 'CW approach'
+        man1 = self.create_and_apply_manoeuvre(chaser, target, deltaV_C_1, 1e-3)
 
-        # Propagate chaser and target
-        self._propagator(chaser, target, 1e-5, deltaV_C_1)
-
-        self._propagator(chaser, target, delta_T)
-
-        self.print_state(chaser, target)
-
-        self.manoeuvre_plan.append(c1)
-
-        target_cart.from_keporb(target.abs_state)
-
-        R = target_cart.get_lof()
+        R = target.abs_state.get_lof()
         deltaV_C_2 = np.linalg.inv(R).dot(best_deltaV_2)
 
-        # Create command
-        c2 = RelativeMan()
-        c2.dV = deltaV_C_2
-        c2.set_abs_state(chaser.abs_state)
-        c2.set_rel_state(chaser.rel_state)
-        c2.duration = delta_T
-        c2.description = 'CW approach'
+        man2 = self.create_and_apply_manoeuvre(chaser, target, deltaV_C_2, delta_T)
 
-        # Propagate chaser and target to evaluate all the future commands properly
-        self._propagator(chaser, target, 1e-5, deltaV_C_2)
-
-        self.print_state(chaser, target)
-
-        self.manoeuvre_plan.append(c2)
-
-        return [(best_deltaV_1, theta_1), (best_deltaV_2, theta_2)]
+        return [man1, man2]
 
 
 class TschaunerHempel(OrbitAdjuster):
 
-    def __init__(self):
-        pass
+    def evaluate_manoeuvre(self, chaser, checkpoint, target):
+        """
+            Tschauner Hempel solver.
 
-    def evaluate_manoeuvre(self):
-        pass
+
+        Reference:
+            Guidance, Navigation and Control for Satellite Proximity Operations using Tschauner-Hempel equations.
+        """
+
+        # TODO: Fix it -> not giving the right result at the moment
+
+        # Get initial mean orbital elements of target
+        mean_oe_target = target.get_mean_oe()
+
+        a = mean_oe_target.a
+        e = mean_oe_target.e
+        v_0 = mean_oe_target.v
+
+        # Get initial cartesian position of the target
+        R_T_0 = target.abs_state.R
+        V_T_0 = target.abs_state.V
+        B_0 = target.abs_state.get_lof()
+
+        p = a * (1.0 - e ** 2)
+        h = np.sqrt(p * mu_earth)
+
+        eta = np.sqrt(1.0 - e ** 2)
+        n = np.sqrt(mu_earth / a ** 3)
+        v_dot = h / np.linalg.norm(target.abs_state.R) ** 2
+
+        rho = lambda v: 1.0 + e * np.cos(v)
+        c2 = lambda v: e * np.sin(v)
+
+        K = lambda t: n * t
+        A = lambda v: rho(v) / p
+        B = lambda v: -c2(v) / p
+        C = lambda v: A(v) / v_dot
+
+        best_deltaV = 1e12
+
+        # Extract max and min manoeuvre time
+        t_min = int(checkpoint.t_min)
+        t_max = int(checkpoint.t_max)
+
+        for dt in xrange(t_min, t_max):
+            # Propagate target
+            target_prop = target.prop.orekit_prop.propagate(target.prop.date + timedelta(seconds=dt))
+
+            target.abs_state.R = target_prop[0].R
+            target.abs_state.V = target_prop[0].V
+
+            # Get new mean orbital elements
+            mean_oe_target = target.get_mean_oe()
+
+            v_1 = mean_oe_target.v
+
+            L = lambda v: np.array([
+                [np.cos(v) * rho(v), np.sin(v) * rho(v),
+                 2.0 / eta ** 2 * (1.0 - 1.5 * c2(v) * K(dt) * rho(v) / eta ** 3), 0.0, 0.0, 0.0],
+                [-np.sin(v) * (1.0 + rho(v)), np.cos(v) * (1.0 + rho(v)), -3.0 / eta ** 5 * rho(v) ** 2 * K(dt), 1.0,
+                 0.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0, np.cos(v), np.sin(v)],
+                [-(np.sin(v) + c2(2.0 * v)), np.cos(v) + e * np.cos(2.0 * v), -3.0 / eta ** 2 * e * (
+                    np.sin(v) / rho(v) + 1.0 / eta ** 3 * K(dt) * (np.cos(v) + e * np.cos(2.0 * v))), 0.0, 0.0, 0.0],
+                [-(2.0 * np.cos(v) + e * np.cos(2.0 * v)), -(2.0 * np.sin(v) + c2(2.0 * v)),
+                 -3.0 / eta ** 2 * (1.0 - e / eta ** 3 * (2.0 * np.sin(v) + c2(2.0 * v)) * K(dt)), 0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0, -np.sin(v), np.cos(v)]
+            ])
+
+            M = lambda v: np.array([
+                [-3.0 / eta ** 2 * (e + np.cos(v)), 0.0, 0.0, -1.0 / eta ** 2 * np.sin(v) * rho(v),
+                 -1.0 / eta ** 2 * (2.0 * np.cos(v) + e + e * np.cos(v) ** 2), 0.0],
+                [-3.0 / eta ** 2 * np.sin(v) * (rho(v) + e ** 2) / rho(v), 0.0, 0.0,
+                 1.0 / eta ** 2 * (np.cos(v) - 2.0 * e + e * np.cos(v) ** 2),
+                 -1.0 / eta ** 2 * np.sin(v) * (1.0 + rho(v)), 0.0],
+                [2.0 + 3.0 * e * np.cos(v) + e ** 2, 0.0, 0.0, c2(v) * rho(v), rho(v) ** 2, 0.0],
+                [-3.0 / eta ** 2 * (1.0 + rho(v)) * c2(v) / rho(v), 1.0, 0.0,
+                 -1.0 / eta ** 2 * (1.0 + rho(v)) * (1.0 - e * np.cos(v)), -1.0 / eta ** 2 * (1.0 + rho(v)) * c2(v),
+                 0.0],
+                [0.0, 0.0, np.cos(v), 0.0, 0.0, -np.sin(v)],
+                [0.0, 0.0, np.sin(v), 0.0, 0.0, np.cos(v)]
+            ])
+
+            phi = L(v_1).dot(M(v_0))
+
+            phi_rr = phi[0:3, 0:3]
+            phi_rv = phi[0:3, 3:6]
+            phi_vr = phi[3:6, 0:3]
+            phi_vv = phi[3:6, 3:6]
+
+            phi_rr_t = (A(v_0) * phi_rr + B(v_0) * phi_rv) / A(v_1)
+            phi_rv_t = C(v_0) / A(v_1) * phi_rv
+            phi_vr_t = (A(v_0) * phi_vr + B(v_0) * phi_vv - B(v_1) * phi_rr_t) / C(v_1)
+            phi_vv_t = (C(v_0) * phi_rv - B(v_1) * phi_rv_t) / C(v_1)
+
+            dv_0_transfer = np.linalg.inv(phi_rv_t).dot(checkpoint.rel_state.R - phi_rr_t.dot(chaser.rel_state.R))
+
+            DeltaV_1_LVLH = dv_0_transfer - chaser.rel_state.V
+            DeltaV_1_TEME = np.linalg.inv(B_0).dot(DeltaV_1_LVLH)
+
+            DeltaV_2_LVLH = checkpoint.rel_state.V - phi_vr_t.dot(chaser.rel_state.R) + phi_vv_t.dot(dv_0_transfer)
+            DeltaV_2_TEME = np.linalg.inv(target.abs_state.get_lof()).dot(DeltaV_2_LVLH)
+
+            deltaV_tot = np.linalg.norm(DeltaV_1_TEME) + np.linalg.norm(DeltaV_2_TEME)
+
+            if deltaV_tot < best_deltaV:
+                best_deltaV = deltaV_tot
+                best_deltaV_1 = DeltaV_1_TEME
+                best_deltaV_2 = DeltaV_2_TEME
+                best_dT = dt
+
+            # Depropagate target
+            target.abs_state.R = R_T_0
+            target.abs_state.V = V_T_0
+
+            target.prop.change_initial_conditions(target.abs_state, target.prop.date, target.mass)
+
+        man1 = self.create_and_apply_manoeuvre(chaser, target, best_deltaV_1, 1e-3)
+
+        man2 = self.create_and_apply_manoeuvre(chaser, target, best_deltaV_2, best_dT)
+
+        return [man1, man2]
 
 
 class HamelDeLafontaine(OrbitAdjuster):

@@ -164,8 +164,14 @@ class Solver(object):
             orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint_abs, self.target)
 
         if checkpoint.manoeuvre_type == 'standard':
-            orbit_adj = MultiLambert()
-            self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target, approach_ellipsoid, True)
+            orbit_adj = TschaunerHempel()
+            self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
+
+            # orbit_adj = ClohessyWiltshire()
+            # self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
+
+            # orbit_adj = MultiLambert()
+            # self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target, approach_ellipsoid, True)
             # self.linearized_including_J2(checkpoint, approach_ellipsoid)
 
         elif checkpoint.manoeuvre_type == 'radial':
@@ -175,8 +181,14 @@ class Solver(object):
             checkpoint.t_min = dt
             checkpoint.t_max = dt + 1.0
 
-            orbit_adj = MultiLambert()
-            self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target, approach_ellipsoid, True)
+            orbit_adj = TschaunerHempel()
+            self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
+
+            # orbit_adj = ClohessyWiltshire()
+            # self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
+
+            # orbit_adj = MultiLambert()
+            # self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target, approach_ellipsoid, True)
             # self.linearized_including_J2(checkpoint, approach_ellipsoid)
 
         elif checkpoint.manoeuvre_type == 'drift':
