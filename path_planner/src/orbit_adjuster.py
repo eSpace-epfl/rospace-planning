@@ -15,7 +15,7 @@ from state import Satellite, Chaser
 from rospace_lib import mu_earth, J_2, R_earth
 from datetime import timedelta
 from manoeuvre import Manoeuvre, RelativeMan
-from rospace_lib import CartesianTEME, KepOrbElem
+from rospace_lib import CartesianTEME, KepOrbElem, OscKepOrbElem
 from checkpoint import AbsoluteCP
 
 
@@ -82,17 +82,17 @@ class OrbitAdjuster(object):
         new_epoch = chaser.prop.date + timedelta(seconds=dt)
 
         # Propagate both satellite and target to the new epoch
-        satellite_prop = chaser.prop.orekit_prop.propagate(new_epoch)
+        chaser_prop = chaser.prop.orekit_prop.propagate(new_epoch)
         target_prop = target.prop.orekit_prop.propagate(new_epoch)
 
         # Apply deltaV to satellite and update absolute and relative states of target and satellite
-        satellite_prop[0].V += deltaV
-        chaser.set_abs_state_from_cartesian(satellite_prop[0])
+        chaser_prop[0].V += deltaV
+        chaser.set_abs_state_from_cartesian(chaser_prop[0])
         target.set_abs_state_from_cartesian(target_prop[0])
         chaser.rel_state.from_cartesian_pair(chaser.abs_state, target.abs_state)
 
         # Reset propagators initial conditions
-        chaser.prop.change_initial_conditions(satellite_prop[0], new_epoch, chaser.mass)
+        chaser.prop.change_initial_conditions(chaser_prop[0], new_epoch, chaser.mass)
         target.prop.change_initial_conditions(target_prop[0], new_epoch, target.mass)
 
         # Reset propagators initial starting date
@@ -106,6 +106,39 @@ class OrbitAdjuster(object):
 
         return man
 
+    def calc_E_from_m(self, m, e):
+        if m < np.pi:
+            E = m + e / 2.0
+        else:
+            E = m - e / 2.0
+
+        max_int = 20  # maximum number of iterations
+
+        while max_int > 1:
+            fE = E - e * np.sin(E) - m
+            fpE = 1.0 - e * np.cos(E)
+            ratio = fE / fpE
+            max_int = max_int - 1
+
+            # check if ratio is small enough
+            if abs(ratio) > 1e-15:
+                E = E - ratio
+            else:
+                break
+
+        if E < 0:
+            E = E + np.pi * 2.0
+
+        return E
+
+    def calc_v_from_E(self, E, e):
+        v = 2.0 * np.arctan2(np.sqrt(1.0 + e) * np.sin(E / 2.0),
+                                   np.sqrt(1.0 - e) * np.cos(E / 2.0))
+
+        if v < 0:
+            v = v + np.pi * 2.0
+
+        return v
 
 class HohmannTransfer(OrbitAdjuster):
     """
@@ -864,6 +897,10 @@ class TschaunerHempel(OrbitAdjuster):
         e = mean_oe_target.e
         v_0 = mean_oe_target.v
 
+        # Get initial state of chaser
+        R_0 = chaser.abs_state.R
+        V_0 = chaser.abs_state.V
+
         # Get initial cartesian position of the target
         R_T_0 = target.abs_state.R
         V_T_0 = target.abs_state.V
@@ -946,7 +983,14 @@ class TschaunerHempel(OrbitAdjuster):
             DeltaV_1_LVLH = dv_0_transfer - chaser.rel_state.V
             DeltaV_1_TEME = np.linalg.inv(B_0).dot(DeltaV_1_LVLH)
 
-            DeltaV_2_LVLH = checkpoint.rel_state.V - phi_vr_t.dot(chaser.rel_state.R) + phi_vv_t.dot(dv_0_transfer)
+            # chaser.abs_state.V += DeltaV_1_TEME
+            # chaser.prop.change_initial_conditions(chaser.abs_state, chaser.prop.date, chaser.mass)
+            # chaser.prop.orekit_prop.propagate(chaser.prop.date + timedelta(seconds=dt))
+            #
+            # DeltaV_2_LVLH = -chaser.rel_state.V
+            # DeltaV_2_TEME = np.linalg.inv(target.abs_state.get_lof()).dot(DeltaV_2_LVLH)
+
+            DeltaV_2_LVLH = phi_vr_t.dot(chaser.rel_state.R) + phi_vv_t.dot(dv_0_transfer) - checkpoint.rel_state.V
             DeltaV_2_TEME = np.linalg.inv(target.abs_state.get_lof()).dot(DeltaV_2_LVLH)
 
             deltaV_tot = np.linalg.norm(DeltaV_1_TEME) + np.linalg.norm(DeltaV_2_TEME)
@@ -957,11 +1001,17 @@ class TschaunerHempel(OrbitAdjuster):
                 best_deltaV_2 = DeltaV_2_TEME
                 best_dT = dt
 
-            # Depropagate target
+            # Depropagate target and chaser
+            chaser.abs_state.R = R_0
+            chaser.abs_state.V = V_0
+
             target.abs_state.R = R_T_0
             target.abs_state.V = V_T_0
 
+            chaser.rel_state.from_cartesian_pair(chaser.abs_state, target.abs_state)
+
             target.prop.change_initial_conditions(target.abs_state, target.prop.date, target.mass)
+            chaser.prop.change_initial_conditions(chaser.abs_state, target.prop.date, chaser.mass)
 
         man1 = self.create_and_apply_manoeuvre(chaser, target, best_deltaV_1, 1e-3)
 
@@ -1016,6 +1066,7 @@ class HamelDeLafontaine(OrbitAdjuster):
         eta_mean = np.sqrt(1.0 - e_mean ** 2)
         p_mean = a_mean * (1.0 - e_mean ** 2)
         n_mean = np.sqrt(mu_earth / a_mean ** 3)
+        T_mean = 2.0 * np.pi / n_mean
 
         # Mean orbital element drift
         a_mean_dot = 0.0
@@ -1059,15 +1110,8 @@ class HamelDeLafontaine(OrbitAdjuster):
         dMdi = -9.0 * eta_mean * C * np.sin(2.0 * i_mean)
 
         # Estimate flight time
-        # N_orb = ...
         E = lambda v: 2.0 * np.arctan(np.sqrt((1.0 - e_0) / (1.0 + e_0)) * np.tan(v / 2.0))
         M = lambda v: (E(v) - e_0 * np.sin(E(v))) % (2.0 * np.pi)
-
-        print M_0
-        print M(v)
-        print M_mean_dot
-
-        tau = lambda v: (2.0 * np.pi * N_orb + M(v) - M_0) / M_mean_dot
 
         # Position
         r = lambda v: p_0 / (1.0 + e_0 * np.cos(v))
@@ -1078,125 +1122,129 @@ class HamelDeLafontaine(OrbitAdjuster):
 
         # Phi_1
         k_x_dot = lambda v: a_0 * e_0 * v_dot(v) * np.cos(v) / eta_0
-        phi_11 = lambda v: r_dot(v) / a_0 + (k_x_dot(v) * tau(v) + a_0 * e_0 * np.sin(v) / eta_0) * dMda
-        phi_12 = lambda v: a_0 * v_dot(v) * np.sin(v) + (k_x_dot(v) * tau(v) + a_0 * e_0 * np.sin(v) / eta_0) * \
+        phi_11 = lambda v, tau: r_dot(v) / a_0 + (k_x_dot(v) * tau + a_0 * e_0 * np.sin(v) / eta_0) * dMda
+        phi_12 = lambda v, tau: a_0 * v_dot(v) * np.sin(v) + (k_x_dot(v) * tau + a_0 * e_0 * np.sin(v) / eta_0) * \
                                                         (dMde + dMda * depsde + dMda * depsdv * np.sin(
                                                             v_0) / eta_0 ** 2 * (2.0 + e_0 * np.cos(e_0)))
-        phi_13 = lambda v: (k_x_dot(v) * tau(v) + a_0 * e_0 * np.sin(v) / eta_0) * (dMda * depsdi + dMdi)
+        phi_13 = lambda v, tau: (k_x_dot(v) * tau + a_0 * e_0 * np.sin(v) / eta_0) * (dMda * depsdi + dMdi)
         phi_14 = 0.0
-        phi_15 = lambda v: (k_x_dot(v) * tau(v) + a_0 * e_0 * np.sin(v) / eta_0) * dMda * depsdw
-        phi_16 = lambda v: k_x_dot(v) + (k_x_dot(v) * tau(v) + a_0 * e_0 * np.sin(v) / eta_0) * dMda * depsdv * \
+        phi_15 = lambda v, tau: (k_x_dot(v) * tau + a_0 * e_0 * np.sin(v) / eta_0) * dMda * depsdw
+        phi_16 = lambda v, tau: k_x_dot(v) + (k_x_dot(v) * tau + a_0 * e_0 * np.sin(v) / eta_0) * dMda * depsdv * \
                                         (1.0 + e_0 * np.cos(v_0)) ** 2 / eta_0 ** 3
 
         # Phi 2
         k_y_dot = lambda v: r_dot(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3 - 2.0 * e_0 * v_dot(v) * np.sin(v) * (
         1.0 + e_0 * np.cos(v)) / eta_0 ** 3
-        phi_21 = lambda v: (r_dot(v) * np.cos(i_0) * tau(v) + r(v) * np.cos(i_0)) * dOda + (r_dot(v) * tau(v) + r(
+        phi_21 = lambda v, tau: (r_dot(v) * np.cos(i_0) * tau + r(v) * np.cos(i_0)) * dOda + (r_dot(v) * tau + r(
             v)) * dwda + \
-                           (k_y_dot(v) * tau(v) + r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3) * dMda
-        phi_22 = lambda v: 1.0 / eta_0 ** 2 * (
+                           (k_y_dot(v) * tau + r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3) * dMda
+        phi_22 = lambda v, tau: 1.0 / eta_0 ** 2 * (
         r(v) * v_dot(v) * np.cos(v) * (2.0 + e_0 * np.cos(v)) - r(v) * e_0 * v_dot(v) * np.sin(v) ** 2 +
-        r_dot(v) * np.sin(v) * (2.0 + e_0 * np.cos(v))) + (r_dot(v) * np.cos(i_0) * tau(v) + r(v) * np.cos(i_0)) * \
+        r_dot(v) * np.sin(v) * (2.0 + e_0 * np.cos(v))) + (r_dot(v) * np.cos(i_0) * tau + r(v) * np.cos(i_0)) * \
                                                           (dOda * depsde + dOda * depsdv * np.sin(v_0) / eta_0 ** 2 * (
                                                           2.0 + e_0 * np.cos(e_0)) + dOde) + \
-                           (r_dot(v) * tau(v) + r(v)) * (dwda * depsde + dwda * depsdv * np.sin(v_0) / eta_0 ** 2 * (
+                           (r_dot(v) * tau + r(v)) * (dwda * depsde + dwda * depsdv * np.sin(v_0) / eta_0 ** 2 * (
                            2.0 + e_0 * np.cos(e_0)) + dwde) + \
-                           (k_y_dot(v) * tau(v) + r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3) * \
+                           (k_y_dot(v) * tau + r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3) * \
                            (dMda * depsde + dMda * depsdv * np.sin(v_0) * (2.0 + e_0 * np.cos(e_0)) / eta_0 ** 2 + dMde)
-        phi_23 = lambda v: (r_dot(v) * np.cos(i_0) * tau(v) + r(v) * np.cos(i_0)) * (dOda * depsdi + dOdi) + \
-                           (r_dot(v) * tau(v) + r(v)) * (dwda * depsdi + dwdi) + \
-                           (k_y_dot(v) * tau(v) + r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3) * (
+        phi_23 = lambda v, tau: (r_dot(v) * np.cos(i_0) * tau + r(v) * np.cos(i_0)) * (dOda * depsdi + dOdi) + \
+                           (r_dot(v) * tau + r(v)) * (dwda * depsdi + dwdi) + \
+                           (k_y_dot(v) * tau + r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3) * (
                            dMda * depsdi + dMdi)
         phi_24 = lambda v: r_dot(v) * np.cos(i_0)
-        phi_25 = lambda v: r_dot(v) + (r_dot(v) * np.cos(i_0) * tau(v) + r(v) * np.cos(i_0)) * dOda * depsdw + \
-                           (r_dot(v) * tau(v) + r(v)) * dwda * depsdw + (k_y_dot(v) * tau(v) + r(v) * (
+        phi_25 = lambda v, tau: r_dot(v) + (r_dot(v) * np.cos(i_0) * tau + r(v) * np.cos(i_0)) * dOda * depsdw + \
+                           (r_dot(v) * tau + r(v)) * dwda * depsdw + (k_y_dot(v) * tau + r(v) * (
         1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3) * dMda * depsdw
-        phi_26 = lambda v: k_y_dot(v) + (r_dot(v) * np.cos(i_0) * tau(v) + r(v) * np.cos(i_0)) * dOda * depsdv * (
+        phi_26 = lambda v, tau: k_y_dot(v) + (r_dot(v) * np.cos(i_0) * tau + r(v) * np.cos(i_0)) * dOda * depsdv * (
                                                                                                                  1.0 + e_0 * np.cos(
                                                                                                                      v_0)) ** 2 / eta_0 ** 3 + \
-                           (r_dot(v) * tau(v) + r(v)) * dwda * depsdv * (1.0 + e_0 * np.cos(v_0)) ** 2 / eta_0 ** 3 + \
-                           (k_y_dot(v) * tau(v) + r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3) * dOda * depsdv * \
+                           (r_dot(v) * tau + r(v)) * dwda * depsdv * (1.0 + e_0 * np.cos(v_0)) ** 2 / eta_0 ** 3 + \
+                           (k_y_dot(v) * tau + r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3) * dOda * depsdv * \
                            (1.0 + e_0 * np.cos(v_0)) ** 2 / eta_0 ** 3
 
         # Phi 3
-        k_z_dot = lambda v: -r_dot(v) * np.cos(v + w_0 + w_mean_dot * tau(v)) * np.sin(i_0) + \
-                            r(v) * np.sin(v + w_0 + w_mean_dot * tau(v)) * (v_dot(v) + w_mean_dot) * np.sin(i_0)
-        phi_31 = lambda v: (k_z_dot(v) * tau(v) - r(v) * np.cos(v + w_0 + w_mean_dot * tau(v)) * np.sin(i_0)) * dOda
-        phi_32 = lambda v: (k_z_dot(v) * tau(v) - r(v) * np.cos(v + w_0 + w_mean_dot * tau(v)) * np.sin(i_0)) * \
+        k_z_dot = lambda v, tau: -r_dot(v) * np.cos(v + w_0 + w_mean_dot * tau) * np.sin(i_0) + \
+                            r(v) * np.sin(v + w_0 + w_mean_dot * tau) * (v_dot(v) + w_mean_dot) * np.sin(i_0)
+        phi_31 = lambda v, tau: (k_z_dot(v, tau) * tau - r(v) * np.cos(v + w_0 + w_mean_dot * tau) * np.sin(i_0)) * dOda
+        phi_32 = lambda v, tau: (k_z_dot(v, tau) * tau - r(v) * np.cos(v + w_0 + w_mean_dot * tau) * np.sin(i_0)) * \
                            (dOda * depsde + dOda * depsdv * np.sin(v_0) / eta_0 ** 2 * (2.0 + e_0 * np.cos(e_0)) + dOde)
-        phi_33 = lambda v: r_dot(v) * np.sin(v + w_0 + w_mean_dot * tau(v)) + r(v) * np.cos(
-            v + w_0 + w_mean_dot * tau(v)) * \
+        phi_33 = lambda v, tau: r_dot(v) * np.sin(v + w_0 + w_mean_dot * tau) + r(v) * np.cos(
+            v + w_0 + w_mean_dot * tau) * \
                                                                               (v_dot(v) + w_mean_dot) + (k_z_dot(
-            v) * tau(v) - r(v) * np.cos(v + w_0 + w_mean_dot * tau(v)) * np.sin(i_0)) * dOda
-        phi_34 = lambda v: k_z_dot(v)
-        phi_35 = lambda v: (k_z_dot(v) * tau(v) - r(v) * np.cos(v + w_0 + w_mean_dot * tau(v)) * np.sin(
+            v, tau) * tau - r(v) * np.cos(v + w_0 + w_mean_dot * tau) * np.sin(i_0)) * dOda
+        phi_34 = lambda v, tau: k_z_dot(v, tau)
+        phi_35 = lambda v, tau: (k_z_dot(v, tau) * tau - r(v) * np.cos(v + w_0 + w_mean_dot * tau) * np.sin(
             i_0)) * dOda * depsdw
-        phi_36 = lambda v: (k_z_dot(v) * tau(v) - r(v) * np.cos(v + w_0 + w_mean_dot * tau(v)) * np.sin(
+        phi_36 = lambda v, tau: (k_z_dot(v, tau) * tau - r(v) * np.cos(v + w_0 + w_mean_dot * tau) * np.sin(
             i_0)) * dOda * depsdv * \
                            (1.0 + e_0 * np.cos(e_0)) ** 2 / eta_0 ** 3
 
         # Phi 4
-        phi_41 = lambda v: r(v) / a_0 + a_0 * e_0 * np.sin(v) / eta_0 * dMda * tau(v)
-        phi_42 = lambda v: a_0 * e_0 * np.sin(v) / eta_0 * (
+        phi_41 = lambda v, tau: r(v) / a_0 + a_0 * e_0 * np.sin(v) / eta_0 * dMda * tau
+        phi_42 = lambda v, tau: a_0 * e_0 * np.sin(v) / eta_0 * (
         dMda * depsde + dMda * depsdv * np.sin(v_0) / eta_0 ** 2 * (2.0 + e_0 * np.cos(e_0)) +
-        dMde) * tau(v) - a_0 * np.cos(v)
-        phi_43 = lambda v: a_0 * e_0 * np.sin(v) / eta_0 * (dMda * depsdi + dMdi) * tau(v)
+        dMde) * tau - a_0 * np.cos(v)
+        phi_43 = lambda v, tau: a_0 * e_0 * np.sin(v) / eta_0 * (dMda * depsdi + dMdi) * tau
         phi_44 = 0.0
-        phi_45 = lambda v: a_0 * e_0 * np.sin(v) / eta_0 * dMda * depsdw * tau(v)
-        phi_46 = lambda v: a_0 * e_0 * np.sin(v) / eta_0 + a_0 * e_0 * np.sin(v) / eta_0 * dMda * depsdw * \
-                                                           (1.0 + e_0 * np.cos(v_0)) ** 2 / eta_0 ** 3 * tau(v)
+        phi_45 = lambda v, tau: a_0 * e_0 * np.sin(v) / eta_0 * dMda * depsdw * tau
+        phi_46 = lambda v, tau: a_0 * e_0 * np.sin(v) / eta_0 + a_0 * e_0 * np.sin(v) / eta_0 * dMda * depsdw * \
+                                                           (1.0 + e_0 * np.cos(v_0)) ** 2 / eta_0 ** 3 * tau
 
         # Phi 5
-        phi_51 = lambda v: r(v) * np.cos(i_0) * dOda * tau(v) + r(v) * dwda * tau(v) + r(v) * (1.0 + e_0 * np.cos(
+        phi_51 = lambda v, tau: r(v) * np.cos(i_0) * dOda * tau + r(v) * dwda * tau + r(v) * (1.0 + e_0 * np.cos(
             v)) ** 2 \
-                                                                                       / eta_0 ** 3 * dMda * tau(v)
-        phi_52 = lambda v: r(v) * np.sin(v) / eta_0 ** 2 * (2.0 + e_0 * np.cos(v)) + r(v) * np.cos(i_0) * \
+                                                                                       / eta_0 ** 3 * dMda * tau
+        phi_52 = lambda v, tau: r(v) * np.sin(v) / eta_0 ** 2 * (2.0 + e_0 * np.cos(v)) + r(v) * np.cos(i_0) * \
                                                                                      (
                                                                                      dOda * depsde + dOda * depsdv * np.sin(
                                                                                          v_0) / eta_0 ** 2 * (
                                                                                      2.0 + e_0 * np.cos(
-                                                                                         e_0)) + dOde) * tau(v) + \
+                                                                                         e_0)) + dOde) * tau + \
                            r(v) * (dwda * depsde + dwda * depsdv * np.sin(v_0) / eta_0 ** 2 * (
-                           2.0 + e_0 * np.cos(e_0)) + dwde) * tau(v) + \
+                           2.0 + e_0 * np.cos(e_0)) + dwde) * tau + \
                            r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3 * \
                            (dMda * depsde + dMda * depsdv * np.sin(v_0) / eta_0 ** 2 * (
-                           2.0 + e_0 * np.cos(e_0)) + dMde) * tau(v)
-        phi_53 = lambda v: r(v) * np.cos(i_0) * (dOda * depsdi + dOdi) * tau(v) + r(v) * (dwda * depsdi + dwdi) * tau(
-            v) + \
-                           r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3 * (dMda * depsdi + dMdi) * tau(v)
+                           2.0 + e_0 * np.cos(e_0)) + dMde) * tau
+        phi_53 = lambda v, tau: r(v) * np.cos(i_0) * (dOda * depsdi + dOdi) * tau + r(v) * (dwda * depsdi + dwdi) * tau + \
+                           r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3 * (dMda * depsdi + dMdi) * tau
         phi_54 = lambda v: r(v) * np.cos(i_0)
-        phi_55 = lambda v: r(v) + r(v) * np.cos(i_0) * dOda * depsdw * tau(v) + r(v) * dwda * depsdw * tau(v) + \
-                           r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3 * dMda * depsdw * tau(v)
-        phi_56 = lambda v: r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3 + r(v) * np.cos(i_0) * dOda * depsdv * \
+        phi_55 = lambda v, tau: r(v) + r(v) * np.cos(i_0) * dOda * depsdw * tau + r(v) * dwda * depsdw * tau + \
+                           r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3 * dMda * depsdw * tau
+        phi_56 = lambda v, tau: r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3 + r(v) * np.cos(i_0) * dOda * depsdv * \
                                                                               (1.0 + e_0 * np.cos(
-                                                                                  v_0)) ** 2 / eta_0 ** 3 * tau(v) + r(
-            v) * dwda * depsdv * (1.0 + e_0 * np.cos(v_0)) ** 2 / eta_0 ** 3 * tau(v) + \
+                                                                                  v_0)) ** 2 / eta_0 ** 3 * tau + r(
+            v) * dwda * depsdv * (1.0 + e_0 * np.cos(v_0)) ** 2 / eta_0 ** 3 * tau + \
                            r(v) * (1.0 + e_0 * np.cos(v)) ** 2 / eta_0 ** 3 * dMda * depsdv * (1.0 + e_0 * np.cos(
-                               v_0)) ** 2 / eta_0 ** 3 * tau(v)
+                               v_0)) ** 2 / eta_0 ** 3 * tau
 
         # Phi 6
-        phi_61 = lambda v: -r(v) * np.cos(v + w_0 + w_mean_dot * tau(v)) * np.sin(i_0) * dOda * tau(v)
-        phi_62 = lambda v: -r(v) * np.cos(v + w_0 + w_mean_dot * tau(v)) * np.sin(i_0) * (
+        phi_61 = lambda v, tau: -r(v) * np.cos(v + w_0 + w_mean_dot * tau) * np.sin(i_0) * dOda * tau
+        phi_62 = lambda v, tau: -r(v) * np.cos(v + w_0 + w_mean_dot * tau) * np.sin(i_0) * (
         dOda * depsde + dOda * depsdv * np.sin(v_0) /
-        eta_0 ** 2 * (2.0 + e_0 * np.cos(e_0)) + dOde) * tau(v)
-        phi_63 = lambda v: r(v) * np.sin(v + w_0 + w_mean_dot * tau(v)) - r(v) * np.cos(
-            v + w_0 + w_mean_dot * tau(v)) * np.sin(i_0) * (dOda * depsdi + dOdi) * tau(v)
-        phi_64 = lambda v: -r(v) * np.cos(v + w_0 + w_mean_dot * tau(v)) * np.sin(i_0)
-        phi_65 = lambda v: -r(v) * np.cos(v + w_0 + w_mean_dot * tau(v)) * np.sin(i_0) * dOda * depsdw * tau(v)
-        phi_66 = lambda v: -r(v) * np.cos(v + w_0 + w_mean_dot * tau(v)) * np.sin(i_0) * dOda * depsdv * \
-                           (1.0 + e_0 * np.cos(v_0)) ** 2 / eta_0 ** 3 * tau(v)
+        eta_0 ** 2 * (2.0 + e_0 * np.cos(e_0)) + dOde) * tau
+        phi_63 = lambda v, tau: r(v) * np.sin(v + w_0 + w_mean_dot * tau) - r(v) * np.cos(
+            v + w_0 + w_mean_dot * tau) * np.sin(i_0) * (dOda * depsdi + dOdi) * tau
+        phi_64 = lambda v, tau: -r(v) * np.cos(v + w_0 + w_mean_dot * tau) * np.sin(i_0)
+        phi_65 = lambda v, tau: -r(v) * np.cos(v + w_0 + w_mean_dot * tau) * np.sin(i_0) * dOda * depsdw * tau
+        phi_66 = lambda v, tau: -r(v) * np.cos(v + w_0 + w_mean_dot * tau) * np.sin(i_0) * dOda * depsdv * \
+                           (1.0 + e_0 * np.cos(v_0)) ** 2 / eta_0 ** 3 * tau
 
-        state = phi_.dot(de0)
+        phi_0 = np.array([
+            [phi_11(v_0, 0.0), phi_12(v_0, 0.0), phi_13(v_0, 0.0), phi_14, phi_15(v_0, 0.0), phi_16(v_0, 0.0)],
+            [phi_21(v_0, 0.0), phi_22(v_0, 0.0), phi_23(v_0, 0.0), phi_24(v_0), phi_25(v_0, 0.0), phi_26(v_0, 0.0)],
+            [phi_31(v_0, 0.0), phi_32(v_0, 0.0), phi_33(v_0, 0.0), phi_34(v_0, 0.0), phi_35(v_0, 0.0), phi_36(v_0, 0.0)],
+            [phi_41(v_0, 0.0), phi_42(v_0, 0.0), phi_43(v_0, 0.0), phi_44, phi_45(v_0, 0.0), phi_46(v_0, 0.0)],
+            [phi_51(v_0, 0.0), phi_52(v_0, 0.0), phi_53(v_0, 0.0), phi_54(v_0), phi_55(v_0, 0.0), phi_56(v_0, 0.0)],
+            [phi_61(v_0, 0.0), phi_62(v_0, 0.0), phi_63(v_0, 0.0), phi_64(v_0, 0.0), phi_65(v_0, 0.0), phi_66(v_0, 0.0)]
+        ])
 
-        print "TAU: " + str(tau(v_f))
-
-        state_final = np.array([
-            checkpoint.rel_state.V[0],
-            checkpoint.rel_state.V[1],
-            checkpoint.rel_state.V[2],
-            checkpoint.rel_state.R[0],
-            checkpoint.rel_state.R[1],
-            checkpoint.rel_state.R[2]
+        initial_state = np.array([
+            chaser.rel_state.V[0],
+            chaser.rel_state.V[1],
+            chaser.rel_state.V[2],
+            chaser.rel_state.R[0],
+            chaser.rel_state.R[1],
+            chaser.rel_state.R[2]
         ])
 
         state_comb = np.array([
@@ -1208,27 +1256,26 @@ class HamelDeLafontaine(OrbitAdjuster):
             checkpoint.rel_state.R[2]
         ])
 
-        phi_0 = np.array([
-                [phi_11(v_0), phi_12(v_0), phi_13(v_0), phi_14, phi_15(v_0), phi_16(v_0)],
-                [phi_21(v_0), phi_22(v_0), phi_23(v_0), phi_24(v_0), phi_25(v_0), phi_26(v_0)],
-                [phi_31(v_0), phi_32(v_0), phi_33(v_0), phi_34(v_0), phi_35(v_0), phi_36(v_0)],
-                [phi_41(v_0), phi_42(v_0), phi_43(v_0), phi_44, phi_45(v_0), phi_46(v_0)],
-                [phi_51(v_0), phi_52(v_0), phi_53(v_0), phi_54(v_0), phi_55(v_0), phi_56(v_0)],
-                [phi_61(v_0), phi_62(v_0), phi_63(v_0), phi_64(v_0), phi_65(v_0), phi_66(v_0)],
-            ])
-
         t_min = checkpoint.t_min
         t_max = checkpoint.t_max
 
+        deltaV_tot = 1e12
+
         for dt in xrange(t_min, t_max):
 
+            N_orb = np.floor(dt / T_mean)
+            M_v = (dt * M_mean_dot - 2.0 * np.pi * N_orb + M_0)
+
+            E_v = self.calc_E_from_m(M_v, e_0)
+            v_f = self.calc_v_from_E(E_v, e_0)
+
             phi = np.array([
-                [phi_11(v_f), phi_12(v_f), phi_13(v_f), phi_14, phi_15(v_f), phi_16(v_f)],
-                [phi_21(v_f), phi_22(v_f), phi_23(v_f), phi_24(v_f), phi_25(v_f), phi_26(v_f)],
-                [phi_31(v_f), phi_32(v_f), phi_33(v_f), phi_34(v_f), phi_35(v_f), phi_36(v_f)],
-                [phi_41(v_f), phi_42(v_f), phi_43(v_f), phi_44, phi_45(v_f), phi_46(v_f)],
-                [phi_51(v_f), phi_52(v_f), phi_53(v_f), phi_54(v_f), phi_55(v_f), phi_56(v_f)],
-                [phi_61(v_f), phi_62(v_f), phi_63(v_f), phi_64(v_f), phi_65(v_f), phi_66(v_f)],
+                [phi_11(v_f, dt), phi_12(v_f, dt), phi_13(v_f, dt), phi_14, phi_15(v_f, dt), phi_16(v_f, dt)],
+                [phi_21(v_f, dt), phi_22(v_f, dt), phi_23(v_f, dt), phi_24(v_f), phi_25(v_f, dt), phi_26(v_f, dt)],
+                [phi_31(v_f, dt), phi_32(v_f, dt), phi_33(v_f, dt), phi_34(v_f, dt), phi_35(v_f, dt), phi_36(v_f, dt)],
+                [phi_41(v_f, dt), phi_42(v_f, dt), phi_43(v_f, dt), phi_44, phi_45(v_f, dt), phi_46(v_f, dt)],
+                [phi_51(v_f, dt), phi_52(v_f, dt), phi_53(v_f, dt), phi_54(v_f), phi_55(v_f, dt), phi_56(v_f, dt)],
+                [phi_61(v_f, dt), phi_62(v_f, dt), phi_63(v_f, dt), phi_64(v_f, dt), phi_65(v_f, dt), phi_66(v_f, dt)],
             ])
 
             phi_comb = np.array([
@@ -1243,16 +1290,8 @@ class HamelDeLafontaine(OrbitAdjuster):
             # Wanted initial relative orbital elements
             de0_wanted = np.linalg.inv(phi_comb).dot(state_comb)
 
-            de0_diff = de0_wanted - de0
-
-            de_chaser_wanted = np.array([
-                chaser_osc.a + de0_diff[0],
-                chaser_osc.e + de0_diff[1],
-                chaser_osc.i + de0_diff[2],
-                chaser_osc.O + de0_diff[3],
-                chaser_osc.w + de0_diff[4],
-                chaser_osc.m + de0_diff[5],
-            ])
+            # de0_diff = de0_wanted - de0
+            de0_diff = de0_wanted - np.linalg.inv(phi_0).dot(initial_state)
 
             chaser_kep_wanted = KepOrbElem()
             chaser_kep_wanted.a = chaser_osc.a + de0_diff[0]
@@ -1267,7 +1306,31 @@ class HamelDeLafontaine(OrbitAdjuster):
 
             deltaV_1_TEME = chaser_cart_wanted.V - chaser.abs_state.V
 
-        return phi_, tau(v_f)
+            deltaV_2_LVLH = phi.dot(de0_wanted)[0:3]
+
+            if np.linalg.norm(deltaV_1_TEME) + np.linalg.norm(deltaV_2_LVLH) < deltaV_tot:
+                deltaV_tot = np.linalg.norm(deltaV_1_TEME)
+                best_deltaV_1 = deltaV_1_TEME
+                best_dt = dt
+
+        man1 = self.create_and_apply_manoeuvre(chaser, target, best_deltaV_1, 0.0)
+
+        # Take deltaV-2 after propagation
+
+        self.create_and_apply_manoeuvre(chaser, target, np.array([0.0, 0.0, 0.0]), best_dt)
+
+        print chaser.rel_state.R
+        print chaser.rel_state.V
+
+        deltaV_2_LVLH = -chaser.rel_state.V
+        deltaV_2_TEME = np.linalg.inv(target.abs_state.get_lof()).dot(deltaV_2_LVLH)
+
+        man2 = self.create_and_apply_manoeuvre(chaser, target, deltaV_2_TEME, 0.0)
+
+        print chaser.rel_state.R
+        print chaser.rel_state.V
+
+        return [man1, man2]
 
 
 class GeneticAlgorithm(OrbitAdjuster):
