@@ -1256,8 +1256,8 @@ class HamelDeLafontaine(OrbitAdjuster):
             checkpoint.rel_state.R[2]
         ])
 
-        t_min = checkpoint.t_min
-        t_max = checkpoint.t_max
+        t_min = int(checkpoint.t_min)
+        t_max = int(checkpoint.t_max)
 
         deltaV_tot = 1e12
 
@@ -1265,6 +1265,7 @@ class HamelDeLafontaine(OrbitAdjuster):
 
             N_orb = np.floor(dt / T_mean)
             M_v = (dt * M_mean_dot - 2.0 * np.pi * N_orb + M_0)
+            # print N_orb, dt , self.travel_time(target_mean, target_mean.v, 0.0)
 
             E_v = self.calc_E_from_m(M_v, e_0)
             v_f = self.calc_v_from_E(E_v, e_0)
@@ -1319,16 +1320,10 @@ class HamelDeLafontaine(OrbitAdjuster):
 
         self.create_and_apply_manoeuvre(chaser, target, np.array([0.0, 0.0, 0.0]), best_dt)
 
-        print chaser.rel_state.R
-        print chaser.rel_state.V
-
         deltaV_2_LVLH = -chaser.rel_state.V
         deltaV_2_TEME = np.linalg.inv(target.abs_state.get_lof()).dot(deltaV_2_LVLH)
 
         man2 = self.create_and_apply_manoeuvre(chaser, target, deltaV_2_TEME, 0.0)
-
-        print chaser.rel_state.R
-        print chaser.rel_state.V
 
         return [man1, man2]
 
