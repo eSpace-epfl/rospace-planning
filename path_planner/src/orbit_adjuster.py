@@ -17,6 +17,7 @@ from datetime import timedelta
 from manoeuvre import Manoeuvre, RelativeMan
 from rospace_lib import CartesianTEME, KepOrbElem, OscKepOrbElem, CartesianLVLH
 from checkpoint import AbsoluteCP
+from copy import deepcopy
 
 
 class OrbitAdjuster(object):
@@ -1026,19 +1027,12 @@ class HamelDeLafontaine(OrbitAdjuster):
 
         nr_samples = int(1e4)
 
-        chaser_tmp = CartesianTEME()
-        target_tmp = CartesianTEME()
+        chaser_tmp = deepcopy(chaser.abs_state)
+        target_tmp = deepcopy(target.abs_state)
         chaser_rel = CartesianLVLH()
 
-        chaser_tmp_R = chaser.abs_state.R
-        chaser_tmp_V = chaser.abs_state.V + deltaV
-        chaser_tmp.R = chaser_tmp_R
-        chaser_tmp.V = chaser_tmp_V
-
-        target_tmp_R = target.abs_state.R
-        target_tmp_V = target.abs_state.V
-        target_tmp.R = target_tmp_R
-        target_tmp.V = target_tmp_V
+        # Apply first deltav
+        chaser.abs_state.V += deltaV
 
         # Propagate
         target_prop = target.prop.orekit_prop.propagate(target.prop.date + timedelta(seconds=dt))
@@ -1048,16 +1042,14 @@ class HamelDeLafontaine(OrbitAdjuster):
         chaser_rel.from_cartesian_pair(chaser_prop[0], target_prop[0])
 
         # Depropagate
-        target.prop.change_initial_conditions(target.abs_state, target.prop.date, target.mass)
+        target.prop.change_initial_conditions(target_tmp, target.prop.date, target.mass)
         chaser.prop.change_initial_conditions(chaser_tmp, chaser.prop.date, chaser.mass)
+        chaser.abs_state = deepcopy(chaser_tmp)
 
         best_dist = np.linalg.norm(checkpoint.rel_state.R - chaser_rel.R)
-        print "BEST DIST: " + str(best_dist)
 
         # Create sample list
         for j in xrange(0, nr_samples):
-            chaser_tmp.V = chaser.abs_state.V
-
             # Drawn three disturbances
             dv_r = (np.random.random() - 0.5) * 10 ** (np.floor(np.log10(abs(deltaV[0]))) - 2.0)
             dv_v = (np.random.random() - 0.5) * 10 ** (np.floor(np.log10(abs(deltaV[1]))) - 2.0)
@@ -1065,7 +1057,7 @@ class HamelDeLafontaine(OrbitAdjuster):
 
             # Add disturbance
             deltaV_dist = deltaV + np.array([dv_r, dv_v, dv_h])
-            chaser_tmp.V = chaser.abs_state.V + deltaV_dist
+            chaser.abs_state.V += deltaV_dist
 
             # Propagate
             target_prop = target.prop.orekit_prop.propagate(target.prop.date + timedelta(seconds=dt))
@@ -1076,7 +1068,6 @@ class HamelDeLafontaine(OrbitAdjuster):
 
             # Check distance
             dist = np.linalg.norm(checkpoint.rel_state.R - chaser_rel.R)
-            print dist
 
             if dist < best_dist:
                 best_dist = dist
@@ -1086,8 +1077,9 @@ class HamelDeLafontaine(OrbitAdjuster):
             # Depropagate
             target.prop.change_initial_conditions(target_tmp, target.prop.date, target.mass)
             chaser.prop.change_initial_conditions(chaser_tmp, chaser.prop.date, chaser.mass)
+            chaser.abs_state = deepcopy(chaser_tmp)
 
-        return best_dist, best_arrival
+        return deltaV, best_arrival
 
 
     def evaluate_manoeuvre(self, chaser, checkpoint, target):
@@ -1419,13 +1411,9 @@ class HamelDeLafontaine(OrbitAdjuster):
                 best_deltaV_1 = deltaV_1_TEME
                 best_dt = dt
 
-        best_deltaV_1, best_arrival = self._filter_result(chaser, checkpoint, target, best_deltaV_1, best_dt)
+        ref_deltaV, best_arrival = self._filter_result(chaser, checkpoint, target, best_deltaV_1, best_dt)
 
-        print best_deltaV_1
-        print best_arrival
-
-
-        man1 = self.create_and_apply_manoeuvre(chaser, target, best_deltaV_1, 0.0)
+        man1 = self.create_and_apply_manoeuvre(chaser, target, ref_deltaV, 0.0)
 
         # Take deltaV-2 after propagation
 
