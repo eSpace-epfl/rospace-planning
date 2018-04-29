@@ -13,6 +13,7 @@ import yaml
 
 from rospace_lib import KepOrbElem, CartesianTEME, OscKepOrbElem, CartesianLVLH
 from path_planning_propagator import Propagator
+from copy import deepcopy
 
 
 class Satellite(object):
@@ -132,8 +133,7 @@ class Satellite(object):
         """
 
         if cartesian.frame == self.abs_state.frame:
-            self.abs_state.R = cartesian.R
-            self.abs_state.V = cartesian.V
+            self.abs_state = deepcopy(cartesian)
         else:
             raise TypeError()
 
