@@ -15,8 +15,9 @@ from state import Satellite, Chaser
 from rospace_lib import mu_earth, J_2, R_earth
 from datetime import timedelta
 from manoeuvre import Manoeuvre, RelativeMan
-from rospace_lib import CartesianTEME, KepOrbElem, OscKepOrbElem
+from rospace_lib import CartesianTEME, KepOrbElem, OscKepOrbElem, CartesianLVLH
 from checkpoint import AbsoluteCP
+from copy import deepcopy
 
 
 class OrbitAdjuster(object):
@@ -1022,6 +1023,65 @@ class TschaunerHempel(OrbitAdjuster):
 
 class HamelDeLafontaine(OrbitAdjuster):
 
+    def _filter_result(self, chaser, checkpoint, target, deltaV, dt):
+
+        nr_samples = int(1e4)
+
+        chaser_tmp = deepcopy(chaser.abs_state)
+        target_tmp = deepcopy(target.abs_state)
+        chaser_rel = CartesianLVLH()
+
+        # Apply first deltav
+        chaser.abs_state.V += deltaV
+
+        # Propagate
+        target_prop = target.prop.orekit_prop.propagate(target.prop.date + timedelta(seconds=dt))
+        chaser.prop.change_initial_conditions(chaser.abs_state, chaser.prop.date, chaser.mass)
+        chaser_prop = chaser.prop.orekit_prop.propagate(chaser.prop.date + timedelta(seconds=dt))
+
+        chaser_rel.from_cartesian_pair(chaser_prop[0], target_prop[0])
+
+        # Depropagate
+        target.prop.change_initial_conditions(target_tmp, target.prop.date, target.mass)
+        chaser.prop.change_initial_conditions(chaser_tmp, chaser.prop.date, chaser.mass)
+        chaser.abs_state = deepcopy(chaser_tmp)
+
+        best_dist = np.linalg.norm(checkpoint.rel_state.R - chaser_rel.R)
+
+        # Create sample list
+        for j in xrange(0, nr_samples):
+            # Drawn three disturbances
+            dv_r = (np.random.random() - 0.5) * 10 ** (np.floor(np.log10(abs(deltaV[0]))) - 2.0)
+            dv_v = (np.random.random() - 0.5) * 10 ** (np.floor(np.log10(abs(deltaV[1]))) - 2.0)
+            dv_h = (np.random.random() - 0.5) * 10 ** (np.floor(np.log10(abs(deltaV[2]))) - 2.0)
+
+            # Add disturbance
+            deltaV_dist = deltaV + np.array([dv_r, dv_v, dv_h])
+            chaser.abs_state.V += deltaV_dist
+
+            # Propagate
+            target_prop = target.prop.orekit_prop.propagate(target.prop.date + timedelta(seconds=dt))
+            chaser.prop.change_initial_conditions(chaser.abs_state, chaser.prop.date, chaser.mass)
+            chaser_prop = chaser.prop.orekit_prop.propagate(chaser.prop.date + timedelta(seconds=dt))
+
+            chaser_rel.from_cartesian_pair(chaser_prop[0], target_prop[0])
+
+            # Check distance
+            dist = np.linalg.norm(checkpoint.rel_state.R - chaser_rel.R)
+
+            if dist < best_dist:
+                best_dist = dist
+                deltaV = deltaV_dist
+                best_arrival = chaser_rel.R
+
+            # Depropagate
+            target.prop.change_initial_conditions(target_tmp, target.prop.date, target.mass)
+            chaser.prop.change_initial_conditions(chaser_tmp, chaser.prop.date, chaser.mass)
+            chaser.abs_state = deepcopy(chaser_tmp)
+
+        return deltaV, best_arrival
+
+
     def evaluate_manoeuvre(self, chaser, checkpoint, target):
         """
             Evaluate deltav according to HamelDelaFontaine paper.
@@ -1041,6 +1101,9 @@ class HamelDeLafontaine(OrbitAdjuster):
         M_0 = target_osc.m
         v_0 = target_osc.v
 
+        # print "v_0: "
+        # print v_0
+
         # Initial orbital elements difference
         chaser_osc = chaser.get_osc_oe()
         de0 = np.array([
@@ -1051,6 +1114,14 @@ class HamelDeLafontaine(OrbitAdjuster):
             chaser_osc.w - target_osc.w,
             chaser_osc.m - target_osc.m,
         ])
+
+        # print chaser_osc.a
+        # print chaser_osc.e
+        # print chaser_osc.i
+        # print chaser_osc.O
+        # print chaser_osc.w
+        # print chaser_osc.m
+        # print chaser_osc.v
 
         eta_0 = np.sqrt(1.0 - e_0 ** 2)
         p_0 = a_0 * (1.0 - e_0 ** 2)
@@ -1067,6 +1138,12 @@ class HamelDeLafontaine(OrbitAdjuster):
         p_mean = a_mean * (1.0 - e_mean ** 2)
         n_mean = np.sqrt(mu_earth / a_mean ** 3)
         T_mean = 2.0 * np.pi / n_mean
+
+        # print "n_mean: " + str(n_mean)
+        # print "p_mean: " + str(p_mean)
+        # print "eta_mean: " + str(eta_mean)
+        # print "i_mean: " + str(i_mean)
+
 
         # Mean orbital element drift
         a_mean_dot = 0.0
@@ -1238,6 +1315,9 @@ class HamelDeLafontaine(OrbitAdjuster):
             [phi_61(v_0, 0.0), phi_62(v_0, 0.0), phi_63(v_0, 0.0), phi_64(v_0, 0.0), phi_65(v_0, 0.0), phi_66(v_0, 0.0)]
         ])
 
+        # print "Phi_0: "
+        # print phi_0
+
         initial_state = np.array([
             chaser.rel_state.V[0],
             chaser.rel_state.V[1],
@@ -1265,10 +1345,16 @@ class HamelDeLafontaine(OrbitAdjuster):
 
             N_orb = np.floor(dt / T_mean)
             M_v = (dt * M_mean_dot - 2.0 * np.pi * N_orb + M_0)
-            # print N_orb, dt , self.travel_time(target_mean, target_mean.v, 0.0)
 
             E_v = self.calc_E_from_m(M_v, e_0)
             v_f = self.calc_v_from_E(E_v, e_0)
+
+            # print "M_mean_dot: " + str(M_mean_dot)
+            # print "M_0: " + str(M_0)
+            # print "M_v: " + str(M_v)
+            #
+            # print "\n v_f: "
+            # print v_f
 
             phi = np.array([
                 [phi_11(v_f, dt), phi_12(v_f, dt), phi_13(v_f, dt), phi_14, phi_15(v_f, dt), phi_16(v_f, dt)],
@@ -1291,21 +1377,32 @@ class HamelDeLafontaine(OrbitAdjuster):
             # Wanted initial relative orbital elements
             de0_wanted = np.linalg.inv(phi_comb).dot(state_comb)
 
+            # print "dE0 wanted: "
+            # print de0_wanted
+
             # de0_diff = de0_wanted - de0
             de0_diff = de0_wanted - np.linalg.inv(phi_0).dot(initial_state)
 
             chaser_kep_wanted = KepOrbElem()
-            chaser_kep_wanted.a = chaser_osc.a + de0_diff[0]
-            chaser_kep_wanted.e = chaser_osc.e + de0_diff[1]
-            chaser_kep_wanted.i = chaser_osc.i + de0_diff[2]
-            chaser_kep_wanted.O = chaser_osc.O + de0_diff[3]
-            chaser_kep_wanted.w = chaser_osc.w + de0_diff[4]
-            chaser_kep_wanted.m = chaser_osc.m + de0_diff[5]
+            chaser_kep_wanted.a = de0_wanted[0] + target_osc.a
+            chaser_kep_wanted.e = de0_wanted[1] + target_osc.e
+            chaser_kep_wanted.i = de0_wanted[2] + target_osc.i
+            chaser_kep_wanted.O = de0_wanted[3] + target_osc.O
+            chaser_kep_wanted.w = de0_wanted[4] + target_osc.w
+            chaser_kep_wanted.m = de0_wanted[5] + target_osc.m
 
             chaser_cart_wanted = CartesianTEME()
             chaser_cart_wanted.from_keporb(chaser_kep_wanted)
 
+            # print "\nChaser wanted: "
+            # print chaser_cart_wanted.R, chaser.abs_state.R
+            # print chaser_cart_wanted.V
+
             deltaV_1_TEME = chaser_cart_wanted.V - chaser.abs_state.V
+            # deltaV_1_TEME = np.array([  1.40568851e-04,   8.08018409e-06,   1.68543027e-04])
+
+            # print "\n DeltaV1: "
+            # print deltaV_1_TEME
 
             deltaV_2_LVLH = phi.dot(de0_wanted)[0:3]
 
@@ -1314,16 +1411,26 @@ class HamelDeLafontaine(OrbitAdjuster):
                 best_deltaV_1 = deltaV_1_TEME
                 best_dt = dt
 
-        man1 = self.create_and_apply_manoeuvre(chaser, target, best_deltaV_1, 0.0)
+        ref_deltaV, best_arrival = self._filter_result(chaser, checkpoint, target, best_deltaV_1, best_dt)
+
+        man1 = self.create_and_apply_manoeuvre(chaser, target, ref_deltaV, 0.0)
 
         # Take deltaV-2 after propagation
 
         self.create_and_apply_manoeuvre(chaser, target, np.array([0.0, 0.0, 0.0]), best_dt)
 
+        print "\n"
+        print chaser.rel_state.R
+        print chaser.rel_state.V
+
         deltaV_2_LVLH = -chaser.rel_state.V
         deltaV_2_TEME = np.linalg.inv(target.abs_state.get_lof()).dot(deltaV_2_LVLH)
 
         man2 = self.create_and_apply_manoeuvre(chaser, target, deltaV_2_TEME, 0.0)
+
+        print "\n"
+        print chaser.rel_state.R
+        print chaser.rel_state.V
 
         return [man1, man2]
 
