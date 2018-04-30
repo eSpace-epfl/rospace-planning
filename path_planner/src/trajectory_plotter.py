@@ -15,7 +15,6 @@ import os
 
 from scenario import Scenario
 from state import Chaser, Satellite
-from rospace_lib import Cartesian, mu_earth, KepOrbElem
 from datetime import timedelta
 from path_planning_propagator import Propagator
 
