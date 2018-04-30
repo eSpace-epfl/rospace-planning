@@ -13,7 +13,7 @@ import yaml
 import numpy as np
 
 from rospace_lib import KepOrbElem, CartesianTEME, OscKepOrbElem
-from path_planning_propagator import Propagator
+from rospace_lib.propagator import Propagator
 
 
 class Satellite(object):
@@ -151,9 +151,3 @@ class Satellite(object):
             raise TypeError('Propagator type not recognized!')
 
         return kep_mean
-
-
-class Chaser(Satellite):
-
-    def __init__(self):
-        pass
