@@ -197,7 +197,9 @@ class Solver(object):
 
         elif checkpoint.manoeuvre_type == 'drift':
             orbit_adj = Drift()
-            orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target, self.manoeuvre_plan)
+            new_manoeuvre_plan = orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target, self.manoeuvre_plan)
+            self.manoeuvre_plan = new_manoeuvre_plan
+            print len(self.manoeuvre_plan)
 
     def _print_state(self, satellite):
         """
