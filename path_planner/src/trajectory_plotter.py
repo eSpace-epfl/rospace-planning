@@ -13,6 +13,7 @@ import pykep as pk
 import scipy.io as sio
 import os
 
+from rospace_lib import CartesianTEME
 from scenario import Scenario
 from state import Chaser, Satellite
 from datetime import timedelta
@@ -54,8 +55,8 @@ def plot_result(manoeuvre_plan, scenario, save_path):
     chaser.set_from_satellite(scenario.chaser_ic)
     target.set_from_satellite(scenario.target_ic)
 
-    chaser_cart_extra = Cartesian()
-    target_cart_extra = Cartesian()
+    chaser_cart_extra = CartesianTEME()
+    target_cart_extra = CartesianTEME()
 
     epoch = scenario.date
 
