@@ -466,6 +466,32 @@ class Drift(OrbitAdjuster):
         Can be used to do corrections during relative navigation.
     """
 
+    def _fuse_manoeuvres(self, manoeuvre_plan, manoeuvre_plan_old):
+        """
+            Given the old and the actual manoeuvre plan, fuse together all the manoeuvres that cost 0 deltaV.
+
+        Args:
+            manoeuvre_plan (list)
+            manoeuvre_plane_old (list)
+        """
+
+        L = len(manoeuvre_plan_old)
+
+        i = L
+        while i < len(manoeuvre_plan):
+            man = manoeuvre_plan[i]
+
+            if man.deltaV.all() == 0.0:
+                j = i + 1
+                while j < len(manoeuvre_plan):
+                    if manoeuvre_plan[j].deltaV.any() != 0.0:
+                        break
+                    else:
+                        del manoeuvre_plan[j]
+
+            i += 1
+
+
     def evaluate_manoeuvre(self, chaser, checkpoint, target, manoeuvre_plan):
         """
             Algorithm that tries to drift to the next checkpoint, staying within a certain error ellipsoid.
@@ -519,7 +545,7 @@ class Drift(OrbitAdjuster):
             chaser_tmp = Chaser()
             target_tmp = Satellite()
 
-            manoeuvre_plan_old = manoeuvre_plan
+            manoeuvre_plan_old = deepcopy(manoeuvre_plan)
 
             t_est = (2.0 * np.pi * F(dv_req, actual_dv, n_rel) + dv_req - actual_dv) / n_rel
             ellipsoid_flag = False
@@ -532,7 +558,7 @@ class Drift(OrbitAdjuster):
                 target_tmp.set_from_satellite(target)
                 epoch_tmp = chaser.prop.date
                 dr_next_tmp = dr_next
-                manoeuvre_plan_tmp = manoeuvre_plan
+                manoeuvre_plan_tmp = deepcopy(manoeuvre_plan)
 
                 # Update epoch
                 chaser.prop.date += timedelta(seconds=dt)
@@ -603,7 +629,6 @@ class Drift(OrbitAdjuster):
                             man.deltaV = np.array([0.0, 0.0, 0.0])
                             man.set_initial_rel_state(chaser_tmp.rel_state)
                             man.execution_epoch = chaser.prop.date
-                            man.description = 'Drift for ' + str(dt) + ' seconds'
 
                             manoeuvre_plan.append(man)
 
@@ -615,7 +640,6 @@ class Drift(OrbitAdjuster):
                         man.deltaV = np.array([0.0, 0.0, 0.0])
                         man.set_initial_rel_state(chaser_tmp.rel_state)
                         man.execution_epoch = chaser.prop.date
-                        man.description = 'Drift for ' + str(dt) + ' seconds'
 
                         manoeuvre_plan.append(man)
 
@@ -658,7 +682,10 @@ class Drift(OrbitAdjuster):
 
             if ellipsoid_flag:
                 # It is possible to drift
-                return
+                # Fuse manoeuvres together and quit algorithm
+                self._fuse_manoeuvres(manoeuvre_plan, manoeuvre_plan_old)
+                print "checking manplan"
+                return manoeuvre_plan
             else:
                 # Drift is not possible, drop a warning and correct altitude!
                 print "\n[WARNING]: Drifting to checkpoint nr. " + str(checkpoint.id) + " not possible!"
@@ -687,7 +714,6 @@ class Drift(OrbitAdjuster):
 
                 orbit_adj = HohmannTransfer()
                 orbit_adj.evaluate_manoeuvre(chaser, checkpoint_new_abs, target)
-
 
 class MultiLambert(OrbitAdjuster):
     """
@@ -1023,7 +1049,7 @@ class TschaunerHempel(OrbitAdjuster):
 
 class HamelDeLafontaine(OrbitAdjuster):
 
-    def _filter_result(self, chaser, checkpoint, target, deltaV, dt):
+    def _refine_result(self, chaser, checkpoint, target, deltaV, dt):
 
         nr_samples = int(1e4)
 
