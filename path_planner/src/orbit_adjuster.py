@@ -494,8 +494,10 @@ class Drift(OrbitAdjuster):
                     if manoeuvre_plan[j].deltaV.any() != 0.0:
                         break
                     else:
+                        ex_epoch = manoeuvre_plan[j].execution_epoch
                         del manoeuvre_plan[j]
 
+            manoeuvre_plan[i].execution_epoch = ex_epoch
             i += 1
 
 
@@ -634,7 +636,7 @@ class Drift(OrbitAdjuster):
                             # Target point not overshooted, everything looks good as it is
                             man = RelativeMan()
                             man.deltaV = np.array([0.0, 0.0, 0.0])
-                            man.set_initial_rel_state(chaser_tmp.rel_state)
+                            # man.set_initial_rel_state(chaser_tmp.rel_state)
                             man.execution_epoch = chaser.prop.date
 
                             manoeuvre_plan.append(man)
@@ -645,7 +647,7 @@ class Drift(OrbitAdjuster):
                         # No plane adjustment needed, add another dt and move forward
                         man = RelativeMan()
                         man.deltaV = np.array([0.0, 0.0, 0.0])
-                        man.set_initial_rel_state(chaser_tmp.rel_state)
+                        # man.set_initial_rel_state(chaser_tmp.rel_state)
                         man.execution_epoch = chaser.prop.date
 
                         manoeuvre_plan.append(man)
@@ -682,7 +684,7 @@ class Drift(OrbitAdjuster):
                     if abs(checkpoint.rel_state.R[0] - chaser.rel_state.R[0]) <= checkpoint.error_ellipsoid[0]:
                         # Inside the tolerance, the point may be reached by drifting
                         ellipsoid_flag = True
-                    elif abs(checkpoint.rel_state.R[1] - chaser.rel_state.R[1]) <= 0.05 and \
+                    elif abs(checkpoint.rel_state.R[1] - chaser.rel_state.R[1]) <= 0.1 and \
                         abs(checkpoint.rel_state.R[0] - chaser.rel_state.R[0]) > checkpoint.error_ellipsoid[0]:
                         # Outside tolerance, point may not be reached!
                         break
@@ -691,7 +693,6 @@ class Drift(OrbitAdjuster):
                 # It is possible to drift
                 # Fuse manoeuvres together and quit algorithm
                 self._fuse_manoeuvres(manoeuvre_plan, manoeuvre_plan_old)
-                print "checking manplan"
                 return manoeuvre_plan
             else:
                 # Drift is not possible, drop a warning and correct altitude!
@@ -720,7 +721,7 @@ class Drift(OrbitAdjuster):
                 checkpoint_new_abs.abs_state.e = target_mean.a * target_mean.e / checkpoint_new_abs.abs_state.a
 
                 orbit_adj = HohmannTransfer()
-                orbit_adj.evaluate_manoeuvre(chaser, checkpoint_new_abs, target)
+                manoeuvre_plan += orbit_adj.evaluate_manoeuvre(chaser, checkpoint_new_abs, target)
 
 class MultiLambert(OrbitAdjuster):
     """
