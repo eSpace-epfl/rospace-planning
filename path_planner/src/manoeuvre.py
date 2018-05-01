@@ -1,0 +1,58 @@
+# @copyright Copyright (c) 2017, Davide Frey (frey.davide.ae@gmail.com)
+#
+# @license zlib license
+#
+# This file is licensed under the terms of the zlib license.
+# See the LICENSE.md file in the root of this repository
+# for complete details.
+
+"""Class holding the definitions of Manoeuvres."""
+
+import numpy as np
+
+from rospace_lib import KepOrbElem, CartesianLVLH
+
+
+class Manoeuvre(object):
+    """
+        Base class that contains the definition of a manoeuvre.
+
+    Attributes:
+        deltaV (array): Amount of delta-v needed to execute the burn. Given in kilometers per second with respect
+            to TEME reference frame.
+        initial_state (KepOrbElem or CartesianLVLH): State at which the manoeuvre has to be executed, can be either
+            defined in mean orbital elements or in cartesian LVLH reference frame.
+        execution_epoch (datetime): Epoch at which the manoeuvre should be executed.
+    """
+
+    def __init__(self):
+        self.deltaV = np.array([0, 0, 0])
+        self.initial_state = None
+        self.execution_epoch = None
+
+    def set_initial_state(self, state):
+        """Set manoeuvre initial state in KepOrbElem or CartesianLVLH.
+
+        Args:
+            abs_state (KepOrbElem): Absolute state in keplerian orbital elements.
+        """
+
+        state_type = type(state)
+
+        if self.initial_state == None:
+            if state_type == KepOrbElem:
+                self.initial_state = KepOrbElem()
+                self.initial_state.a = state.a
+                self.initial_state.e = state.e
+                self.initial_state.i = state.i
+                self.initial_state.O = state.O
+                self.initial_state.w = state.w
+                self.initial_state.v = state.v
+            elif state_type == CartesianLVLH:
+                self.initial_state = CartesianLVLH()
+                self.initial_state.R = state.R
+                self.initial_state.V = state.V
+            else:
+                raise TypeError('State type not allowed!')
+        else:
+            raise AttributeError('Manoeuvre initial state has already been defined!')
