@@ -10,7 +10,8 @@
 
 import numpy as np
 
-from rospace_lib import Cartesian, KepOrbElem, CartesianLVLH
+from rospace_lib import KepOrbElem, CartesianLVLH
+from copy import deepcopy
 
 
 class CheckPoint(object):
@@ -32,6 +33,7 @@ class CheckPoint(object):
     def set_from_checkpoint(self, chkp):
         """
             Set checkpoint parameters given another checkpoint, which can be either absolute or relative.
+            Note: deepcopy used to prevent errors and unwanted cascading changes in objects.
 
         Args:
             chkp (AbsoluteCP or RelativeCP)
@@ -42,16 +44,16 @@ class CheckPoint(object):
             self.manoeuvre_type = chkp.manoeuvre_type
 
             if hasattr(chkp, 'rel_state'):
-                self.rel_state = chkp.rel_state
+                self.rel_state = deepcopy(chkp.rel_state)
                 self.error_ellipsoid = chkp.error_ellipsoid
                 self.t_min = chkp.t_min
                 self.t_max = chkp.t_max
             elif hasattr(chkp, 'abs_state'):
-                self.abs_state = chkp.abs_state
+                self.abs_state = deepcopy(chkp.abs_state)
             else:
                 raise Warning('Working with checkpoints instead of relativeCP or absoluteCP')
         else:
-            raise TypeError()
+            raise TypeError('Object and argument type mismatch!')
 
 
 class RelativeCP(CheckPoint):
@@ -61,7 +63,7 @@ class RelativeCP(CheckPoint):
 
         Attributes:
             rel_state (CartesianLVLH): Holds the relative coordinates with respect to a satellite.
-            error_ellipsoid (np.array): Define an imaginary ellipsoid around the checkpoint, in which the manoeuvre is
+            error_ellipsoid (array): Define an imaginary ellipsoid around the checkpoint, in which the manoeuvre is
                 still performable. Measures are in km and goes according to the LVLH frame, i.e:
                 [error(R-bar), error(V-bar), error(H-bar)]
             t_min (float64): Minimum time allowed to execute the manoeuvre [s], standard is 1.0 second.
@@ -78,7 +80,8 @@ class RelativeCP(CheckPoint):
 
     def set_rel_state(self, rel_state):
         """
-            Set relative state given relative state of the checkpoint in dictionary format.
+            Set relative state of the checkpoint given a dictionary or a CartesianLVLH state.
+            Note: deepcopy used to prevent errors and unwanted cascading changes in objects.
 
         Args:
             rel_state (Dictionary or CartesianLVLH): Relative state of the checkpoint given either as a dictionary or
@@ -86,13 +89,12 @@ class RelativeCP(CheckPoint):
         """
 
         if type(rel_state) == dict:
-            self.rel_state.R = np.array(rel_state['R']) if 'R' in rel_state.keys() else np.array([0.0, 0.0, 0.0])
-            self.rel_state.V = np.array(rel_state['V']) if 'V' in rel_state.keys() else np.array([0.0, 0.0, 0.0])
+            self.rel_state.R = np.array(rel_state['R']) if 'R' in rel_state.keys() else ValueError('R not defined!')
+            self.rel_state.V = np.array(rel_state['V']) if 'V' in rel_state.keys() else ValueError('V not defined!')
         elif type(rel_state) == CartesianLVLH:
-            self.rel_state.R = rel_state.R
-            self.rel_state.V = rel_state.V
+            self.rel_state = deepcopy(rel_state)
         else:
-            raise TypeError
+            raise TypeError('Object and argument type mismatch!')
 
 
 class AbsoluteCP(CheckPoint):
@@ -111,7 +113,7 @@ class AbsoluteCP(CheckPoint):
 
     def set_abs_state(self, abs_state):
         """
-            Set absolute state given absolute state either in a dictionary.
+            Set absolute state given keplerian orbital elements or a dictionary containing them.
 
         Args:
             abs_state (Dictionary or KepOrbElem): absolute state of checkpoint given either in a dictionary or in
@@ -119,12 +121,12 @@ class AbsoluteCP(CheckPoint):
         """
 
         if type(abs_state) == dict:
-            self.abs_state.a = eval(str(abs_state['a'])) if 'a' in abs_state.keys() else 0.0
-            self.abs_state.e = eval(str(abs_state['e'])) if 'e' in abs_state.keys() else 0.0
-            self.abs_state.i = eval(str(abs_state['i'])) if 'i' in abs_state.keys() else 0.0
-            self.abs_state.O = eval(str(abs_state['O'])) if 'O' in abs_state.keys() else 0.0
-            self.abs_state.w = eval(str(abs_state['w'])) if 'w' in abs_state.keys() else 0.0
-            self.abs_state.v = eval(str(abs_state['v'])) if 'v' in abs_state.keys() else 0.0
+            self.abs_state.a = eval(str(abs_state['a'])) if 'a' in abs_state.keys() else ValueError('a not defined!')
+            self.abs_state.e = eval(str(abs_state['e'])) if 'e' in abs_state.keys() else ValueError('e not defined!')
+            self.abs_state.i = eval(str(abs_state['i'])) if 'i' in abs_state.keys() else ValueError('i not defined!')
+            self.abs_state.O = eval(str(abs_state['O'])) if 'O' in abs_state.keys() else ValueError('O not defined!')
+            self.abs_state.w = eval(str(abs_state['w'])) if 'w' in abs_state.keys() else ValueError('w not defined!')
+            self.abs_state.v = eval(str(abs_state['v'])) if 'v' in abs_state.keys() else ValueError('v not defined!')
         elif type(abs_state) == KepOrbElem:
             self.abs_state.a = abs_state.a
             self.abs_state.e = abs_state.e
@@ -133,4 +135,4 @@ class AbsoluteCP(CheckPoint):
             self.abs_state.w = abs_state.w
             self.abs_state.v = abs_state.v
         else:
-            raise TypeError
+            raise TypeError('Object and argument type mismatch!')
