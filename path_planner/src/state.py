@@ -12,7 +12,7 @@ import sys
 import yaml
 
 from rospace_lib import KepOrbElem, CartesianTEME, OscKepOrbElem, CartesianLVLH
-from path_planning_propagator import Propagator
+from rospace_lib.propagator import Propagator
 
 
 class Satellite(object):
