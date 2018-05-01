@@ -95,6 +95,13 @@ class CheckPoint(object):
             raise AttributeError('Checkpoint state has already been defined!')
 
     def set_from_checkpoint(self, chkp):
+        """
+            Set the attributes of a checkpoint given another checkpoint as reference.
+
+        Args:
+            chkp (CheckPoint)
+        """
+
         self.set_state(chkp.state)
         self.id = chkp.id
         self.error_ellipsoid = chkp.error_ellipsoid
