@@ -48,6 +48,7 @@ class OrbitAdjuster(object):
 class HohmannTransfer(OrbitAdjuster):
     """
         Subclass holding the function to evaluate a Hohmann Transfer.
+        Given a satellite and a checkpoint, evaluate the amount of delta-V needed to perform the two burns.
         Can be used to do corrections during absolute navigation.
     """
 
@@ -57,6 +58,9 @@ class HohmannTransfer(OrbitAdjuster):
     def is_necessary(self):
         """
             Function to test if this type of orbit adjuster is needed.
+            Checking if there are differences in semi-major axis and eccentricity between the actual state and the
+            future checkpoint. This difference are compared then to some manually defined tolerances.
+
         """
 
         mean_oe = self.satellite.get_mean_oe()
@@ -64,8 +68,14 @@ class HohmannTransfer(OrbitAdjuster):
         da = self.checkpoint.abs_state.a - mean_oe.a
         de = self.checkpoint.abs_state.e - mean_oe.e
 
-        tol_a = 0.2
-        tol_e = 1.0 / mean_oe.a
+        # Tolerances, evaluated manually to ensure a precision of at least 100 meter
+        # Difference as to be above 100 meter to call the orbit adjuster, and is calculated as follow (for
+        # eccentricity):
+        # rp1 = a * (1 - e1)
+        # rp2 = a * (1 - e2)
+        # rp1 - rp2 < 0.1 km => e2 - e1 = tol_e < 0.1 / a
+        tol_a = 0.1
+        tol_e = 0.1 / mean_oe.a
 
         if abs(da) > tol_a or abs(de) > tol_e:
             return True
@@ -141,13 +151,19 @@ class ArgumentOfPerigee(OrbitAdjuster):
     def is_necessary(self):
         """
             Function to test if this type of orbit adjuster is needed.
+            Check the difference between argument of perigee of actual state and of checkpoint, if it's above a certain
+            manually defined tolerance, perform the manoeuvre.
         """
 
         mean_oe = self.satellite.get_mean_oe()
 
         dw = self.checkpoint.abs_state.w - mean_oe.w
 
-        tol_w = 1.0 / mean_oe.a
+        # Tolerance, evaluated manually to ensure a precision of at least 100 meter
+        # Assuming an almost circular orbit, a deviation of tol_w in the argument of perigee should give maximum a 100
+        # meters deviation, therefore assuming a radius equal to semi-major axis, the tolerance is calculated as:
+        # 0.1 km = tol_w * a
+        tol_w = 0.1 / mean_oe.a
 
         if abs(dw) > tol_w:
             return True
@@ -178,7 +194,7 @@ class ArgumentOfPerigee(OrbitAdjuster):
         theta_f_1 = 2.0 * np.pi - theta_i_1
         theta_f_2 = theta_f_1 - np.pi
 
-        # Check which one is the closest TODO: Check the least consuming instead of the closest
+        # Check which one is the closest
         if theta_i_1 < mean_oe.v:
             dv1 = 2.0 * np.pi + theta_i_1 - mean_oe.v
         else:
@@ -213,6 +229,7 @@ class ArgumentOfPerigee(OrbitAdjuster):
 class PlaneOrientation(OrbitAdjuster):
     """
         Subclass holding the function to evaluate the deltaV needed to change in plane orientation.
+        A single delta-V manoeuvre will be evaluated to correct both inclination and RAAN at the same time.
         Can be used to do corrections during absolute navigation.
     """
 
@@ -222,6 +239,8 @@ class PlaneOrientation(OrbitAdjuster):
     def is_necessary(self):
         """
             Function to test if this type of orbit adjuster is needed.
+            Check if the difference in inclination and RAAN between actual state and checkpoint are above a certain
+            manually calculated tolerance.
         """
 
         mean_oe = self.satellite.get_mean_oe()
@@ -229,8 +248,14 @@ class PlaneOrientation(OrbitAdjuster):
         di = self.checkpoint.abs_state.i - mean_oe.i
         dO = self.checkpoint.abs_state.O - mean_oe.O
 
-        tol_i = 1.0 / mean_oe.a
-        tol_O = 1.0 / mean_oe.a
+        # Tolerances, evaluated manually to ensure a precision of at least 100 meter
+        # Assuming an almost circular orbit, a deviation of tol_i in the inclination or of tol_O in RAAN should give
+        # maximum a 100 meters deviation, therefore assuming a radius equal to semi-major axis, the tolerance is
+        # calculated as:
+        # 0.1 km = tol_i * a
+        # 0.1 km = tol_O * a
+        tol_i = 0.1 / mean_oe.a
+        tol_O = 0.1 / mean_oe.a
 
         if abs(di) > tol_i or abs(dO) > tol_O:
             return True
@@ -339,178 +364,3 @@ class PlaneOrientation(OrbitAdjuster):
         deltaV_C = V_TEM_f - V_TEM_i
 
         return [(deltaV_C, theta_i)]
-
-
-class AnomalySynchronisation(OrbitAdjuster):
-
-    def __init__(self):
-        pass
-
-    def evaluate_manoeuvre(self):
-        pass
-
-
-class Drift(OrbitAdjuster):
-
-    def __init__(self):
-        pass
-
-    def evaluate_manoeuvre(self):
-        pass
-
-
-class MultiLambert(OrbitAdjuster):
-
-    def __init__(self):
-        pass
-
-    def evaluate_manoeuvre(self):
-        pass
-
-
-class ClohessyWiltshire(OrbitAdjuster):
-    """
-        Subclass holding the function to evaluate the deltaV needed to do a manoeuvre in LVLH frame, using the
-        linearized solution of Clohessy-Wiltshire.
-        Can be used to do corrections during relative navigation.
-    """
-
-    def __init__(self, sat, chkp):
-        super(ClohessyWiltshire, self).__init__(sat, chkp)
-
-    def evaluate_manoeuvre(self, target):
-        """
-            Solve Hill's Equation to get the amount of DeltaV needed to go to the next checkpoint.
-
-        References:
-            David A. Vallado, Fundamentals of Astrodynamics and Applications, Second Edition, Algorithm 47 (p. 382)
-
-        Args:
-            target (Satellite): Target state.
-        """
-
-        a = target.abs_state.a
-
-        t_min = self.checkpoint.t_min
-        t_max = self.checkpoint.t_max
-
-        r_rel_c_0 = self.rel_state.R
-        v_rel_c_0 = self.rel_state.V
-
-        r_rel_c_n = self.checkpoint.rel_state.R
-        v_rel_c_n = self.checkpoint.rel_state.V
-
-        n = np.sqrt(mu_earth / a ** 3.0)
-
-        phi_rr = lambda t: np.array([
-            [4.0 - 3.0 * np.cos(n * t), 0.0, 0.0],
-            [6.0 * (np.sin(n * t) - n * t), 1.0, 0.0],
-            [0.0, 0.0, np.cos(n * t)]
-        ])
-
-        phi_rv = lambda t: np.array([
-            [1.0 / n * np.sin(n * t), 2.0 / n * (1 - np.cos(n * t)), 0.0],
-            [2.0 / n * (np.cos(n * t) - 1.0), 1.0 / n * (4.0 * np.sin(n * t) - 3.0 * n * t), 0.0],
-            [0.0, 0.0, 1.0 / n * np.sin(n * t)]
-        ])
-
-        phi_vr = lambda t: np.array([
-            [3.0 * n * np.sin(n * t), 0.0, 0.0],
-            [6.0 * n * (np.cos(n * t) - 1), 0.0, 0.0],
-            [0.0, 0.0, -n * np.sin(n * t)]
-        ])
-
-        phi_vv = lambda t: np.array([
-            [np.cos(n * t), 2.0 * np.sin(n * t), 0.0],
-            [-2.0 * np.sin(n * t), 4.0 * np.cos(n * t) - 3.0, 0.0],
-            [0.0, 0.0, np.cos(n * t)]
-        ])
-
-        best_deltaV = 1e12
-        delta_T = 0
-
-        for t_ in xrange(t_min, t_max):
-            rv_t = phi_rv(t_)
-            deltaV_1 = np.linalg.inv(rv_t).dot(r_rel_c_n - np.dot(phi_rr(t_), r_rel_c_0)) - v_rel_c_0
-            deltaV_2 = np.dot(phi_vr(t_), r_rel_c_0) + np.dot(phi_vv(t_), v_rel_c_0 + deltaV_1) - v_rel_c_n
-
-            deltaV_tot = np.linalg.norm(deltaV_1) + np.linalg.norm(deltaV_2)
-
-            if best_deltaV > deltaV_tot:
-                best_deltaV = deltaV_tot
-                best_deltaV_1 = deltaV_1
-                best_deltaV_2 = deltaV_2
-                delta_T = t_
-
-        target_cart = Cartesian()
-        target_cart.from_keporb(target.abs_state)
-
-        # Change frame of reference of deltaV. From LVLH to Earth-Inertial
-        B = target_cart.get_lof()
-        deltaV_C_1 = np.linalg.inv(B).dot(best_deltaV_1)
-
-        # Create command
-        c1 = RelativeMan()
-        c1.dV = deltaV_C_1
-        c1.set_abs_state(chaser.abs_state)
-        c1.set_rel_state(chaser.rel_state)
-        c1.duration = 0
-        c1.description = 'CW approach'
-
-        # Propagate chaser and target
-        self._propagator(chaser, target, 1e-5, deltaV_C_1)
-
-        self._propagator(chaser, target, delta_T)
-
-        self.print_state(chaser, target)
-
-        self.manoeuvre_plan.append(c1)
-
-        target_cart.from_keporb(target.abs_state)
-
-        R = target_cart.get_lof()
-        deltaV_C_2 = np.linalg.inv(R).dot(best_deltaV_2)
-
-        # Create command
-        c2 = RelativeMan()
-        c2.dV = deltaV_C_2
-        c2.set_abs_state(chaser.abs_state)
-        c2.set_rel_state(chaser.rel_state)
-        c2.duration = delta_T
-        c2.description = 'CW approach'
-
-        # Propagate chaser and target to evaluate all the future commands properly
-        self._propagator(chaser, target, 1e-5, deltaV_C_2)
-
-        self.print_state(chaser, target)
-
-        self.manoeuvre_plan.append(c2)
-
-        return [(best_deltaV_1, theta_1), (best_deltaV_2, theta_2)]
-
-
-class TschaunerHempel(OrbitAdjuster):
-
-    def __init__(self):
-        pass
-
-    def evaluate_manoeuvre(self):
-        pass
-
-
-class HamelDeLafontaine(OrbitAdjuster):
-
-    def __init__(self):
-        pass
-
-    def evaluate_manoeuvre(self):
-        pass
-
-
-class GeneticAlgorithm(OrbitAdjuster):
-
-    def __init__(self):
-        pass
-
-    def evaluate_manoeuvre(self):
-        pass
