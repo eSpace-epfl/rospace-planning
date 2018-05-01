@@ -2,7 +2,7 @@
 <package format="2">
   <name>cso_path_planner</name>
   <version>0.0.0</version>
-  <description>Node that contains the path planning algorithm</description>
+  <description>Repository that contains the path planning algorithm</description>
 
   <maintainer email="freyda@student.ethz.ch">Davide Frey</maintainer>
 
@@ -11,14 +11,12 @@
   <buildtool_depend>catkin</buildtool_depend>
   <buildtool_depend>catkin_simple</buildtool_depend>
 
-  <depend>message_generation</depend>
-  <depend>message_runtime</depend>
-
   <depend>rospy</depend>
-  <depend>roscpp</depend>
 
   <depend>std_msgs</depend>
+
   <depend>geometry_msgs</depend>
-  <depend>space_msgs</depend>
+  <depend>rospace_lib</depend>
+  <depend>rospace_msgs</depend>
 
 </package>
