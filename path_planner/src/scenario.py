@@ -81,8 +81,8 @@ class Scenario(object):
                     self.target_ic.set_from_satellite(obj['target_ic'])
                     self.chaser_ic.set_from_satellite(obj['chaser_ic'])
 
-                    self.target_ic.prop.initialize_propagator('target', self.target_ic.get_osc_oe(), 'real-world')
-                    self.chaser_ic.prop.initialize_propagator('chaser', self.chaser_ic.get_osc_oe(), 'real-world')
+                    # self.target_ic.prop.initialize_propagator('target', self.target_ic.get_osc_oe(), 'real-world')
+                    # self.chaser_ic.prop.initialize_propagator('chaser', self.chaser_ic.get_osc_oe(), 'real-world')
 
                     self.date = obj['scenario_epoch']
 
