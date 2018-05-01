@@ -13,9 +13,9 @@ import pykep as pk
 import scipy.io as sio
 import os
 
+from rospace_lib import CartesianTEME
 from scenario import Scenario
 from state import Chaser, Satellite
-from rospace_lib import Cartesian, mu_earth, KepOrbElem
 from datetime import timedelta
 from path_planning_propagator import Propagator
 
@@ -50,17 +50,21 @@ def plot_result(manoeuvre_plan, scenario, save_path):
     # Simulating the whole manoeuvre and store the result
     chaser = Chaser()
     target = Satellite()
-    chaser_extra = Chaser()
+    # chaser_extra = Chaser()
 
     chaser.set_from_satellite(scenario.chaser_ic)
     target.set_from_satellite(scenario.target_ic)
 
-    chaser_cart_extra = Cartesian()
-    target_cart_extra = Cartesian()
+    chaser_cart_extra = CartesianTEME()
+    target_cart_extra = CartesianTEME()
 
     epoch = scenario.date
 
-    extra_propagation = 0
+    # extra_propagation = 0
+
+    # Set propagators
+    chaser.prop.initialize_propagator('chaser', chaser.get_osc_oe(), 'real-world', epoch)
+    target.prop.initialize_propagator('target', target.get_osc_oe(), 'real-world', epoch)
 
     print "--------------------Chaser initial state-------------------"
     print " >> Osc Elements:"
@@ -89,39 +93,30 @@ def plot_result(manoeuvre_plan, scenario, save_path):
 
         man = manoeuvre_plan[i]
 
-        for j in xrange(0, int(np.floor(man.duration)), 100):
-            chaser_prop = scenario.prop_chaser.propagate(epoch + timedelta(seconds=j))
-            target_prop = scenario.prop_target.propagate(epoch + timedelta(seconds=j))
+        duration = (man.execution_epoch - epoch).total_seconds()
 
-            chaser_cart.R = chaser_prop[0].R
-            chaser_cart.V = chaser_prop[0].V
-            target_cart.R = target_prop[0].R
-            target_cart.V = target_prop[0].V
+        for j in xrange(0, int(np.floor(duration)), 100):
+            chaser_prop = chaser.prop.orekit_prop.propagate(epoch + timedelta(seconds=j))
+            target_prop = target.prop.orekit_prop.propagate(epoch + timedelta(seconds=j))
 
-            chaser.rel_state.from_cartesian_pair(chaser_cart, target_cart)
+            chaser.rel_state.from_cartesian_pair(chaser_prop[0], target_prop[0])
 
-            R_chaser.append(chaser_cart.R)
-            R_target.append(target_cart.R)
+            R_chaser.append(chaser_prop[0].R)
+            R_target.append(target_prop[0].R)
             R_chaser_lvlh.append(chaser.rel_state.R)
 
         # Re-initialize propagators and update epoch
-        epoch += timedelta(seconds=man.duration)
+        epoch += timedelta(seconds=duration)
 
-        chaser_prop = scenario.prop_chaser.propagate(epoch)
-        target_prop = scenario.prop_target.propagate(epoch)
+        chaser_prop = chaser.prop.orekit_prop.propagate(epoch)
+        target_prop = target.prop.orekit_prop.propagate(epoch)
 
-        chaser_cart.R = chaser_prop[0].R
-        chaser_cart.V = chaser_prop[0].V
+        chaser.rel_state.from_cartesian_pair(chaser_prop[0], target_prop[0])
 
-        target_cart.R = target_prop[0].R
-        target_cart.V = target_prop[0].V
+        chaser_prop[0].V += man.deltaV
 
-        chaser.rel_state.from_cartesian_pair(chaser_cart, target_cart)
-
-        chaser_cart.V += man.dV
-
-        _change_propagator_ic(scenario.prop_chaser, chaser_cart, epoch, chaser.mass)
-        _change_propagator_ic(scenario.prop_target, target_cart, epoch, target.mass)
+        chaser.prop.change_initial_conditions(chaser_prop[0], epoch, chaser.mass)
+        target.prop.change_initial_conditions(target_prop[0], epoch, target.mass)
 
         print "     End pos: " + str(chaser.rel_state.R)
 
@@ -163,7 +158,7 @@ def plot_result(manoeuvre_plan, scenario, save_path):
         # Saving in .mat file
         sio.savemat(save_path + '/test_' + str(last + 1) + '/manoeuvre_' + str(i) + '.mat',
                     mdict={'abs_state_c': R_chaser, 'rel_state_c': R_chaser_lvlh, 'abs_state_t': R_target,
-                           'deltaV': man.dV, 'duration': man.duration}) #, 'rel_state_c_extra': R_chaser_lvlh_extra})
+                           'deltaV': man.deltaV, 'duration': duration}) #, 'rel_state_c_extra': R_chaser_lvlh_extra})
 
     print "\nManoeuvre saved."
 
