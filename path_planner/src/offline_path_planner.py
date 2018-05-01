@@ -8,11 +8,25 @@
 
 """Main file to solve a scenario offline."""
 
+import argparse
+
 from scenario import Scenario
 from solver import Solver
 
+
 def main():
+    """
+        Run the offline path planner.
+        This function import automatically the scenario stated in:
+            cfg/scenario.yaml
+        and import initial conditions in:
+            cfg/initial_conditions.yaml
+
+        After importing, it solves it and finally saves it in a .pickle file in the example/ folder.
+    """
+
     # Import scenario and initial conditions
+    # initial_conditions.yaml
     scenario = Scenario()
     scenario.import_yaml_scenario()
 
