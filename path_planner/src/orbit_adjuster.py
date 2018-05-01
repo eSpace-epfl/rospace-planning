@@ -79,10 +79,17 @@ class OrbitAdjuster(object):
             man (Manoeuvre): The manoeuvre to be added to manoeuvre plan
         """
 
+        # Propagation timestep
+        dt_prop = 100
+
         # Define new starting epoch
         new_epoch = chaser.prop.date + timedelta(seconds=dt)
 
-        # Propagate both satellite and target to the new epoch
+        # Propagate in smaller timestep to increase precision
+        for j in xrange(0, int(np.floor(dt)), dt_prop):
+            chaser.prop.orekit_prop.propagate(chaser.prop.date + timedelta(seconds=j))
+            target.prop.orekit_prop.propagate(target.prop.date + timedelta(seconds=j))
+
         chaser_prop = chaser.prop.orekit_prop.propagate(new_epoch)
         target_prop = target.prop.orekit_prop.propagate(new_epoch)
 
