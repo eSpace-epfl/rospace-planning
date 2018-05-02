@@ -12,7 +12,7 @@ import os
 import yaml
 
 from rospace_lib import KepOrbElem, CartesianTEME, OscKepOrbElem, CartesianLVLH
-from rospace_lib.propagator import Propagator
+from rospace_lib.misc import QuickPropagator
 
 
 class Satellite(object):
@@ -24,14 +24,14 @@ class Satellite(object):
         mass (float64): Mass of the satellite in [kg].
         abs_state (CartesianTEME): Cartesian absolute position of the satellite with respect to Earth Inertial frame.
         name (str): Name of the satellite.
-        prop (Propagator): Propagator of this satellite.
+        prop (QuickPropagator): QuickPropagator of this satellite.
     """
 
     def __init__(self):
         self.mass = 0.0
         self.abs_state = CartesianTEME()
         self.name = ''
-        self.prop = Propagator()
+        self.prop = QuickPropagator()
 
     def initialize_satellite(self, name, date, prop_type, target=None):
         """
