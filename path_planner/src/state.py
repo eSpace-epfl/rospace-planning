@@ -8,7 +8,7 @@
 
 """Class defining the state of a satellite."""
 
-import sys
+import os
 import yaml
 
 from rospace_lib import KepOrbElem, CartesianTEME, OscKepOrbElem, CartesianLVLH
@@ -45,13 +45,9 @@ class Satellite(object):
                 relative state with respect to it.
         """
 
-        # Actual path
-        abs_path = sys.argv[0]
-        path_idx = abs_path.find('path_planner')
-        abs_path = abs_path[0:path_idx]
-
         # Opening initial conditions file
-        initial_conditions_path = abs_path + 'path_planner/cfg/initial_conditions.yaml'
+        abs_path = os.path.dirname(os.path.abspath(__file__))
+        initial_conditions_path = os.path.join(abs_path, '../cfg/initial_conditions.yaml')
         initial_conditions_file = file(initial_conditions_path, 'r')
         initial_conditions = yaml.load(initial_conditions_file)
 

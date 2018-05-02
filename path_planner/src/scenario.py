@@ -11,7 +11,7 @@
 import yaml
 import numpy as np
 import pickle
-import sys
+import os
 
 from state import Satellite, Chaser
 from checkpoint import AbsoluteCP, RelativeCP
@@ -62,11 +62,8 @@ class Scenario(object):
         """
 
         # Actual path
-        abs_path = sys.argv[0]
-        path_idx = abs_path.find('cso_path_planner')
-        abs_path = abs_path[0:path_idx + 16]
-
-        scenario_path = abs_path + '/example/scenario.pickle'
+        abs_path = os.path.dirname(os.path.abspath(__file__))
+        scenario_path = os.path.join(abs_path, '../example/scenario.pickle')
 
         # Try to import the file
         try:
@@ -83,11 +80,9 @@ class Scenario(object):
 
                     return obj['manoeuvre_plan']
                 else:
-                    print "[WARNING]: Scenario in cfg folder does not correspond to actual one."
-                    sys.exit(1)
+                    raise TypeError('Scenario in cfg folder does not correspond to actual one!')
         except IOError:
-            print "\n[WARNING]: Scenario file not found."
-            sys.exit(1)
+            raise IOError('Scenario file not found!')
 
     def export_solved_scenario(self, manoeuvre_plan):
         """
@@ -95,11 +90,8 @@ class Scenario(object):
         """
 
         # Actual path
-        abs_path = sys.argv[0]
-        path_idx = abs_path.find('path_planner')
-        abs_path = abs_path[0:path_idx]
-
-        pickle_path = abs_path + 'path_planner/example/scenario.pickle'
+        abs_path = os.path.dirname(os.path.abspath(__file__))
+        pickle_path = os.path.join(abs_path, '../example/scenario.pickle')
 
         with open(pickle_path, 'wb') as file:
 
@@ -119,13 +111,9 @@ class Scenario(object):
             Parse scenario and import initial conditions from .yaml files in the /cfg folder.
         """
 
-        # Actual path
-        abs_path = sys.argv[0]
-        path_idx = abs_path.find('path_planner')
-        abs_path = abs_path[0:path_idx]
-
         # Opening scenario file
-        scenario_path = abs_path + 'path_planner/cfg/scenario.yaml'
+        abs_path = os.path.dirname(os.path.abspath(__file__))
+        scenario_path = os.path.join(abs_path, '../cfg/scenario.yaml')
         scenario_file = file(scenario_path, 'r')
         scenario = yaml.load(scenario_file)
         scenario = scenario['scenario']
