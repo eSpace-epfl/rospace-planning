@@ -12,7 +12,7 @@ import sys
 import yaml
 
 from rospace_lib import KepOrbElem, CartesianTEME, OscKepOrbElem, CartesianLVLH
-from path_planning_propagator import Propagator
+from rospace_lib.misc import QuickPropagator
 from copy import deepcopy
 
 
@@ -28,11 +28,11 @@ class Satellite(object):
         prop (Propagator): Propagator of this satellite.
     """
 
-    def __init__(self):
+    def __init__(self, date):
         self.mass = 0.0
         self.abs_state = CartesianTEME()
         self.name = ''
-        self.prop = Propagator()
+        self.prop = QuickPropagator(date)
 
     def initialize_satellite(self, name, date, prop_type, target=None):
         """
@@ -98,7 +98,7 @@ class Satellite(object):
         self.mass = eval(str(initial_conditions['mass']))
 
         # Assign propagator
-        self.prop.initialize_propagator(name, satellite_ic, prop_type, date)
+        self.prop.initialize_propagator(name, satellite_ic, prop_type)
 
     def set_from_satellite(self, satellite):
         """
@@ -181,8 +181,8 @@ class Chaser(Satellite):
             rel_state (CartesianLVLH): Holds the relative coordinates with respect to another satellite.
     """
 
-    def __init__(self):
-        super(Chaser, self).__init__()
+    def __init__(self, date):
+        super(Chaser, self).__init__(date)
 
         self.rel_state = CartesianLVLH()
 

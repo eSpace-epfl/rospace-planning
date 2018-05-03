@@ -10,14 +10,15 @@
 
 from scenario import Scenario
 from solver import Solver
+from datetime import datetime
 
-def main(filename, save=False):
+def main(filename, date=datetime.utcnow(), save=False):
     # Import scenario and initial conditions
-    scenario = Scenario()
+    scenario = Scenario(date)
     scenario.import_yaml_scenario(filename)
 
     # Solve scenario
-    solver = Solver()
+    solver = Solver(date)
     solver.initialize_solver(scenario)
     solver.solve_scenario()
 
@@ -28,5 +29,5 @@ def main(filename, save=False):
     return solver.tot_dV
 
 if __name__ == "__main__":
-    main('scenario', True)
+    main('scenario', save=True)
 

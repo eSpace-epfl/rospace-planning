@@ -34,7 +34,7 @@ class Scenario(object):
             koz_r (float64): Radius of Keep-Out Zone drawn around the target [km].
     """
 
-    def __init__(self):
+    def __init__(self, date):
         # Scenario information
         self.name = 'Standard'
         self.overview = ''
@@ -43,15 +43,15 @@ class Scenario(object):
         self.checkpoints = []
 
         # Satellite initial states
-        self.chaser_ic = Chaser()
-        self.target_ic = Satellite()
+        self.chaser_ic = Chaser(date)
+        self.target_ic = Satellite(date)
 
         # Target Keep-Out Zones
         self.approach_ellipsoid = np.array([0.0, 0.0, 0.0])
         self.koz_r = 0.0
 
         # Scenario starting date
-        self.date = datetime(2017, 1, 1, 12, 0, 0)
+        self.date = date
 
     def import_solved_scenario(self):
         """
