@@ -24,7 +24,7 @@ class Satellite(object):
         mass (float64): Mass of the satellite in [kg].
         abs_state (CartesianTEME): Cartesian absolute position of the satellite with respect to Earth Inertial frame.
         name (str): Name of the satellite.
-        prop (Propagator): Propagator of this satellite.
+        prop (QuickPropagator): QuickPropagator of this satellite.
     """
 
     def __init__(self, date):
