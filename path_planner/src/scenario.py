@@ -91,6 +91,11 @@ class Scenario(object):
 
         # Actual path
         abs_path = os.path.dirname(os.path.abspath(__file__))
+
+        # Check if "/example" folder exists
+        if not os.path.exists(os.path.join(abs_path, '../example')):
+            os.makedirs(os.path.join(abs_path, '../example'))
+
         pickle_path = os.path.join(abs_path, '../example/scenario.pickle')
 
         with open(pickle_path, 'wb') as file:
