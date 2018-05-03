@@ -20,13 +20,13 @@ class OrbAdjTest(unittest.TestCase):
 
     def test_multi_lambert(self):
 
-        target = Satellite()
+        date = datetime.utcnow()
+
+        target = Satellite(date)
         target.mass = 0.82
 
-        chaser = Chaser()
+        chaser = Chaser(date)
         chaser.mass = 30.0
-
-        date = datetime.utcnow()
 
         R_T_0 = np.array([1622.39, 5305.10, 3717.44])
         V_T_0 = np.array([-7.29977, 0.492357, 2.48318])
@@ -38,8 +38,8 @@ class OrbAdjTest(unittest.TestCase):
         chaser.rel_state.V = np.array([  1.16197802e-07,   1.62816739e-03,   5.55477431e-16])
         chaser.abs_state.from_lvlh_frame(target.abs_state, chaser.rel_state)
 
-        target.prop.initialize_propagator('target', target.get_osc_oe(), '2-body', date)
-        chaser.prop.initialize_propagator('chaser', chaser.get_osc_oe(), '2-body', date)
+        target.prop.initialize_propagator('target', target.get_osc_oe(), '2-body')
+        chaser.prop.initialize_propagator('chaser', chaser.get_osc_oe(), '2-body')
 
         checkpoint = RelativeCP()
         checkpoint.rel_state.R = np.array([0.0, 1.0, 0.0])
@@ -58,13 +58,13 @@ class OrbAdjTest(unittest.TestCase):
 
     def test_clohessy_wiltshire(self):
 
-        target = Satellite()
+        date = datetime.utcnow()
+
+        target = Satellite(date)
         target.mass = 0.82
 
-        chaser = Chaser()
+        chaser = Chaser(date)
         chaser.mass = 30.0
-
-        date = datetime.utcnow()
 
         R_T_0 = np.array([1622.39, 5305.10, 3717.44])
         V_T_0 = np.array([-7.29977, 0.492357, 2.48318])
@@ -76,8 +76,8 @@ class OrbAdjTest(unittest.TestCase):
         chaser.rel_state.V = np.array([  1.16197802e-07,   1.62816739e-03,   5.55477431e-16])
         chaser.abs_state.from_lvlh_frame(target.abs_state, chaser.rel_state)
 
-        target.prop.initialize_propagator('target', target.get_osc_oe(), '2-body', date)
-        chaser.prop.initialize_propagator('chaser', chaser.get_osc_oe(), '2-body', date)
+        target.prop.initialize_propagator('target', target.get_osc_oe(), '2-body')
+        chaser.prop.initialize_propagator('chaser', chaser.get_osc_oe(), '2-body')
 
         checkpoint = RelativeCP()
         checkpoint.rel_state.R = np.array([0.0, 1.0, 0.0])
