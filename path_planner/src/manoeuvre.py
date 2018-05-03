@@ -10,49 +10,44 @@
 
 import numpy as np
 
-from rospace_lib import KepOrbElem, CartesianLVLH
+from rospace_lib import CartesianLVLH
+from copy import deepcopy
 
 
 class Manoeuvre(object):
     """
-        Base class that contains the definition of a manoeuvre.
+        Base class that contains the definition of a manoeuvre for absolute navigation.
 
     Attributes:
         deltaV (array): Amount of delta-v needed to execute the burn. Given in kilometers per second with respect
             to TEME reference frame.
-        initial_state (KepOrbElem or CartesianLVLH): State at which the manoeuvre has to be executed, can be either
-            defined in mean orbital elements or in cartesian LVLH reference frame.
         execution_epoch (datetime): Epoch at which the manoeuvre should be executed.
     """
 
     def __init__(self):
         self.deltaV = np.array([0, 0, 0])
-        self.initial_state = None
         self.execution_epoch = None
 
-    def set_initial_state(self, state):
-        """Set manoeuvre initial state in KepOrbElem or CartesianLVLH.
+
+class RelativeMan(Manoeuvre):
+    """
+        Extended class for manoeuvres in relative navigation.
+
+    Attributes:
+        initial_rel_state (CartesianLVLH): Relative state at which manoeuvre should occur given in LVLH frame.
+    """
+
+    def __init__(self):
+        super(RelativeMan, self).__init__()
+
+        self.initial_rel_state = CartesianLVLH()
+
+    def set_initial_rel_state(self, rel_state):
+        """
+            Define the starting relative state of the manoeuvre.
 
         Args:
-            abs_state (KepOrbElem): Absolute state in keplerian orbital elements.
+            rel_state (CartesianLVLH): Relative state given in LVLH frame.
         """
 
-        state_type = type(state)
-
-        if self.initial_state == None:
-            if state_type == KepOrbElem:
-                self.initial_state = KepOrbElem()
-                self.initial_state.a = state.a
-                self.initial_state.e = state.e
-                self.initial_state.i = state.i
-                self.initial_state.O = state.O
-                self.initial_state.w = state.w
-                self.initial_state.v = state.v
-            elif state_type == CartesianLVLH:
-                self.initial_state = CartesianLVLH()
-                self.initial_state.R = state.R
-                self.initial_state.V = state.V
-            else:
-                raise TypeError('State type not allowed!')
-        else:
-            raise AttributeError('Manoeuvre initial state has already been defined!')
+        self.initial_rel_state = deepcopy(rel_state)

@@ -8,12 +8,11 @@
 
 """Class defining the state of a satellite."""
 
-import sys
+import os
 import yaml
-import numpy as np
 
-from rospace_lib import KepOrbElem, CartesianTEME, OscKepOrbElem
-from rospace_lib.propagator import Propagator
+from rospace_lib import KepOrbElem, CartesianTEME, OscKepOrbElem, CartesianLVLH
+from rospace_lib.misc import QuickPropagator
 
 
 class Satellite(object):
@@ -23,34 +22,31 @@ class Satellite(object):
 
     Attributes:
         mass (float64): Mass of the satellite in [kg].
-        abs_state (Cartesian): Cartesian absolute position of the satellite with respect to Earth Inertial frame.
+        abs_state (CartesianTEME): Cartesian absolute position of the satellite with respect to Earth Inertial frame.
         name (str): Name of the satellite.
-        prop (Propagator): Propagator of this satellite.
+        prop (QuickPropagator): QuickPropagator of this satellite.
     """
 
-    def __init__(self):
+    def __init__(self, date):
         self.mass = 0.0
         self.abs_state = CartesianTEME()
         self.name = ''
-        self.prop = Propagator()
+        self.prop = QuickPropagator(date)
 
-    def initialize_satellite(self, name, date, prop_type='real-world'):
+    def initialize_satellite(self, name, prop_type, target=None):
         """
             Initialize satellite attributes from the configuration files.
 
         Args:
             name (str): Name of the satellite, which should be stated as well in initial_conditions.yaml file.
-            date (datetime): Date at which the satellite (the propagator) has to be initialized.
             prop_type (str): Define the type of propagator to be used (2-body or real-world).
+            target (Satellite): If self is a chaser type satellite, the reference target is needed to define the
+                relative state with respect to it.
         """
 
-        # Actual path
-        abs_path = sys.argv[0]
-        path_idx = abs_path.find('path_planner')
-        abs_path = abs_path[0:path_idx]
-
         # Opening initial conditions file
-        initial_conditions_path = abs_path + 'path_planner/cfg/initial_conditions.yaml'
+        abs_path = os.path.dirname(os.path.abspath(__file__))
+        initial_conditions_path = os.path.join(abs_path, '../cfg/initial_conditions.yaml')
         initial_conditions_file = file(initial_conditions_path, 'r')
         initial_conditions = yaml.load(initial_conditions_file)
 
@@ -82,18 +78,25 @@ class Satellite(object):
         # Assign absolute state
         self.abs_state.from_keporb(satellite_ic)
 
+        # Assign relative state
+        if type(self) == Chaser:
+            if target != None:
+                self.set_rel_state_from_target(target)
+            else:
+                raise IOError('Missing target input to initialize chaser!')
+
         # Assign mass
         self.mass = eval(str(initial_conditions['mass']))
 
         # Assign propagator
-        self.prop.initialize_propagator(name, satellite_ic, prop_type, date)
+        self.prop.initialize_propagator(name, satellite_ic, prop_type)
 
     def set_from_satellite(self, satellite):
         """
             Set attributes of the satellite using as reference another satellite.
 
         Args:
-            satellite (Satellite)
+            satellite (Satellite or Chaser)
         """
 
         if type(self) != type(satellite):
@@ -103,6 +106,10 @@ class Satellite(object):
         self.abs_state.V = satellite.abs_state.V
         self.mass = satellite.mass
         self.prop = satellite.prop
+
+        if hasattr(self, 'rel_state'):
+            self.rel_state.R = satellite.rel_state.R
+            self.rel_state.V = satellite.rel_state.V
 
     def set_abs_state_from_cartesian(self, cartesian):
         """
@@ -151,3 +158,38 @@ class Satellite(object):
             raise TypeError('Propagator type not recognized!')
 
         return kep_mean
+
+
+class Chaser(Satellite):
+    """
+        Class that holds the information for a chaser. In addition to the Satellite information, also the relative
+        position with respect to another satellite (target) is needed.
+
+        Attributes:
+            rel_state (CartesianLVLH): Holds the relative coordinates with respect to another satellite.
+    """
+
+    def __init__(self, date):
+        super(Chaser, self).__init__(date)
+
+        self.rel_state = CartesianLVLH()
+
+    def set_rel_state_from_target(self, target):
+        """
+            Set relative state given target and chaser absolute states.
+
+        Args:
+            target (Satellite): State of the target.
+        """
+
+        self.rel_state.from_cartesian_pair(self.abs_state, target.abs_state)
+
+    def set_abs_state_from_target(self, target):
+        """
+            Set absolute state given target absolute state and chaser relative state.
+
+        Args:
+             target (Satellite): State of the target.
+        """
+
+        self.abs_state.from_lvlh_frame(target.abs_state, self.rel_state)

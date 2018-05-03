@@ -11,10 +11,10 @@
 import yaml
 import numpy as np
 import pickle
-import sys
+import os
 
-from state import Satellite
-from checkpoint import CheckPoint
+from state import Satellite, Chaser
+from checkpoint import AbsoluteCP, RelativeCP
 from datetime import datetime
 
 
@@ -34,7 +34,7 @@ class Scenario(object):
             koz_r (float64): Radius of Keep-Out Zone drawn around the target [km].
     """
 
-    def __init__(self):
+    def __init__(self, date):
         # Scenario information
         self.name = 'Standard'
         self.overview = ''
@@ -43,14 +43,15 @@ class Scenario(object):
         self.checkpoints = []
 
         # Satellite initial states
-        self.target_ic = Satellite()
+        self.chaser_ic = Chaser(date)
+        self.target_ic = Satellite(date)
 
         # Target Keep-Out Zones
         self.approach_ellipsoid = np.array([0.0, 0.0, 0.0])
         self.koz_r = 0.0
 
         # Scenario starting date
-        self.date = datetime.utcnow()
+        self.date = date
 
     def import_solved_scenario(self):
         """
@@ -61,11 +62,8 @@ class Scenario(object):
         """
 
         # Actual path
-        abs_path = sys.argv[0]
-        path_idx = abs_path.find('cso_path_planner')
-        abs_path = abs_path[0:path_idx + 16]
-
-        scenario_path = abs_path + '/example/scenario.pickle'
+        abs_path = os.path.dirname(os.path.abspath(__file__))
+        scenario_path = os.path.join(abs_path, '../example/scenario.pickle')
 
         # Try to import the file
         try:
@@ -77,15 +75,14 @@ class Scenario(object):
                     self.checkpoints = obj['checkpoints']
                     self.name = obj['scenario_name']
                     self.target_ic.set_from_satellite(obj['target_ic'])
+                    self.chaser_ic.set_from_satellite(obj['chaser_ic'])
                     self.date = obj['scenario_epoch']
 
                     return obj['manoeuvre_plan']
                 else:
-                    print "[WARNING]: Scenario in cfg folder does not correspond to actual one."
-                    sys.exit(1)
+                    raise TypeError('Scenario in cfg folder does not correspond to actual one!')
         except IOError:
-            print "\n[WARNING]: Scenario file not found."
-            sys.exit(1)
+            raise IOError('Scenario file not found!')
 
     def export_solved_scenario(self, manoeuvre_plan):
         """
@@ -93,19 +90,22 @@ class Scenario(object):
         """
 
         # Actual path
-        abs_path = sys.argv[0]
-        path_idx = abs_path.find('path_planner')
-        abs_path = abs_path[0:path_idx]
+        abs_path = os.path.dirname(os.path.abspath(__file__))
 
-        pickle_path = abs_path + 'path_planner/example/scenario.pickle'
+        # Check if "/example" folder exists
+        if not os.path.exists(os.path.join(abs_path, '../example')):
+            os.makedirs(os.path.join(abs_path, '../example'))
+
+        pickle_path = os.path.join(abs_path, '../example/scenario.pickle')
 
         with open(pickle_path, 'wb') as file:
 
             # Delete propagator to be able to dump satellite in pickle file
             del self.target_ic.prop
+            del self.chaser_ic.prop
 
             obj = {'scenario_name': self.name, 'checkpoints': self.checkpoints, 'manoeuvre_plan': manoeuvre_plan,
-                   'target_ic': self.target_ic, 'scenario_epoch': self.date}
+                   'target_ic': self.target_ic, 'chaser_ic': self.chaser_ic, 'scenario_epoch': self.date}
 
             pickle.dump(obj, file, protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -116,13 +116,9 @@ class Scenario(object):
             Parse scenario and import initial conditions from .yaml files in the /cfg folder.
         """
 
-        # Actual path
-        abs_path = sys.argv[0]
-        path_idx = abs_path.find('path_planner')
-        abs_path = abs_path[0:path_idx]
-
         # Opening scenario file
-        scenario_path = abs_path + 'path_planner/cfg/scenario.yaml'
+        abs_path = os.path.dirname(os.path.abspath(__file__))
+        scenario_path = os.path.join(abs_path, '../cfg/scenario.yaml')
         scenario_file = file(scenario_path, 'r')
         scenario = yaml.load(scenario_file)
         scenario = scenario['scenario']
@@ -133,17 +129,23 @@ class Scenario(object):
         self.overview = scenario['overview']
 
         # Initialize satellites
-        self.target_ic.initialize_satellite('target', self.date, scenario['prop_type'])
+        self.target_ic.initialize_satellite('target', scenario['prop_type'])
+        self.chaser_ic.initialize_satellite('chaser', scenario['prop_type'], self.target_ic)
 
         # Extract CheckPoints
         for i in xrange(0, len(checkpoints)):
             pos = checkpoints['S' + str(i)]['position']
-            prev = self.checkpoints[-1] if len(self.checkpoints) > 0 else None
 
-            checkpoint = CheckPoint(prev)
+            if 'kep' in pos.keys():
+                checkpoint = AbsoluteCP()
+                checkpoint.set_abs_state(pos['kep'])
+            elif 'lvlh' in pos.keys():
+                checkpoint = RelativeCP()
+                checkpoint.set_rel_state(pos['lvlh'])
+            else:
+                raise TypeError()
+
             checkpoint.id = checkpoints['S' + str(i)]['id']
-
-            checkpoint.set_state(pos)
 
             if 'error_ellipsoid' in checkpoints['S' + str(i)].keys():
                 checkpoint.error_ellipsoid = checkpoints['S' + str(i)]['error_ellipsoid']
