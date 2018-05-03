@@ -27,9 +27,9 @@ class OrbitAdjuster(object):
     def __init__(self, sat, chkp):
 
         if type(sat) == Satellite:
-            self.satellite = Satellite()
+            self.satellite = Satellite(sat.prop.date)
         elif type(sat) == Chaser:
-            self.satellite = Chaser()
+            self.satellite = Chaser(sat.prop.date)
         else:
             raise TypeError()
 

@@ -12,9 +12,10 @@ import argparse
 
 from scenario import Scenario
 from solver import Solver
+from datetime import datetime
 
 
-def main():
+def main(date):
     """
         Run the offline path planner.
         This function import automatically the scenario stated in:
@@ -27,11 +28,11 @@ def main():
 
     # Import scenario and initial conditions
     # initial_conditions.yaml
-    scenario = Scenario()
+    scenario = Scenario(date)
     scenario.import_yaml_scenario()
 
     # Solve scenario
-    solver = Solver()
+    solver = Solver(date)
     solver.initialize_solver(scenario)
     solver.solve_scenario()
 
@@ -39,5 +40,6 @@ def main():
     scenario.export_solved_scenario(solver.manoeuvre_plan)
 
 if __name__ == "__main__":
-    main()
+    date = datetime.utcnow()
+    main(date)
 
