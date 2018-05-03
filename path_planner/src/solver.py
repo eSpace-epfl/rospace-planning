@@ -71,12 +71,12 @@ class Solver(object):
 
         # Divide propagation time in steps of dt seconds to increase accuracy
         dt = 100.0
-        steps = int(np.floor(idle_time / 100.0))
-        dt_rest = idle_time - 100.0 * steps
+        steps = int(np.floor(idle_time / dt))
+        dt_rest = idle_time - dt * steps
 
         for i in xrange(0, steps):
             # Update epoch
-            self.epoch += timedelta(seconds=100.0)
+            self.epoch += timedelta(seconds=dt)
 
             # Propagate
             self.target.prop.orekit_prop.propagate(self.epoch)
@@ -112,7 +112,6 @@ class Solver(object):
             # Create manoeuvre
             man = Manoeuvre()
             man.deltaV = deltaV[0]
-            # man.initial_state = mean_oe
             man.execution_epoch = self.epoch + timedelta(seconds=self.travel_time(mean_oe, mean_oe.v, deltaV[1]))
 
             # Apply manoeuvre
@@ -200,44 +199,22 @@ class Solver(object):
     def relative_solver(self, checkpoint):
         pass
 
-    def travel_time(self, state, theta0, theta1):
+    def _print_result(self):
         """
-            Evaluate the travel time of a satellite from a starting true anomaly theta0 to an end anomaly theta1.
-
-        Reference:
-            Exercise of Nicollier's Lecture.
-            David A. Vallado, Fundamentals of Astrodynamics and Applications, Second Edition, Algorithm 11 (p. 133)
-
-        Args:
-            state (KepOrbElem): Satellite state in keplerian orbital elements.
-            theta0 (rad): Starting true anomaly.
-            theta1 (rad): Ending true anomaly.
-
-        Return:
-            Travel time (seconds)
+            Print out results of the simulation and all the manoeuvres.
         """
+        tot_dv = 0
 
-        a = state.a
-        e = state.e
+        for it, man in enumerate(self.manoeuvre_plan):
+            print '\n Manoeuvre nr. ' + str(it) + ':'
+            print '--> DeltaV:            ' + str(man.deltaV)
+            print '--> Normalized DeltaV: ' + str(np.linalg.norm(man.deltaV))
+            tot_dv += np.linalg.norm(man.deltaV)
 
-        T = 2.0 * np.pi * np.sqrt(a**3 / mu_earth)
+        return tot_dv, (man.execution_epoch - self.scenario.date).total_seconds()
 
-        theta0 = theta0 % (2.0 * np.pi)
-        theta1 = theta1 % (2.0 * np.pi)
-
-        t0 = np.sqrt(a**3/mu_earth) * (2.0 * np.arctan((np.sqrt((1.0 - e)/(1.0 + e)) * np.tan(theta0 / 2.0))) -
-                                       (e * np.sqrt(1.0 - e**2) * np.sin(theta0))/(1.0 + e * np.cos(theta0)))
-        t1 = np.sqrt(a**3/mu_earth) * (2.0 * np.arctan((np.sqrt((1.0 - e)/(1.0 + e)) * np.tan(theta1 / 2.0))) -
-                                       (e * np.sqrt(1.0 - e**2) * np.sin(theta1))/(1.0 + e * np.cos(theta1)))
-
-        dt = t1 - t0
-
-        if dt < 0:
-            dt += T
-
-        return dt
-
-    def _print_state(self, satellite):
+    @staticmethod
+    def _print_state(satellite):
         """
             Print out satellite state.
 
@@ -277,7 +254,8 @@ class Solver(object):
             print "      R :      " + str(satellite.rel_state.R) + "   [km]"
             print "      V :      " + str(satellite.rel_state.V) + "   [km/s]"
 
-    def _print_checkpoint(self, checkpoint):
+    @staticmethod
+    def _print_checkpoint(checkpoint):
         """
             Print out checkpoint informations.
 
@@ -303,16 +281,40 @@ class Solver(object):
         else:
             raise TypeError('CheckPoint type not recognized!')
 
-    def _print_result(self):
+    @staticmethod
+    def travel_time(state, theta0, theta1):
         """
-            Print out results of the simulation and all the manoeuvres.
+            Evaluate the travel time of a satellite from a starting true anomaly theta0 to an end anomaly theta1.
+
+        Reference:
+            Exercise of Nicollier's Lecture.
+            David A. Vallado, Fundamentals of Astrodynamics and Applications, Second Edition, Algorithm 11 (p. 133)
+
+        Args:
+            state (KepOrbElem): Satellite state in keplerian orbital elements.
+            theta0 (rad): Starting true anomaly.
+            theta1 (rad): Ending true anomaly.
+
+        Return:
+            Travel time (seconds)
         """
-        tot_dv = 0
 
-        for it, man in enumerate(self.manoeuvre_plan):
-            print '\n Manoeuvre nr. ' + str(it) + ':'
-            print '--> DeltaV:            ' + str(man.deltaV)
-            print '--> Normalized DeltaV: ' + str(np.linalg.norm(man.deltaV))
-            tot_dv += np.linalg.norm(man.deltaV)
+        a = state.a
+        e = state.e
 
-        return tot_dv, (man.execution_epoch - self.scenario.date).total_seconds()
+        T = 2.0 * np.pi * np.sqrt(a**3 / mu_earth)
+
+        theta0 = theta0 % (2.0 * np.pi)
+        theta1 = theta1 % (2.0 * np.pi)
+
+        t0 = np.sqrt(a**3/mu_earth) * (2.0 * np.arctan((np.sqrt((1.0 - e)/(1.0 + e)) * np.tan(theta0 / 2.0))) -
+                                       (e * np.sqrt(1.0 - e**2) * np.sin(theta0))/(1.0 + e * np.cos(theta0)))
+        t1 = np.sqrt(a**3/mu_earth) * (2.0 * np.arctan((np.sqrt((1.0 - e)/(1.0 + e)) * np.tan(theta1 / 2.0))) -
+                                       (e * np.sqrt(1.0 - e**2) * np.sin(theta1))/(1.0 + e * np.cos(theta1)))
+
+        dt = t1 - t0
+
+        if dt < 0:
+            dt += T
+
+        return dt
