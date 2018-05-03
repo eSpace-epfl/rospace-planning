@@ -126,7 +126,7 @@ class Scenario(object):
 
         # Opening scenario file
         abs_path = os.path.dirname(os.path.abspath(__file__))
-        scenario_path = os.path.join(abs_path, '../cfg/scenario.yaml')
+        scenario_path = os.path.join(abs_path, '../cfg/' + filename + '.yaml')
         scenario_file = file(scenario_path, 'r')
         scenario = yaml.load(scenario_file)
         scenario = scenario['scenario']

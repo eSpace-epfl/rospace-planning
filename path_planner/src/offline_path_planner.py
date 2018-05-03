@@ -15,7 +15,7 @@ from solver import Solver
 from datetime import datetime
 
 def main(filename, date=datetime.utcnow(), save=False):
-        """
+    """
         Run the offline path planner.
         This function import automatically the scenario stated in:
             cfg/scenario.yaml
@@ -41,10 +41,5 @@ def main(filename, date=datetime.utcnow(), save=False):
     return solver.tot_dV
 
 if __name__ == "__main__":
-<<<<<<< path_planner/src/offline_path_planner.py
-    main('scenario', save=True)
-=======
-    date = datetime.utcnow()
-    main(date)
->>>>>>> path_planner/src/offline_path_planner.py
+    main('scenario_sample_absolute', save=True)
 

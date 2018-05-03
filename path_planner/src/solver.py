@@ -201,6 +201,20 @@ class Solver(object):
             self.manoeuvre_plan = new_manoeuvre_plan
             print len(self.manoeuvre_plan)
 
+    def _print_result(self):
+        """
+            Print out results of the simulation and all the manoeuvres.
+        """
+        tot_dv = 0
+
+        for it, man in enumerate(self.manoeuvre_plan):
+            print '\n Manoeuvre nr. ' + str(it) + ':'
+            print '--> DeltaV:            ' + str(man.deltaV)
+            print '--> Normalized DeltaV: ' + str(np.linalg.norm(man.deltaV))
+            tot_dv += np.linalg.norm(man.deltaV)
+
+        return tot_dv, (man.execution_epoch - self.scenario.date).total_seconds()
+
     @staticmethod
     def _print_state(satellite):
         """
@@ -268,45 +282,3 @@ class Solver(object):
             print "      v :      " + str(checkpoint.abs_state.v)
         else:
             raise TypeError('CheckPoint type not recognized!')
-
-    @staticmethod
-    def travel_time(state, theta0, theta1):
-        """
-            Evaluate the travel time of a satellite from a starting true anomaly theta0 to an end anomaly theta1.
-
-        Reference:
-            Exercise of Nicollier's Lecture.
-            David A. Vallado, Fundamentals of Astrodynamics and Applications, Second Edition, Algorithm 11 (p. 133)
-
-        Args:
-            state (KepOrbElem): Satellite state in keplerian orbital elements.
-            theta0 (rad): Starting true anomaly.
-            theta1 (rad): Ending true anomaly.
-
-        Return:
-            Travel time (seconds)
-        """
-
-        for it, man in enumerate(self.manoeuvre_plan):
-            print '\n Manoeuvre nr. ' + str(it) + ':'
-            print '>>>   DeltaV:            ' + str(man.deltaV)
-            print '>>>   Normalized DeltaV: ' + str(np.linalg.norm(man.deltaV))
-            print '>>>   Execution Epoch:   ' + str(man.execution_epoch)
-            tot_dv += np.linalg.norm(man.deltaV)
-
-        T = 2.0 * np.pi * np.sqrt(a**3 / mu_earth)
-
-        theta0 = theta0 % (2.0 * np.pi)
-        theta1 = theta1 % (2.0 * np.pi)
-
-        t0 = np.sqrt(a**3/mu_earth) * (2.0 * np.arctan((np.sqrt((1.0 - e)/(1.0 + e)) * np.tan(theta0 / 2.0))) -
-                                       (e * np.sqrt(1.0 - e**2) * np.sin(theta0))/(1.0 + e * np.cos(theta0)))
-        t1 = np.sqrt(a**3/mu_earth) * (2.0 * np.arctan((np.sqrt((1.0 - e)/(1.0 + e)) * np.tan(theta1 / 2.0))) -
-                                       (e * np.sqrt(1.0 - e**2) * np.sin(theta1))/(1.0 + e * np.cos(theta1)))
-
-        dt = t1 - t0
-
-        if dt < 0:
-            dt += T
-
-        return dt
