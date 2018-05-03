@@ -10,7 +10,8 @@
 
 import numpy as np
 
-from rospace_lib import KepOrbElem, CartesianLVLH
+from rospace_lib import CartesianLVLH
+from copy import deepcopy
 
 
 class Manoeuvre(object):
@@ -49,5 +50,4 @@ class RelativeMan(Manoeuvre):
             rel_state (CartesianLVLH): Relative state given in LVLH frame.
         """
 
-        self.initial_rel_state.R = rel_state.R
-        self.initial_rel_state.V = rel_state.V
+        self.initial_rel_state = deepcopy(rel_state)

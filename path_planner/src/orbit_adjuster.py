@@ -151,12 +151,16 @@ class OrbitAdjuster(object):
 class HohmannTransfer(OrbitAdjuster):
     """
         Subclass holding the function to evaluate a Hohmann Transfer.
+        Given a satellite and a checkpoint, evaluate the amount of delta-V needed to perform the two burns.
         Can be used to do corrections during absolute navigation.
     """
 
     def is_necessary(self, chaser, checkpoint):
         """
             Function to test if this type of orbit adjuster is needed.
+            Checking if there are differences in semi-major axis and eccentricity between the actual state and the
+            future checkpoint. This difference are compared then to some manually defined tolerances.
+
         """
 
         mean_oe = chaser.get_mean_oe()
@@ -164,8 +168,14 @@ class HohmannTransfer(OrbitAdjuster):
         da = checkpoint.abs_state.a - mean_oe.a
         de = checkpoint.abs_state.e - mean_oe.e
 
-        tol_a = 0.2
-        tol_e = 1.0 / mean_oe.a
+        # Tolerances, evaluated manually to ensure a precision of at least 100 meter
+        # Difference as to be above 100 meter to call the orbit adjuster, and is calculated as follow (for
+        # eccentricity):
+        # rp1 = a * (1 - e1)
+        # rp2 = a * (1 - e2)
+        # rp1 - rp2 < 0.1 km => e2 - e1 = tol_e < 0.1 / a
+        tol_a = 0.1
+        tol_e = 0.1 / mean_oe.a
 
         if abs(da) > tol_a or abs(de) > tol_e:
             return True
@@ -253,13 +263,19 @@ class ArgumentOfPerigee(OrbitAdjuster):
     def is_necessary(self, chaser, checkpoint):
         """
             Function to test if this type of orbit adjuster is needed.
+            Check the difference between argument of perigee of actual state and of checkpoint, if it's above a certain
+            manually defined tolerance, perform the manoeuvre.
         """
 
         mean_oe = chaser.get_mean_oe()
 
         dw = checkpoint.abs_state.w - mean_oe.w
 
-        tol_w = 1.0 / mean_oe.a
+        # Tolerance, evaluated manually to ensure a precision of at least 100 meter
+        # Assuming an almost circular orbit, a deviation of tol_w in the argument of perigee should give maximum a 100
+        # meters deviation, therefore assuming a radius equal to semi-major axis, the tolerance is calculated as:
+        # 0.1 km = tol_w * a
+        tol_w = 0.1 / mean_oe.a
 
         if abs(dw) > tol_w:
             return True
@@ -290,7 +306,7 @@ class ArgumentOfPerigee(OrbitAdjuster):
         theta_f_1 = 2.0 * np.pi - theta_i_1
         theta_f_2 = theta_f_1 - np.pi
 
-        # Check which one is the closest TODO: Check the least consuming instead of the closest
+        # Check which one is the closest
         if theta_i_1 < mean_oe.v:
             dv1 = 2.0 * np.pi + theta_i_1 - mean_oe.v
         else:
@@ -330,12 +346,15 @@ class ArgumentOfPerigee(OrbitAdjuster):
 class PlaneOrientation(OrbitAdjuster):
     """
         Subclass holding the function to evaluate the deltaV needed to change in plane orientation.
+        A single delta-V manoeuvre will be evaluated to correct both inclination and RAAN at the same time.
         Can be used to do corrections during absolute navigation.
     """
 
     def is_necessary(self, chaser, checkpoint):
         """
             Function to test if this type of orbit adjuster is needed.
+            Check if the difference in inclination and RAAN between actual state and checkpoint are above a certain
+            manually calculated tolerance.
         """
 
         mean_oe = chaser.get_mean_oe()
@@ -343,8 +362,14 @@ class PlaneOrientation(OrbitAdjuster):
         di = checkpoint.abs_state.i - mean_oe.i
         dO = checkpoint.abs_state.O - mean_oe.O
 
-        tol_i = 1.0 / mean_oe.a
-        tol_O = 1.0 / mean_oe.a
+        # Tolerances, evaluated manually to ensure a precision of at least 100 meter
+        # Assuming an almost circular orbit, a deviation of tol_i in the inclination or of tol_O in RAAN should give
+        # maximum a 100 meters deviation, therefore assuming a radius equal to semi-major axis, the tolerance is
+        # calculated as:
+        # 0.1 km = tol_i * a
+        # 0.1 km = tol_O * a
+        tol_i = 0.1 / mean_oe.a
+        tol_O = 0.1 / mean_oe.a
 
         if abs(di) > tol_i or abs(dO) > tol_O:
             return True

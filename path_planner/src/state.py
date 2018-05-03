@@ -8,7 +8,7 @@
 
 """Class defining the state of a satellite."""
 
-import sys
+import os
 import yaml
 
 from rospace_lib import KepOrbElem, CartesianTEME, OscKepOrbElem, CartesianLVLH
@@ -25,7 +25,7 @@ class Satellite(object):
         mass (float64): Mass of the satellite in [kg].
         abs_state (CartesianTEME): Cartesian absolute position of the satellite with respect to Earth Inertial frame.
         name (str): Name of the satellite.
-        prop (Propagator): Propagator of this satellite.
+        prop (QuickPropagator): QuickPropagator of this satellite.
     """
 
     def __init__(self, date):
@@ -34,28 +34,20 @@ class Satellite(object):
         self.name = ''
         self.prop = QuickPropagator(date)
 
-    def initialize_satellite(self, name, date, prop_type, target=None):
+    def initialize_satellite(self, name, prop_type, target=None):
         """
             Initialize satellite attributes from the configuration files.
 
         Args:
             name (str): Name of the satellite, which should be stated as well in initial_conditions.yaml file.
-            date (datetime): Date at which the satellite (the propagator) has to be initialized.
             prop_type (str): Define the type of propagator to be used (2-body or real-world).
             target (Satellite): If self is a chaser type satellite, the reference target is needed to define the
                 relative state with respect to it.
         """
 
-        # Actual path
-        abs_path = sys.argv[0]
-        path_idx = abs_path.find('path_planner')
-        abs_path = abs_path[0:path_idx]
-
-        if 'unittest' in abs_path:
-            abs_path = '/home/dfrey/rospace_ws/src/planning/'
-
         # Opening initial conditions file
-        initial_conditions_path = abs_path + 'path_planner/cfg/initial_conditions.yaml'
+        abs_path = os.path.dirname(os.path.abspath(__file__))
+        initial_conditions_path = os.path.join(abs_path, '../cfg/initial_conditions.yaml')
         initial_conditions_file = file(initial_conditions_path, 'r')
         initial_conditions = yaml.load(initial_conditions_file)
 
