@@ -34,7 +34,7 @@ class Scenario(object):
             koz_r (float64): Radius of Keep-Out Zone drawn around the target [km].
     """
 
-    def __init__(self, date):
+    def __init__(self):
         # Scenario information
         self.name = 'Standard'
         self.overview = ''
@@ -43,15 +43,15 @@ class Scenario(object):
         self.checkpoints = []
 
         # Satellite initial states
-        self.chaser_ic = Chaser(date)
-        self.target_ic = Satellite(date)
+        self.chaser_ic = Chaser()
+        self.target_ic = Satellite()
 
         # Target Keep-Out Zones
         self.approach_ellipsoid = np.array([0.0, 0.0, 0.0])
         self.koz_r = 0.0
 
         # Scenario starting date
-        self.date = date
+        self.date = None
 
     def import_solved_scenario(self):
         """
@@ -111,30 +111,51 @@ class Scenario(object):
 
             print "Manoeuvre plan saved..."
 
-    def import_yaml_scenario(self):
+    def import_yaml_scenario(self, filename, ic_name='std_ic'):
         """
             Parse scenario and import initial conditions from .yaml files in the /cfg folder.
+
+        Args:
+            filename (str): name of the scenario yaml configuration file.
         """
 
         # Opening scenario file
         abs_path = os.path.dirname(os.path.abspath(__file__))
-        scenario_path = os.path.join(abs_path, '../cfg/scenario.yaml')
+        scenario_path = os.path.join(abs_path, '../cfg/' + filename + '.yaml')
         scenario_file = file(scenario_path, 'r')
         scenario = yaml.load(scenario_file)
-        scenario = scenario['scenario']
-        checkpoints = scenario['CheckPoints']
+
+        if 'scenario' in scenario.keys():
+            scenario = scenario['scenario']
+        else:
+            raise IOError('Missing "scenario" key in yaml file!')
+
+        if 'checkpoints' in scenario.keys():
+            checkpoints = scenario['checkpoints']
+        else:
+            raise IOError('Missing "checkpoints" key in yaml file!')
 
         # Assign variables
-        self.name = scenario['name']
-        self.overview = scenario['overview']
+        if 'name' in scenario.keys():
+            self.name = scenario['name']
+        else:
+            raise IOError('Missing "name" key in yaml file!')
+
+        if 'overview' in scenario.keys():
+            self.overview = scenario['overview']
+        else:
+            raise IOError('Missing "overview" key in yaml file!')
 
         # Initialize satellites
-        self.target_ic.initialize_satellite('target', scenario['prop_type'])
-        self.chaser_ic.initialize_satellite('chaser', scenario['prop_type'], self.target_ic)
+        self.target_ic.initialize_satellite(ic_name, 'target', scenario['prop_type'])
+        self.chaser_ic.initialize_satellite(ic_name, 'chaser', scenario['prop_type'], self.target_ic)
+
+        # Initialize date from satellites
+        self.date = self.target_ic.prop.date
 
         # Extract CheckPoints
         for i in xrange(0, len(checkpoints)):
-            pos = checkpoints['S' + str(i)]['position']
+            pos = checkpoints['S' + str(i)]['state']
 
             if 'kep' in pos.keys():
                 checkpoint = AbsoluteCP()

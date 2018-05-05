@@ -16,7 +16,7 @@ from state import Satellite, Chaser
 from checkpoint import AbsoluteCP, RelativeCP
 from scenario import Scenario
 from datetime import timedelta, datetime
-from orbit_adjuster import HohmannTransfer, PlaneOrientation, ArgumentOfPerigee
+from orbit_adjuster import *
 
 
 class Solver(object):
@@ -37,12 +37,14 @@ class Solver(object):
         epoch (datetime): Actual epoch, evolving in time according to the solver.
     """
 
-    def __init__(self, date):
+    def __init__(self):
         self.manoeuvre_plan = []
         self.scenario = None
-        self.chaser = Chaser(date)
-        self.target = Satellite(date)
-        self.epoch = date
+        self.chaser = Chaser()
+        self.target = Satellite()
+        self.epoch = None
+
+        self.tot_dV = 0.0
 
     def initialize_solver(self, scenario):
         """
@@ -57,68 +59,6 @@ class Solver(object):
 
         self.chaser.set_from_satellite(scenario.chaser_ic)
         self.target.set_from_satellite(scenario.target_ic)
-
-    def apply_manoeuvre(self, manoeuvre):
-        """
-            Given a manoeuvre the satellite is propagated according to it.
-
-        Args:
-            manoeuvre (Manoeuvre)
-        """
-
-        # Waiting time to get to the proper state in seconds
-        idle_time = (manoeuvre.execution_epoch - self.epoch).total_seconds()
-
-        # Divide propagation time in steps of dt seconds to increase accuracy
-        dt = 100.0
-        steps = int(np.floor(idle_time / dt))
-        dt_rest = idle_time - dt * steps
-
-        for i in xrange(0, steps):
-            # Update epoch
-            self.epoch += timedelta(seconds=dt)
-
-            # Propagate
-            self.target.prop.orekit_prop.propagate(self.epoch)
-            self.chaser.prop.orekit_prop.propagate(self.epoch)
-
-        # Update epoch
-        self.epoch += timedelta(seconds=dt_rest)
-
-        # Propagate to the execution epoch
-        target_prop = self.target.prop.orekit_prop.propagate(self.epoch)
-        chaser_prop = self.chaser.prop.orekit_prop.propagate(self.epoch)
-
-        # Apply impulsive deltaV and apply it to the propagator initial conditions
-        chaser_prop[0].V += manoeuvre.deltaV
-        self.chaser.prop.change_initial_conditions(chaser_prop[0], self.epoch, self.chaser.mass)
-
-        # Update target and chaser states
-        self.chaser.set_abs_state_from_cartesian(chaser_prop[0])
-        self.target.set_abs_state_from_cartesian(target_prop[0])
-
-    def create_manoeuvres(self, deltaV_list):
-        """
-            Given a list of deltaV's and true anomalies where they has to be executed, this function creates and add the
-            manoeuvres to the plan, while also applying them to keep the satellite state and propagator up to date.
-
-        Args:
-            deltaV_list (list)
-        """
-
-        for deltaV in deltaV_list:
-            mean_oe = self.chaser.get_mean_oe()
-
-            # Create manoeuvre
-            man = Manoeuvre()
-            man.deltaV = deltaV[0]
-            man.execution_epoch = self.epoch + timedelta(seconds=self.travel_time(mean_oe, mean_oe.v, deltaV[1]))
-
-            # Apply manoeuvre
-            self.apply_manoeuvre(man)
-
-            # Add manoeuvre to the plan
-            self.manoeuvre_plan.append(man)
 
     def solve_scenario(self):
         """
@@ -154,7 +94,7 @@ class Solver(object):
             if type(checkpoint) == AbsoluteCP:
                 self.absolute_solver(checkpoint)
             elif type(checkpoint) == RelativeCP:
-                self.relative_solver(checkpoint)
+                self.relative_solver(checkpoint, self.scenario.approach_ellipsoid)
             else:
                 raise TypeError()
 
@@ -167,11 +107,11 @@ class Solver(object):
             self._print_state(self.target)
             print "=======================================================================\n"
 
-        tot_dV, tot_dt = self._print_result()
+        self.tot_dV, tot_dt = self._print_result()
 
         print "\n\n-----------------> Manoeuvre elaborated <--------------------\n"
         print "---> Manoeuvre duration:    " + str(tot_dt) + " seconds"
-        print "---> Total deltaV:          " + str(tot_dV) + " km/s"
+        print "---> Total deltaV:          " + str(self.tot_dV) + " km/s"
 
     def absolute_solver(self, checkpoint):
         """
@@ -181,23 +121,85 @@ class Solver(object):
              checkpoint (AbsoluteCP): Absolute checkpoint with the state defined as Mean Orbital Elements.
         """
 
-        orbit_adj = PlaneOrientation(self.chaser, checkpoint)
-        if orbit_adj.is_necessary():
-            man = orbit_adj.evaluate_manoeuvre()
-            self.create_manoeuvres(man)
+        orbit_adj = PlaneOrientation()
+        if orbit_adj.is_necessary(self.chaser, checkpoint):
+            self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
 
-        orbit_adj = ArgumentOfPerigee(self.chaser, checkpoint)
-        if orbit_adj.is_necessary():
-            man = orbit_adj.evaluate_manoeuvre()
-            self.create_manoeuvres(man)
+        orbit_adj = ArgumentOfPerigee()
+        if orbit_adj.is_necessary(self.chaser, checkpoint):
+            self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
 
-        orbit_adj = HohmannTransfer(self.chaser, checkpoint)
-        if orbit_adj.is_necessary():
-            man = orbit_adj.evaluate_manoeuvre()
-            self.create_manoeuvres(man)
+        orbit_adj = HohmannTransfer()
+        if orbit_adj.is_necessary(self.chaser, checkpoint):
+            self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
 
-    def relative_solver(self, checkpoint):
-        pass
+    def relative_solver(self, checkpoint, approach_ellipsoid):
+        """
+            Relative solver. Calculate the manoeuvre needed to go from a relative position to another.
+
+        Args:
+            checkpoint (RelativeCP)
+            approach_ellipsoid (np.array): Allowed error on a checkpoint.
+        """
+
+        # Mean orbital elements
+        chaser_mean = self.chaser.get_mean_oe()
+        target_mean = self.target.get_mean_oe()
+
+        # Check if plane needs to be corrected again
+        # TODO: Put as tolerance a number slightly bigger than the deviation of the estimation
+        # TODO: Remove changes in plane if it is drifting autonomously to the wanted direction
+        tol_i = 1.0 / chaser_mean.a
+        tol_O = 1.0 / chaser_mean.a
+
+        # At this point, inclination and raan should match the one of the target
+        di = target_mean.i - chaser_mean.i
+        dO = target_mean.O - chaser_mean.O
+        if abs(di) > tol_i or abs(dO) > tol_O:
+            checkpoint_abs = AbsoluteCP()
+            checkpoint_abs.abs_state.i = target_mean.i
+            checkpoint_abs.abs_state.O = target_mean.O
+
+            orbit_adj = PlaneOrientation()
+            orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint_abs, self.target)
+
+        if checkpoint.manoeuvre_type == 'standard':
+            orbit_adj = HamelDeLafontaine()
+            self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
+
+            # orbit_adj = TschaunerHempel()
+            # self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
+
+            # orbit_adj = ClohessyWiltshire()
+            # self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
+
+            # orbit_adj = MultiLambert()
+            # self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target, approach_ellipsoid, True)
+
+        elif checkpoint.manoeuvre_type == 'radial':
+            # Manoeuvre type is radial -> deltaT is calculated from CW-equations -> solved with multi-lambert
+            dt = np.pi / np.sqrt(mu_earth / target_mean.a ** 3.0)
+
+            checkpoint.t_min = dt
+            checkpoint.t_max = dt + 1.0
+
+            orbit_adj = HamelDeLafontaine()
+            self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
+
+            # orbit_adj = TschaunerHempel()
+            # self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
+
+            # orbit_adj = ClohessyWiltshire()
+            # self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
+
+            # orbit_adj = MultiLambert()
+            # self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target, approach_ellipsoid, True)
+
+        elif checkpoint.manoeuvre_type == 'drift':
+            orbit_adj = Drift()
+            new_manoeuvre_plan = orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target, self.manoeuvre_plan)
+            self.manoeuvre_plan = new_manoeuvre_plan
+            print len(self.manoeuvre_plan)
 
     def _print_result(self):
         """
@@ -280,41 +282,3 @@ class Solver(object):
             print "      v :      " + str(checkpoint.abs_state.v)
         else:
             raise TypeError('CheckPoint type not recognized!')
-
-    @staticmethod
-    def travel_time(state, theta0, theta1):
-        """
-            Evaluate the travel time of a satellite from a starting true anomaly theta0 to an end anomaly theta1.
-
-        Reference:
-            Exercise of Nicollier's Lecture.
-            David A. Vallado, Fundamentals of Astrodynamics and Applications, Second Edition, Algorithm 11 (p. 133)
-
-        Args:
-            state (KepOrbElem): Satellite state in keplerian orbital elements.
-            theta0 (rad): Starting true anomaly.
-            theta1 (rad): Ending true anomaly.
-
-        Return:
-            Travel time (seconds)
-        """
-
-        a = state.a
-        e = state.e
-
-        T = 2.0 * np.pi * np.sqrt(a**3 / mu_earth)
-
-        theta0 = theta0 % (2.0 * np.pi)
-        theta1 = theta1 % (2.0 * np.pi)
-
-        t0 = np.sqrt(a**3/mu_earth) * (2.0 * np.arctan((np.sqrt((1.0 - e)/(1.0 + e)) * np.tan(theta0 / 2.0))) -
-                                       (e * np.sqrt(1.0 - e**2) * np.sin(theta0))/(1.0 + e * np.cos(theta0)))
-        t1 = np.sqrt(a**3/mu_earth) * (2.0 * np.arctan((np.sqrt((1.0 - e)/(1.0 + e)) * np.tan(theta1 / 2.0))) -
-                                       (e * np.sqrt(1.0 - e**2) * np.sin(theta1))/(1.0 + e * np.cos(theta1)))
-
-        dt = t1 - t0
-
-        if dt < 0:
-            dt += T
-
-        return dt

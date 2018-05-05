@@ -2,35 +2,86 @@
 #
 # ---------------------------------- Template ----------------------------------
 #
-# satellite_name:
-#  mass: Satellite mass in [kg]
-#  kep: Initial conditions has to be given in OSCULATING orbital elements
-#   a: Semi-major axis in [km]
-#   e: Eccentricity
-#   i: Inclination in [rad]
-#   O: RAAN in [rad]
-#   w: Argument of perigee in [rad]
-#   v or m or E: Either one of true, mean or eccentric anomaly in [rad]
+# initial_condition_set_name:
+#   date: starting date, datetime(year, month, day, hour, minute, seconds, milliseconds)
+#
+#   satellite_name:
+#     mass: Satellite mass in [kg]
+#     kep: Initial conditions has to be given in OSCULATING orbital elements
+#       a: Semi-major axis in [km]
+#       e: Eccentricity
+#       i: Inclination in [rad]
+#       O: RAAN in [rad]
+#       w: Argument of perigee in [rad]
+#       v or m or E: Either one of true, mean or eccentric anomaly in [rad]
 #
 # ------------------------------------------------------------------------------
 
-target:
-  mass: 0.82
-  kep:
-    a: 7084.12176561
-    e: 0.0008099
-    i: 1.71925752363
-    O: 0.396507390127
-    w: 0.533974758001
-    v: 5.75130069292
+std_ic:
+  date: datetime(2000, 1, 1, 12, 0, 0, 0)
 
-chaser:
-  mass: 30.0
-  kep:
-    a: 7036.6
-    e: 0.000815369669722
-    i: 1.718385
-    O: 0.3964957
-    w: 0.53395901
-    v: 4.965925
+  target:
+    mass: 0.82
+    kep:
+      a: 7067.4
+      e: 0.0008099
+      i: 1.71925752363
+      O: 0.396507390127
+      w: 0.533974758001
+      v: 5.75130069292
 
+  chaser:
+    mass: 30.0
+    kep:
+      a: 7032.4
+      e: 0.0006
+      i: 1.71925752363
+      O: 0.396507390127
+      w: 0.533974758001
+      v: 4.965925
+
+ic_1:
+  date: datetime(2000, 1, 1, 12, 0, 0, 0)
+
+  target:
+    mass: 0.82
+    kep:
+      a: 7067.4
+      e: 0.0008099
+      i: 1.71925752363
+      O: 0.396507390127
+      w: 0.533974758001
+      v: 5.75130069292
+
+  chaser:
+    mass: 30.0
+    kep:
+      a: 7032.4
+      e: 0.0006
+      i: 1.71925752363
+      O: 0.396507390127
+      w: 0.533974758001
+      v: 4.965925
+
+test_rel:
+  date: datetime(2000, 1, 1, 12, 0, 0, 0)
+
+  target:
+    mass: 0.82
+    kep:
+      a: 6678.73023981
+      e: 0.000110330539145
+      i: 0.698131887476
+      O: 0.349066589105
+      w: 1.04685758672
+      v: 0.000339003072972
+
+  chaser:
+    mass: 30.0
+    kep:
+      a: 6677.79213211
+      e: 0.000110346037468
+      i: 0.698131887476
+      O: 0.349066589105
+      w: 1.04685758672
+      v: 0.000189272334875

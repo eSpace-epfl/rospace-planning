@@ -1,15 +1,14 @@
 scenario:
   name: 'Scenario Absolute and Relative'
 
-  overview:  "Sample scenario which does two orbit changes and do a drifting manoeuvre to reach a specific relative
-              position with respect to another spacecraft."
+  overview:  "Sample scenario to test absolute and relative manoeuvre with 2-body propagator."
 
   prop_type: 2-body
 
-  CheckPoints:
+  checkpoints:
     S0:
       id: 0
-      position:
+      state:
         kep:
           a: 7084.12176561 - 20.0
           e: 7084.12176561 * 0.0008099 / (7084.12176561 - 47.0)
@@ -20,7 +19,7 @@ scenario:
 
     S1:
       id: 1
-      position:
+      state:
         kep:
           a: 7084.12176561 - 16.0
           e: 7084.12176561 * 0.0008099 / (7084.12176561 - 16.0)
@@ -31,8 +30,19 @@ scenario:
 
     S2:
       id: 2
-      position:
+      state:
         lvlh:
-          R: [-4.0, -10.0, 0.0]
-      error_ellipsoid: [0.4, 1.5, 0.4]
+          R: [-4.0, 8.0, 0.0]
+          V: [0.0, 0.0, 0.0]
+      error_ellipsoid: [0.8, 1.6, 0.8]
       manoeuvre: drift
+
+    S3:
+      id: 3
+      state:
+        lvlh:
+          R: [0.0, 18.0, 0.0]
+          V: [0.0, 0.0, 0.0]
+      error_ellipsoid: [0.2, 1.0, 0.2]
+      t_min: 3000
+      t_max: 3100

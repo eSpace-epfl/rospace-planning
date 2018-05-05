@@ -3,28 +3,27 @@ scenario:
   # Name that identifies the scenario when its solution is imported
   name: 'Scenario Template'
 
-  # Brief description of the check points
+  # Brief description of the check points and of the mission
   overview: "0. Reach the same orbital plane as target. \n
              1. Go on a co-elliptic orbit ~35km below the target.  \n
              2. Move to a relative position w.r.t the target of [-4, -10, 0] (km)."
 
   # Radius of the keep-out-sphere [km], that should not in any case be touched by a trajectory, except during the final,
   # straight approach through a so-called approach corridor.
-  keep_out_zone: 0.2
+  keep_out_zone: #####
 
   # Measures of the approach ellipsoid axis, which is sort of a low-level keep out zone, that will be entered only
   # when the control is took by the target spacecraft (if there is crew within).
   # [dr, dv, dh] [km]
-  approach_ellipsoid: [0.3, 1.5, 0.3]
+  approach_ellipsoid: [#####, #####, #####]
 
   # Propagator type. At the moment, the following types are available:
   # - 2-body:     Propagator that solves the 2-body problem
   # - real-world: Propagator that takes in consideration all the disturbances
-  prop_type: real-world
+  prop_type: #####
 
   # Check points definitions
-  CheckPoints:
-
+  checkpoints:
     # Check points are defined by an "S" followed by it's number
     #
     # Notes:
@@ -37,22 +36,13 @@ scenario:
       state:
         # Definition of state in terms of KepOrbElem
         kep:
-          # Each element is defined singularly, and can be defined using as reference chaser, target or self
-          # states, examples:
-          #   -> target.abs_state: target initial absolute state in KepOrbElem
-          #   -> chaser.abs_state: chaser initial absolute state in KepOrbElem
-          #   -> self.abs_state:   checkpoint initial absolute state in KepOrbElem
-          #   -> chaser.rel_state: chaser initial relative state in CartesianLVLH
-          #
-          # Notes:
-          #   -> In the first checkpoint (S0) every element has to be defined singularly, otherwise they will
-          #      be initialized at 0.0.
-          i: #####
-          O: #####
-          w: #####
-          a: #####
-          e: #####
-          v: #####
+          # Each element has to be specified singularly as a number.
+          a: ##### (km)
+          e: ##### (-)
+          i: ##### (rad)
+          O: ##### (rad)
+          w: ##### (rad)
+          v: ##### (rad)
 
     S1:
       id: 1
@@ -70,10 +60,10 @@ scenario:
       state:
         # Definition of state in terms of CartesianLVLH
         lvlh:
-          # The relative distance and the relative velocity are defined there, if one is not defined it is initialized
-          # as: [0.0, 0.0, 0.0]
-          R: [-4.0, -10.0, 0]
+          # The relative distance and the relative velocity are defined there
+          R: [#####, #####, #####] (km)
+          V: [#####, #####, #####] (km/s)
       # The error ellipsoid defines the allowed error on the check point (km). For example if we are drifting from one
       # position to another we may end up in a slightly different place. However, if we are still inside this error
       # ellipsoid, the position will be considered valid anyway.
-      error_ellipsoid: [1.5, 3.0, 1.5]
+      error_ellipsoid: [#####, #####, #####] (km)
