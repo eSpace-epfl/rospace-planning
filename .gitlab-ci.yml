@@ -3,12 +3,12 @@ image: osrf/ros:lunar-desktop-xenial
 before_script:
   ## Install dependencies
   - apt-get -qq update
-  - apt-get -qq install software-properties-common wget default-jdk-headless zip -y
-  - apt-get -qq update
+  - apt-get -qq install software-properties-common wget default-jdk-headless zip
+  - apt-get -qq install libboost-python-dev libboost-serialization-dev libboost-date-time-dev -y
   - apt-get -qq install python-pip -y
 
   # install ssh-agent
-  - 'which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )'
+  - 'which ssh-agent || apt-get install openssh-client -y'
   # run ssh-agent
   - eval $(ssh-agent -s)
   # add ssh key stored in SSH_PRIVATE_KEY variable to the agent store
@@ -18,6 +18,13 @@ before_script:
   - mkdir -p ~/.ssh
   - echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
 
+  # Install PyKep
+  - wget https://github.com/esa/pykep/archive/v2.1.tar.gz
+  - tar -xzf v2.1.tar.gz && cd pykep-2.1
+  - mkdir build && cd build
+  - cmake -DBUILD_PYKEP=ON -DBUILD_TESTS=OFF .. && make && make install
+
+  # Install Python packages
   - pip install numpy sgp4 pytest pdoc matplotlib scikit-learn scipy numpy codecov pytest-cov
 
   ## Setup ROS workspace
@@ -29,7 +36,7 @@ before_script:
   - cd ~/catkin_ws/src
   - wstool up
   - git clone https://github.com/catkin/catkin_simple.git
-  - git clone https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com/eSpace-epfl/rospace/core.git
+  - git clone -b feature/branch_with_fixes https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com/eSpace-epfl/rospace/core.git
   - cd ~/catkin_ws
 
 docs_and_tests:
@@ -42,17 +49,17 @@ docs_and_tests:
     - cd ${CI_PROJECT_DIR}
     - pytest ${CI_PROJECT_DIR} -v -s --cov=./
 
-    - pdoc --html --html-dir ~/docs ${CI_PROJECT_DIR}/rospace_lib/src/rospace_lib
-    - pdoc --html --html-dir ~/docs ${CI_PROJECT_DIR}/rospace_plugins/rqt_simtime_plugin/src/rqt_simtime_plugin/
-    - pdoc --html --html-dir ~/docs ${CI_PROJECT_DIR}/rospace_nodes/rospace_propagator/src/propagator/
-    - zip -r ${CI_PROJECT_DIR}/docs.zip ~/docs/*
+    #- pdoc --html --html-dir ~/docs ${CI_PROJECT_DIR}/rospace_lib/src/rospace_lib
+    #- pdoc --html --html-dir ~/docs ${CI_PROJECT_DIR}/rospace_plugins/rqt_simtime_plugin/src/rqt_simtime_plugin/
+    #- pdoc --html --html-dir ~/docs ${CI_PROJECT_DIR}/rospace_nodes/rospace_propagator/src/propagator/
+    #- zip -r ${CI_PROJECT_DIR}/docs.zip ~/docs/*
 
 # hack due to https://github.com/codecov/codecov-python/issues/146
     - CI_REPOSITORY_URL=${CI_REPOSITORY_URL/eSpace-epfl\/}
     - codecov -e
 
 
-  artifacts:
-    paths:
-    - docs.zip
+#  artifacts:
+#    paths:
+#    - docs.zip
 
