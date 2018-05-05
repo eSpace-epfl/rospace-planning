@@ -12,9 +12,9 @@ import argparse
 
 from scenario import Scenario
 from solver import Solver
-from datetime import datetime
 
-def main(filename, date=datetime.utcnow(), save=False):
+
+def main(scenario_name, ic_name='std_ic', save=False):
     """
         Run the offline path planner.
         This function import automatically the scenario stated in:
@@ -24,13 +24,13 @@ def main(filename, date=datetime.utcnow(), save=False):
 
         After importing, it solves it and finally saves it in a .pickle file in the example/ folder.
     """
-    
+
     # Import scenario and initial conditions
-    scenario = Scenario(date)
-    scenario.import_yaml_scenario(filename)
+    scenario = Scenario()
+    scenario.import_yaml_scenario(scenario_name, ic_name)
 
     # Solve scenario
-    solver = Solver(date)
+    solver = Solver()
     solver.initialize_solver(scenario)
     solver.solve_scenario()
 
@@ -38,8 +38,31 @@ def main(filename, date=datetime.utcnow(), save=False):
     if save:
         scenario.export_solved_scenario(solver.manoeuvre_plan)
 
-    return solver.tot_dV
+    return solver.tot_dV, solver.chaser.abs_state
 
 if __name__ == "__main__":
-    main('scenario_sample_absolute', save=True)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--scenario_name',
+                        help='Name of the scenario which should be called. If not called use the one stated in main().')
+    parser.add_argument('--ic_name',
+                        help='Name of initial condition set. If not called, use "std_ic".')
+    parser.add_argument('--save',
+                        help='Save result in .pickle file. If not called do not save.')
+    args = parser.parse_args()
 
+    if args.ic_name:
+        ic_name = args.ic_name
+    else:
+        ic_name = 'std_ic'
+
+    if args.scenario_name:
+        scenario_name = args.scenario_name
+    else:
+        scenario_name = 'scenario_sample_relative'
+
+    if args.save:
+        save = True
+    else:
+        save = False
+
+    main(scenario_name, ic_name, save)

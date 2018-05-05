@@ -8,12 +8,13 @@
 
 """Class defining the state of a satellite."""
 
-import os
 import yaml
+import os
 
 from rospace_lib import KepOrbElem, CartesianTEME, OscKepOrbElem, CartesianLVLH
 from rospace_lib.misc import QuickPropagator
 from copy import deepcopy
+from datetime import datetime
 
 
 class Satellite(object):
@@ -28,17 +29,18 @@ class Satellite(object):
         prop (QuickPropagator): QuickPropagator of this satellite.
     """
 
-    def __init__(self, date):
+    def __init__(self):
         self.mass = 0.0
         self.abs_state = CartesianTEME()
         self.name = ''
-        self.prop = QuickPropagator(date)
+        self.prop = None
 
-    def initialize_satellite(self, name, prop_type, target=None):
+    def initialize_satellite(self, ic_name, name, prop_type, target=None):
         """
             Initialize satellite attributes from the configuration files.
 
         Args:
+            ic_name (str): Name of the initial conditions that has to be imported.
             name (str): Name of the satellite, which should be stated as well in initial_conditions.yaml file.
             prop_type (str): Define the type of propagator to be used (2-body or real-world).
             target (Satellite): If self is a chaser type satellite, the reference target is needed to define the
@@ -51,46 +53,63 @@ class Satellite(object):
         initial_conditions_file = file(initial_conditions_path, 'r')
         initial_conditions = yaml.load(initial_conditions_file)
 
-        # Check if the satellite initial conditions are stated in the configuration file
+        # Check if the initial conditions name is stated in the cfg file
+        if ic_name in initial_conditions.keys():
+            initial_conditions = initial_conditions[ic_name]
+        else:
+            raise IOError('Initial condition named ' + ic_name + ' not defined in .yaml file!')
+
+        # Check if the satellite initial date is stated in the cfg file
+        if 'date' in initial_conditions.keys():
+            date = eval(initial_conditions['date'])
+        else:
+            raise IOError('Initial date for satellite ' + name + ' not stated in .yaml file!')
+
+        # Check if the satellite initial conditions are stated in the cfg file
         if name in initial_conditions.keys():
             initial_conditions = initial_conditions[name]
         else:
-            raise AttributeError('[ERROR]: Initial conditions for satellite ' + name +
-                                 ' not stated in initial_conditions.yaml!')
+            raise IOError('Initial conditions for satellite ' + name + ' not stated in .yaml file!')
+
+        # Check if initial conditions are stated in term on KepOrbElem
+        if 'kep' in initial_conditions.keys():
+            kep_ic = initial_conditions['kep']
+        else:
+            raise IOError('Initial conditions for satellite ' + name + ' not stated as KepOrbElem in .yaml file!')
 
         # Create a KepOrbElem to contain the initial conditions
-        kep_ic = initial_conditions['kep']
-        satellite_ic = KepOrbElem()
-        satellite_ic.a = eval(str(kep_ic['a']))
-        satellite_ic.e = eval(str(kep_ic['e']))
-        satellite_ic.i = eval(str(kep_ic['i']))
-        satellite_ic.O = eval(str(kep_ic['O']))
-        satellite_ic.w = eval(str(kep_ic['w']))
+        sat_ic = KepOrbElem()
+        sat_ic.a = eval(str(kep_ic['a']))
+        sat_ic.e = eval(str(kep_ic['e']))
+        sat_ic.i = eval(str(kep_ic['i']))
+        sat_ic.O = eval(str(kep_ic['O']))
+        sat_ic.w = eval(str(kep_ic['w']))
 
         if 'v' in kep_ic.keys():
-            satellite_ic.v = eval(str(kep_ic['v']))
+            sat_ic.v = eval(str(kep_ic['v']))
         elif 'm' in kep_ic.keys():
-            satellite_ic.m = eval(str(kep_ic['m']))
+            sat_ic.m = eval(str(kep_ic['m']))
         elif 'E' in kep_ic.keys():
-            satellite_ic.E = eval(str(kep_ic['E']))
+            sat_ic.E = eval(str(kep_ic['E']))
         else:
-            raise AttributeError('[ERROR]: Anomaly initial condition for satellite ' + name + ' not defined properly!')
+            raise AttributeError('Anomaly initial condition for satellite ' + name + ' not defined properly!')
 
         # Assign absolute state
-        self.abs_state.from_keporb(satellite_ic)
+        self.abs_state.from_keporb(sat_ic)
 
         # Assign relative state
         if type(self) == Chaser:
-            if target != None:
+            if target is not None:
                 self.rel_state.from_cartesian_pair(self.abs_state, target.abs_state)
             else:
                 raise IOError('Missing target input to initialize chaser!')
 
         # Assign mass
-        self.mass = eval(str(initial_conditions['mass']))
+        self.mass = initial_conditions['mass']
 
-        # Assign propagator
-        self.prop.initialize_propagator(name, satellite_ic, prop_type)
+        # Create and initialize propagator
+        self.prop = QuickPropagator(date)
+        self.prop.initialize_propagator(name, sat_ic, prop_type)
 
     def set_from_satellite(self, satellite):
         """
@@ -173,8 +192,8 @@ class Chaser(Satellite):
             rel_state (CartesianLVLH): Holds the relative coordinates with respect to another satellite.
     """
 
-    def __init__(self, date):
-        super(Chaser, self).__init__(date)
+    def __init__(self):
+        super(Chaser, self).__init__()
 
         self.rel_state = CartesianLVLH()
 

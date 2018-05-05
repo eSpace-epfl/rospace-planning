@@ -37,12 +37,12 @@ class Solver(object):
         epoch (datetime): Actual epoch, evolving in time according to the solver.
     """
 
-    def __init__(self, date):
+    def __init__(self):
         self.manoeuvre_plan = []
         self.scenario = None
-        self.chaser = Chaser(date)
-        self.target = Satellite(date)
-        self.epoch = date
+        self.chaser = Chaser()
+        self.target = Satellite()
+        self.epoch = None
 
         self.tot_dV = 0.0
 
