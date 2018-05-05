@@ -487,9 +487,13 @@ class PlaneOrientation(OrbitAdjuster):
 
 
 class AnomalySynchronisation(OrbitAdjuster):
+    """
+        Subclass that allows to change true anomaly when chaser is on the same orbit as the target.
+        Can be used to do correction in of true anomaly while in absolute navigation.
+    """
 
     def evaluate_manoeuvre(self):
-        pass
+        raise NotImplementedError()
 
 
 class Drift(OrbitAdjuster):
@@ -722,6 +726,7 @@ class Drift(OrbitAdjuster):
             else:
                 # Drift is not possible, drop a warning and correct altitude!
                 print "\n[WARNING]: Drifting to checkpoint nr. " + str(checkpoint.id) + " not possible!"
+                print "           Arrive in: " + str(chaser.rel_state.R)
                 print "           Correcting altitude automatically...\n"
 
                 # Depropagate to initial conditions before drifting
