@@ -869,7 +869,9 @@ class ClohessyWiltshire(OrbitAdjuster):
             David A. Vallado, Fundamentals of Astrodynamics and Applications, Second Edition, Algorithm 47 (p. 382)
 
         Args:
-            target (Satellite): Target state.
+            chaser (Chaser): chaser state.
+            checkpoint (RelativeCP): next checkpoint.
+            target (Satellite): target state.
         """
 
         target_mean = target.get_mean_oe()
@@ -940,11 +942,25 @@ class ClohessyWiltshire(OrbitAdjuster):
 
 
 class TschaunerHempel(OrbitAdjuster):
+    """
+        Subclass holding the function to evaluate deltaV needed to do a manoeuvre in LVLH frame, using the linearized
+        solution of Tschauner-Hempel.
+
+        NOT suited when using real-world propagator, error can become very large. Moreover not suited also when the
+        distance over the orbit radius is too big!
+
+        Can be used to do corrections during relative navigation
+    """
 
     def evaluate_manoeuvre(self, chaser, checkpoint, target):
         """
-            Tschauner Hempel solver.
+            Solve Tschauner Hempel equations through a linearized solution to get the amount of deltaV to perform a
+            manoeuvre.
 
+        Args:
+            chaser (Chaser): chaser state.
+            checkpoint (RelativeCP): next checkpoint.
+            target (Satellite): target state.
 
         Reference:
             Guidance, Navigation and Control for Satellite Proximity Operations using Tschauner-Hempel equations.
@@ -1043,13 +1059,6 @@ class TschaunerHempel(OrbitAdjuster):
             DeltaV_1_LVLH = dv_0_transfer - chaser.rel_state.V
             DeltaV_1_TEME = np.linalg.inv(B_0).dot(DeltaV_1_LVLH)
 
-            # chaser.abs_state.V += DeltaV_1_TEME
-            # chaser.prop.change_initial_conditions(chaser.abs_state, chaser.prop.date, chaser.mass)
-            # chaser.prop.orekit_prop.propagate(chaser.prop.date + timedelta(seconds=dt))
-            #
-            # DeltaV_2_LVLH = -chaser.rel_state.V
-            # DeltaV_2_TEME = np.linalg.inv(target.abs_state.get_lof()).dot(DeltaV_2_LVLH)
-
             DeltaV_2_LVLH = phi_vr_t.dot(chaser.rel_state.R) + phi_vv_t.dot(dv_0_transfer) - checkpoint.rel_state.V
             DeltaV_2_TEME = np.linalg.inv(target.abs_state.get_lof()).dot(DeltaV_2_LVLH)
 
@@ -1081,9 +1090,37 @@ class TschaunerHempel(OrbitAdjuster):
 
 
 class HamelDeLafontaine(OrbitAdjuster):
+    """
+        Subclass holding the function to evaluate deltaV needed to do a manoeuvre in LVLH frame, using the linearized
+        solution of Hamel-DeLaFontaine. This solution is suited for real-world propagator as it includes also the effect
+        of the J2 disturbance.
+
+        NOT suited when using 2-body propagator, error can become very large. Moreover not suited also when the
+        distance over the orbit radius is too big!
+
+        Can be used to do corrections during relative navigation
+    """
+
 
     def _refine_result(self, chaser, checkpoint, target, deltaV, dt):
+        """
+            Sort of filter that tries to refine the deltaV to increase the precision of the manoeuvre.
+            It iterate over some randomly disturbed deltaV and after every iteration it take the one that gives the best
+            solution, making it the new best solution and iterating again.
 
+        Args:
+            chaser (Chaser): chaser state.
+            checkpoint (RelativeCP): next relative checkpoint.
+            target (Target): target state.
+            deltaV (array): best deltaV calculated in evaluate_manoeuvre()
+            dt (float64): manoeuvre duration calculated in evaluate_manoeuvre()
+
+        Return:
+            deltaV (array): refined deltaV that bring the chaser closer to the wanted checkpoint.
+            best_arrival (array): relative position acquired by using the refined deltaV.
+        """
+
+        # Nr of iteration to refine the result
         nr_samples = int(1e4)
 
         chaser_tmp = deepcopy(chaser.abs_state)
@@ -1142,12 +1179,17 @@ class HamelDeLafontaine(OrbitAdjuster):
 
     def evaluate_manoeuvre(self, chaser, checkpoint, target):
         """
-            Evaluate deltav according to HamelDelaFontaine paper.
+            Take linearized solution of Hamel-deLafontaine to evaluate an estimate of the amount of deltaV to perform a
+            manoeuvre.
 
         Args:
-              chaser (Chaser)
-              checkpoint (RelativeCP)
-              target (Satellite)
+            chaser (Chaser): chaser state.
+            checkpoint (RelativeCP): next checkpoint.
+            target (Satellite): target state.
+
+        Reference:
+            Linearized Dynamics of Formation Flying Spacecraft on a J2-Perturbed Elliptical Orbit, Jean-Francois Hamel,
+            Jean de Lafontaine, Journal of Guidance, Control and Dynamics, 2007
         """
 
         # Initial target osculating orbit
