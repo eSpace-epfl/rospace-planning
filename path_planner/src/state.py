@@ -122,18 +122,16 @@ class Satellite(object):
         if type(self) != type(satellite):
             raise TypeError()
 
-        self.abs_state.R = satellite.abs_state.R
-        self.abs_state.V = satellite.abs_state.V
+        self.abs_state = deepcopy(satellite.abs_state)
         self.mass = satellite.mass
 
         if hasattr(satellite, 'prop'):
-            self.prop = satellite.prop
+            self.prop = deepcopy(satellite.prop)
         else:
-            print '[WARNING]: Propagator not setted!!'
+            print '[WARNING]: Propagator not set while copying from other satellite!'
 
         if hasattr(self, 'rel_state'):
-            self.rel_state.R = satellite.rel_state.R
-            self.rel_state.V = satellite.rel_state.V
+            self.rel_state = deepcopy(satellite.rel_state)
 
     def set_abs_state_from_cartesian(self, cartesian):
         """
