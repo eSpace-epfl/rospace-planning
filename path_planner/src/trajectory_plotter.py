@@ -9,23 +9,13 @@
 """Main file to plot a trajectory given the manoeuvre plan."""
 
 import numpy as np
-import pykep as pk
 import scipy.io as sio
 import os
 
 from rospace_lib import CartesianTEME
 from scenario import Scenario
 from state import Chaser, Satellite
-from datetime import timedelta
-from path_planning_propagator import Propagator
-
-from org.orekit.propagation import SpacecraftState
-from org.orekit.frames import FramesFactory
-from org.orekit.orbits import CartesianOrbit
-from org.orekit.utils import PVCoordinates
-from org.orekit.utils import Constants as Cst
-from org.hipparchus.geometry.euclidean.threed import Vector3D
-from org.orekit.time import AbsoluteDate, TimeScalesFactory
+from datetime import timedelta, datetime
 
 def print_state(kep):
     print "      a :     " + str(kep.a)
@@ -35,7 +25,7 @@ def print_state(kep):
     print "      w :     " + str(kep.w)
     print "      v :     " + str(kep.v)
 
-def plot_result(manoeuvre_plan, scenario, save_path):
+def plot_result(manoeuvre_plan, scenario, save_path, extra_dt=0.0):
 
     dir_list = os.listdir(save_path)
     last = -1
@@ -48,23 +38,20 @@ def plot_result(manoeuvre_plan, scenario, save_path):
     print "Simulating manoeuvre plan in folder /test_" + str(last + 1) + " ..."
 
     # Simulating the whole manoeuvre and store the result
-    chaser = Chaser()
-    target = Satellite()
-    # chaser_extra = Chaser()
+    chaser = Chaser(scenario.date)
+    target = Satellite(scenario.date)
 
     chaser.set_from_satellite(scenario.chaser_ic)
     target.set_from_satellite(scenario.target_ic)
 
-    chaser_cart_extra = CartesianTEME()
-    target_cart_extra = CartesianTEME()
-
     epoch = scenario.date
 
-    # extra_propagation = 0
-
     # Set propagators
-    chaser.prop.initialize_propagator('chaser', chaser.get_osc_oe(), 'real-world', epoch)
-    target.prop.initialize_propagator('target', target.get_osc_oe(), 'real-world', epoch)
+    chaser.prop.initialize_propagator('chaser', chaser.get_osc_oe(), '2-body')
+    target.prop.initialize_propagator('target', target.get_osc_oe(), '2-body')
+
+    if extra_dt > 0.0:
+        chaser_extra = Chaser(scenario.date)
 
     print "--------------------Chaser initial state-------------------"
     print " >> Osc Elements:"
@@ -94,6 +81,7 @@ def plot_result(manoeuvre_plan, scenario, save_path):
         man = manoeuvre_plan[i]
 
         duration = (man.execution_epoch - epoch).total_seconds()
+        print duration
 
         for j in xrange(0, int(np.floor(duration)), 100):
             chaser_prop = chaser.prop.orekit_prop.propagate(epoch + timedelta(seconds=j))
@@ -113,70 +101,82 @@ def plot_result(manoeuvre_plan, scenario, save_path):
 
         chaser.rel_state.from_cartesian_pair(chaser_prop[0], target_prop[0])
 
+        R_chaser.append(chaser_prop[0].R)
+        R_target.append(target_prop[0].R)
+        R_chaser_lvlh.append(chaser.rel_state.R)
+
+        print "     End pos: " + str(chaser.rel_state.R)
+
+        # EXTRA PROPAGATION TO CHECK TRAJECTORY SAFETY
+        if extra_dt > 0.0 and duration > 1.0:
+            chaser_extra.rel_state.from_cartesian_pair(chaser_prop[0], target_prop[0])
+
+            R_chaser_lvlh_extra = [chaser_extra.rel_state.R]
+
+            for j in xrange(0, int(np.floor(extra_dt)), 100):
+                chaser_prop_extra = chaser.prop.orekit_prop.propagate(epoch + timedelta(seconds=j))
+                target_prop_extra = target.prop.orekit_prop.propagate(epoch + timedelta(seconds=j))
+
+                chaser_extra.rel_state.from_cartesian_pair(chaser_prop_extra[0], target_prop_extra[0])
+                R_chaser_lvlh_extra.append(chaser_extra.rel_state.R)
+
+            chaser_prop_extra = chaser.prop.orekit_prop.propagate(epoch + timedelta(seconds=extra_dt))
+            target_prop_extra = target.prop.orekit_prop.propagate(epoch + timedelta(seconds=extra_dt))
+
+            chaser_extra.rel_state.from_cartesian_pair(chaser_prop_extra[0], target_prop_extra[0])
+            R_chaser_lvlh_extra.append(chaser_extra.rel_state.R)
+
+            chaser.prop.change_initial_conditions(chaser_prop[0], epoch, chaser.mass)
+            target.prop.change_initial_conditions(target_prop[0], epoch, target.mass)
+        else:
+            R_chaser_lvlh_extra = []
+
         chaser_prop[0].V += man.deltaV
 
         chaser.prop.change_initial_conditions(chaser_prop[0], epoch, chaser.mass)
         target.prop.change_initial_conditions(target_prop[0], epoch, target.mass)
 
-        print "     End pos: " + str(chaser.rel_state.R)
+        # EXTRA PROPAGATION TO CHECK TRAJECTORY SAFETY AFTER LAST MANOEUVRE
+        if extra_dt > 0.0 and i == L - 1:
+            chaser_extra.rel_state.from_cartesian_pair(chaser_prop[0], target_prop[0])
 
-        # EXTRA PROPAGATION TO CHECK TRAJECTORY SAFETY
+            R_chaser_lvlh_extra = [chaser_extra.rel_state.R]
 
-        # r_C_extra = chaser_cart.R
-        # v_C_extra = chaser_cart.V
-        # r_T_extra = target_cart.R
-        # v_T_extra = target_cart.V
-        #
-        # chaser_cart_extra.R = r_C_extra
-        # chaser_cart_extra.V = v_C_extra
-        #
-        # target_cart_extra.R = r_T_extra
-        # target_cart_extra.V = v_T_extra
-        #
-        # chaser_extra.rel_state.from_cartesian_pair(chaser_cart_extra, target_cart_extra)
-        #
-        # R_chaser_lvlh_extra = [chaser_extra.rel_state.R]
-        #
-        # for j in xrange(0, extra_propagation):
-        #     r_C_extra, v_C_extra = pk.propagate_lagrangian(r_C_extra, v_C_extra, 1.0, mu_earth)
-        #     chaser_cart_extra.R = np.array(r_C_extra)
-        #     chaser_cart_extra.V = np.array(v_C_extra)
-        #
-        #     r_T_extra, v_T_extra = pk.propagate_lagrangian(r_T_extra, v_T_extra, 1.0, mu_earth)
-        #     target_cart_extra.R = np.array(r_T_extra)
-        #     target_cart_extra.V = np.array(v_T_extra)
-        #
-        #     chaser_extra.rel_state.from_cartesian_pair(chaser_cart_extra, target_cart_extra)
-        #
-        #     R_chaser_lvlh_extra.append(chaser_extra.rel_state.R)
-        #
-        #     r_C_extra = np.array(r_C_extra)
-        #     v_C_extra = np.array(v_C_extra)
-        #     r_T_extra = np.array(r_T_extra)
-        #     v_T_extra = np.array(v_T_extra)
+            for j in xrange(0, int(np.floor(extra_dt)), 100):
+                chaser_prop_extra = chaser.prop.orekit_prop.propagate(epoch + timedelta(seconds=j))
+                target_prop_extra = target.prop.orekit_prop.propagate(epoch + timedelta(seconds=j))
+
+                chaser_extra.rel_state.from_cartesian_pair(chaser_prop_extra[0], target_prop_extra[0])
+                R_chaser_lvlh_extra.append(chaser_extra.rel_state.R)
+
+            chaser_prop_extra = chaser.prop.orekit_prop.propagate(epoch + timedelta(seconds=extra_dt))
+            target_prop_extra = target.prop.orekit_prop.propagate(epoch + timedelta(seconds=extra_dt))
+
+            chaser_extra.rel_state.from_cartesian_pair(chaser_prop_extra[0], target_prop_extra[0])
+            R_chaser_lvlh_extra.append(chaser_extra.rel_state.R)
+
+            chaser.prop.change_initial_conditions(chaser_prop[0], epoch, chaser.mass)
+            target.prop.change_initial_conditions(target_prop[0], epoch, target.mass)
 
         # Saving in .mat file
         sio.savemat(save_path + '/test_' + str(last + 1) + '/manoeuvre_' + str(i) + '.mat',
                     mdict={'abs_state_c': R_chaser, 'rel_state_c': R_chaser_lvlh, 'abs_state_t': R_target,
-                           'deltaV': man.deltaV, 'duration': duration}) #, 'rel_state_c_extra': R_chaser_lvlh_extra})
+                           'deltaV': man.deltaV, 'duration': duration, 'rel_state_c_extra': R_chaser_lvlh_extra})
 
-    print "\nManoeuvre saved."
+    print "\nManoeuvre saved in folder " + str(last + 1) + "."
 
-def main(filename):
+def main(filename, scenario, manoeuvre_plan):
     # Create scenario
-    scenario = Scenario()
-    scenario.import_yaml_scenario(filename)
+    # scenario = Scenario(datetime(2014, 7, 16, 6, 58, 50, 646144))
+    # scenario.import_yaml_scenario(filename)
 
     # Import scenario solution
-    manoeuvre_plan = scenario.import_solved_scenario()
-
-    # scenario.prop_chaser._propagator_num.resetAtEnd = False
-    # scenario.prop_target._propagator_num.resetAtEnd = False
+    # manoeuvre_plan = scenario.import_solved_scenario()
 
     # Path where the files should be stored
     save_path = '/home/dfrey/polybox/manoeuvre'
 
-    plot_result(manoeuvre_plan, scenario, save_path)
+    plot_result(manoeuvre_plan, scenario, save_path, 20000)
 
 if __name__ == "__main__":
-    main('scenario')
+    main('scenario_camille')
