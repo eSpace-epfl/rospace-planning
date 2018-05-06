@@ -1,0 +1,151 @@
+scenario:
+  name: 'Scenario Camille'
+
+  overview:  " 0. Starting from -35km below the target do ARM1.\n
+              1. Do ARM2 and CAM2.\n
+              2. Do ARM3 to go 4km below the target.\n
+              3. Drift to S0.\n
+              4. Do ARM1 to move on target's orbit.\n"
+
+  keep_out_zone: [0.2, 0.2, 0.2]
+
+  approach_ellipsoid: [0.5, 1.5, 0.5]
+
+  prop_type: real-world
+
+  checkpoints:
+    S0:
+      id: 0
+      state:
+        kep:
+          a: 7058.25405822
+          e: 0.0012396833448931055
+          i: 1.71740398396
+          O: 5.40353936417
+          w: 5.11730536685
+          v: 0.0
+
+    S1:
+      id: 1
+      state:
+        kep:
+          a: 7061.75405822
+          e: 0.0017346964931099773
+          i: 1.71740398396
+          O: 5.40353936417
+          w: 5.11730536685
+          v: 0.0
+
+    S2:
+      id: 2
+      state:
+        kep:
+          a: 7070.50405822
+          e: 0.0004950142127322366
+          i: 1.71740398396
+          O: 5.40353936417
+          w: 5.11730536685
+          v: 0.0
+
+    S3:
+      id: 3
+      state:
+        kep:
+          a: 7084.7573
+          e: 0.0006001675519493238
+          i: 1.71740398396
+          O: 5.40353936417
+          w: 5.117305366851517382135
+          v: 0.0
+
+    S4:
+      id: 4
+      state:
+        lvlh:
+          R: [-4.0, -10.0, 0.0]
+          V: [0.0, 0.0, 0.0]
+      error_ellipsoid: [0.4, 1.5, 0.4]
+      manoeuvre: drift
+
+    S5:
+      id: 5
+      state:
+        lvlh:
+          R: [-4.0, 8.0, 0.0]
+          V: [0.0, 0.0, 0.0]
+      error_ellipsoid: [0.4, 1.5, 0.4]
+      manoeuvre: drift
+
+    S6:
+      id: 6
+      state:
+        lvlh:
+          R: [0.0, 18.0, 0.0]
+          V: [0.0, 0.0, 0.0]
+      error_ellipsoid: [0.2, 1.0, 0.2]
+      t_min: 3000
+      t_max: 3100
+
+    S7:
+      id: 7
+      state:
+        lvlh:
+          R: [0.0, -2.0, 0.0]
+          V: [0.0, 0.0, 0.0]
+      error_ellipsoid: [0.1, 0.3, 0.1]
+      t_min: 29000
+      t_max: 29010
+
+    S8:
+      id: 8
+      state:
+        lvlh:
+          R: [0.0, -1.0, 0.0]
+          V: [0.0, 0.0, 0.0]
+      error_ellipsoid: [0.005, 0.015, 0.005]
+      manoeuvre: radial
+
+    S9:
+      id: 9
+      state:
+        lvlh:
+          R: [0.0, -0.2, 0.0]
+          V: [0.0, 0.0, 0.0]
+      error_ellipsoid: [0.001, 0.005, 0.001]
+      manoeuvre: radial
+
+    S10:
+      id: 10
+      state:
+        lvlh:
+          R: [0.0, -0.05, 0.0]
+          V: [0.0, 0.0, 0.0]
+      error_ellipsoid: [0.0005, 0.002, 0.0005]
+      manoeuvre: radial
+
+    S11:
+      id: 11
+      state:
+        lvlh:
+          R: [0.0, -0.025, 0.0]
+          V: [0.0, 0.0, 0.0]
+      error_ellipsoid: [0.0001, 0.001, 0.0001]
+      manoeuvre: radial
+
+    S12:
+      id: 12
+      state:
+        lvlh:
+          R: [0.0, -0.01, 0.0]
+          V: [0.0, 0.0, 0.0]
+      error_ellipsoid: [0.0001, 0.0005, 0.0001]
+      manoeuvre: radial
+
+#    S13:
+#      id: 13
+#      state:
+#        lvlh:
+#          R: [0.0, -0.05, 0.0]
+#          V: [0.0, 0.0, 0.0]
+#      error_ellipsoid: [0.0005, 0.002, 0.0005]
+#      manoeuvre: fly-around

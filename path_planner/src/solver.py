@@ -211,6 +211,7 @@ class Solver(object):
             print '\n Manoeuvre nr. ' + str(it) + ':'
             print '--> DeltaV:            ' + str(man.deltaV)
             print '--> Normalized DeltaV: ' + str(np.linalg.norm(man.deltaV))
+            print '--> Execution Epoch:   ' + str(man.execution_epoch)
             tot_dv += np.linalg.norm(man.deltaV)
 
         return tot_dv, (man.execution_epoch - self.scenario.date).total_seconds()
