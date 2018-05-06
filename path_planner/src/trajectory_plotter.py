@@ -11,11 +11,13 @@
 import numpy as np
 import scipy.io as sio
 import os
+import argparse
 
-from rospace_lib import CartesianTEME
 from scenario import Scenario
 from state import Chaser, Satellite
-from datetime import timedelta, datetime
+from datetime import timedelta
+from rospace_lib.misc import QuickPropagator
+
 
 def print_state(kep):
     print "      a :     " + str(kep.a)
@@ -24,6 +26,7 @@ def print_state(kep):
     print "      O :     " + str(kep.O)
     print "      w :     " + str(kep.w)
     print "      v :     " + str(kep.v)
+
 
 def plot_result(manoeuvre_plan, scenario, save_path, extra_dt=0.0):
 
@@ -35,25 +38,28 @@ def plot_result(manoeuvre_plan, scenario, save_path, extra_dt=0.0):
 
     os.makedirs(save_path + '/test_' + str(last + 1))
 
-    print "Simulating manoeuvre plan in folder /test_" + str(last + 1) + " ..."
+    print "\n[INFO]: Simulating manoeuvre plan in folder /test_" + str(last + 1) + " ..."
 
     # Simulating the whole manoeuvre and store the result
-    chaser = Chaser(scenario.date)
-    target = Satellite(scenario.date)
+    chaser = Chaser()
+    target = Satellite()
 
     chaser.set_from_satellite(scenario.chaser_ic)
     target.set_from_satellite(scenario.target_ic)
 
     epoch = scenario.date
 
-    # Set propagators
+    # Create and initialize propagators
+    chaser.prop = QuickPropagator(epoch)
+    target.prop = QuickPropagator(epoch)
     chaser.prop.initialize_propagator('chaser', chaser.get_osc_oe(), '2-body')
     target.prop.initialize_propagator('target', target.get_osc_oe(), '2-body')
 
-    if extra_dt > 0.0:
-        chaser_extra = Chaser(scenario.date)
 
-    print "--------------------Chaser initial state-------------------"
+    if extra_dt > 0.0:
+        chaser_extra = Chaser()
+
+    print "\n------------------------Chaser initial state-----------------------"
     print " >> Osc Elements:"
     print_state(chaser.get_osc_oe())
     print "\n >> Mean Elements:"
@@ -61,18 +67,15 @@ def plot_result(manoeuvre_plan, scenario, save_path, extra_dt=0.0):
     print "\n >> LVLH:"
     print "     R: " + str(chaser.rel_state.R)
     print "     V: " + str(chaser.rel_state.V)
-    print "\n--------------------Target initial state-------------------"
+    print "\n------------------------Target initial state-----------------------"
     print " >> Osc Elements:"
     print_state(target.get_osc_oe())
     print "\n >> Mean Elements:"
     print_state(target.get_mean_oe())
-    print "------------------------------------------------------------\n"
+    print "--------------------------------------------------------------------\n"
 
     L = len(manoeuvre_plan)
     for i in xrange(0, L):
-        print " --> Simulating manoeuvre " + str(i)
-        print "     Start pos: " + str(chaser.rel_state.R)
-
         # Creating list of radius of target and chaser
         R_target = []
         R_chaser = []
@@ -81,7 +84,11 @@ def plot_result(manoeuvre_plan, scenario, save_path, extra_dt=0.0):
         man = manoeuvre_plan[i]
 
         duration = (man.execution_epoch - epoch).total_seconds()
-        print duration
+
+        print "\n[INFO]: Simulating manoeuvre " + str(i)
+        print "        Starting pos:   " + str(chaser.rel_state.R)
+        print "        Starting epoch: " + str(man.execution_epoch)
+        print "        Duration:       " + str(duration)
 
         for j in xrange(0, int(np.floor(duration)), 100):
             chaser_prop = chaser.prop.orekit_prop.propagate(epoch + timedelta(seconds=j))
@@ -105,7 +112,7 @@ def plot_result(manoeuvre_plan, scenario, save_path, extra_dt=0.0):
         R_target.append(target_prop[0].R)
         R_chaser_lvlh.append(chaser.rel_state.R)
 
-        print "     End pos: " + str(chaser.rel_state.R)
+        print "        End pos: " + str(chaser.rel_state.R)
 
         # EXTRA PROPAGATION TO CHECK TRAJECTORY SAFETY
         if extra_dt > 0.0 and duration > 1.0:
@@ -163,20 +170,44 @@ def plot_result(manoeuvre_plan, scenario, save_path, extra_dt=0.0):
                     mdict={'abs_state_c': R_chaser, 'rel_state_c': R_chaser_lvlh, 'abs_state_t': R_target,
                            'deltaV': man.deltaV, 'duration': duration, 'rel_state_c_extra': R_chaser_lvlh_extra})
 
-    print "\nManoeuvre saved in folder " + str(last + 1) + "."
+    print "\n[INFO]: Manoeuvres saved in folder nr. " + str(last + 1) + "."
 
-def main(filename, scenario, manoeuvre_plan):
-    # Create scenario
-    # scenario = Scenario(datetime(2014, 7, 16, 6, 58, 50, 646144))
-    # scenario.import_yaml_scenario(filename)
 
-    # Import scenario solution
-    # manoeuvre_plan = scenario.import_solved_scenario()
+def main(manoeuvre_plan=None, scenario=None, filename=None, save_path='/home/dfrey/polybox/manoeuvre', extra_dt=20000):
 
-    # Path where the files should be stored
-    save_path = '/home/dfrey/polybox/manoeuvre'
+    if scenario is None and filename is not None:
+        # Create scenario
+        scenario = Scenario()
 
-    plot_result(manoeuvre_plan, scenario, save_path, 20000)
+        # Import scenario solution
+        manoeuvre_plan = scenario.import_solved_scenario(filename)
+    elif scenario is None and filename is None:
+        raise IOError('File name needed as input!')
+
+    if manoeuvre_plan is not None:
+        plot_result(manoeuvre_plan, scenario, save_path, extra_dt)
+    else:
+        raise IOError('Manoeuvre plan needed as input!')
+
 
 if __name__ == "__main__":
-    main('scenario_camille')
+    parser = argparse.ArgumentParser()
+    parser.add_argument('filename',
+                        help='Name of the scenario pickle file which should be uploaded.')
+    parser.add_argument('--extra_dt',
+                        help='State how many seconds of extra propagation are needed (standard 20000 seconds).')
+    parser.add_argument('--save_path',
+                        help='Specify a path where the manoeuvres should be saved.')
+    args = parser.parse_args()
+
+    if args.extra_dt:
+        extra_dt = args.extra_dt
+    else:
+        extra_dt = 20000
+
+    if args.save_path:
+        save_path = args.save_path
+    else:
+        save_path = '/home/dfrey/polybox/manoeuvre'
+
+    main(filename=args.filename, extra_dt=extra_dt, save_path=save_path)
