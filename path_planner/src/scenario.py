@@ -53,9 +53,9 @@ class Scenario(object):
         # Scenario starting date
         self.date = None
 
-    def import_solved_scenario(self):
+    def import_solved_scenario(self, filename):
         """
-            Import a solved scenario, i.e the manoeuvre plan, from pickle file 'scenario.pickle'
+            Import a solved scenario, i.e the manoeuvre plan, from pickle file 'filename.pickle'
 
             Return:
                 Manoeuvre plan, the list containing the manoeuvres to perform this scenario.
@@ -63,30 +63,27 @@ class Scenario(object):
 
         # Actual path
         abs_path = os.path.dirname(os.path.abspath(__file__))
-        scenario_path = os.path.join(abs_path, '../example/scenario.pickle')
+        scenario_path = os.path.join(abs_path, '../example/' + filename + '.pickle')
 
         # Try to import the file
         try:
             with open(scenario_path, 'rb') as file:
                 obj = pickle.load(file)
-                if obj['scenario_name'] == self.name:
-                    print "\n ----> Offline solution loaded! <---- \n"
+                print "\n ----> Offline solution loaded! <---- \n"
+                self.name = obj['scenario_name']
+                self.overview = obj['scenario_overview']
+                self.checkpoints = obj['checkpoints']
+                self.target_ic.set_from_satellite(obj['target_ic'])
+                self.chaser_ic.set_from_satellite(obj['chaser_ic'])
+                self.date = obj['scenario_epoch']
 
-                    self.checkpoints = obj['checkpoints']
-                    self.name = obj['scenario_name']
-                    self.target_ic.set_from_satellite(obj['target_ic'])
-                    self.chaser_ic.set_from_satellite(obj['chaser_ic'])
-                    self.date = obj['scenario_epoch']
-
-                    return obj['manoeuvre_plan']
-                else:
-                    raise TypeError('Scenario in cfg folder does not correspond to actual one!')
+                return obj['manoeuvre_plan']
         except IOError:
             raise IOError('Scenario file not found!')
 
     def export_solved_scenario(self, manoeuvre_plan):
         """
-            Export a solved scenario into pickle file 'scenario.pickle' in the /example folder.
+            Export a solved scenario into pickle file 'scenario_name_date.pickle' in the /example folder.
         """
 
         # Actual path
@@ -96,7 +93,8 @@ class Scenario(object):
         if not os.path.exists(os.path.join(abs_path, '../example')):
             os.makedirs(os.path.join(abs_path, '../example'))
 
-        pickle_path = os.path.join(abs_path, '../example/scenario.pickle')
+        filename = self.name.replace(' ', '_') + '_' + datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        pickle_path = os.path.join(abs_path, '../example/' + filename + '.pickle')
 
         with open(pickle_path, 'wb') as file:
 
@@ -104,12 +102,17 @@ class Scenario(object):
             del self.target_ic.prop
             del self.chaser_ic.prop
 
-            obj = {'scenario_name': self.name, 'checkpoints': self.checkpoints, 'manoeuvre_plan': manoeuvre_plan,
-                   'target_ic': self.target_ic, 'chaser_ic': self.chaser_ic, 'scenario_epoch': self.date}
+            obj = {'scenario_name': self.name,
+                   'scenario_overview': self.overview,
+                   'checkpoints': self.checkpoints,
+                   'manoeuvre_plan': manoeuvre_plan,
+                   'target_ic': self.target_ic,
+                   'chaser_ic': self.chaser_ic,
+                   'scenario_epoch': self.date}
 
             pickle.dump(obj, file, protocol=pickle.HIGHEST_PROTOCOL)
 
-            print "Manoeuvre plan saved..."
+            print "\n[INFO]: Manoeuvre plan saved in " + filename
 
     def import_yaml_scenario(self, filename, ic_name='std_ic'):
         """
