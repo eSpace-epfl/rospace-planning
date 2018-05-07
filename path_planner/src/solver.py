@@ -8,14 +8,12 @@
 
 """Class holding the definition of the Solver, which outputs a manoeuvre plan given a scenario."""
 
-import numpy as np
 
 from rospace_lib import Cartesian, KepOrbElem, CartesianLVLH, mu_earth
-from manoeuvre import Manoeuvre
 from state import Satellite, Chaser
 from checkpoint import AbsoluteCP, RelativeCP
 from scenario import Scenario
-from datetime import timedelta, datetime
+from datetime import datetime
 from orbit_adjuster import *
 
 
@@ -35,6 +33,7 @@ class Solver(object):
         chaser (Chaser): Chaser actual state, evolving in time according to the solver.
         target (Satellite): Target actual state, evolving in time according to the solver.
         epoch (datetime): Actual epoch, evolving in time according to the solver.
+        tot_dV (float64): Total amount of delta-V consumed in [km/s].
     """
 
     def __init__(self):
@@ -43,7 +42,6 @@ class Solver(object):
         self.chaser = Chaser()
         self.target = Satellite()
         self.epoch = None
-
         self.tot_dV = 0.0
 
     def initialize_solver(self, scenario):
@@ -55,10 +53,9 @@ class Solver(object):
         """
 
         self.scenario = scenario
-        self.epoch = scenario.target_ic.prop.date
-
-        self.chaser.set_from_satellite(scenario.chaser_ic)
-        self.target.set_from_satellite(scenario.target_ic)
+        self.epoch = scenario.date
+        self.target.initialize_satellite('target', scenario.ic_name, scenario.prop_type)
+        self.chaser.initialize_satellite('chaser', scenario.ic_name, scenario.prop_type, self.target)
 
     def solve_scenario(self):
         """
@@ -199,7 +196,6 @@ class Solver(object):
             orbit_adj = Drift()
             new_manoeuvre_plan = orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target, self.manoeuvre_plan)
             self.manoeuvre_plan = new_manoeuvre_plan
-            print len(self.manoeuvre_plan)
 
     def _print_result(self):
         """
