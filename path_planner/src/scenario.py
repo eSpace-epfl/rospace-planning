@@ -13,9 +13,10 @@ import numpy as np
 import pickle
 import os
 
-from state import Satellite, Chaser
 from checkpoint import AbsoluteCP, RelativeCP
 from datetime import datetime
+from rospace_lib import OscKepOrbElem
+from state import Satellite
 
 
 class Scenario(object):
@@ -27,8 +28,13 @@ class Scenario(object):
         Attributes:
             name (str): Scenario name.
             overview (str): Brief scenario overview, explaining all the steps.
+            prop_type (str): Propagator type for this scenario.
+            ic_name (str): Name of the initial conditions chosen.
             checkpoints (list): A list containing all the checkpoints that has to be executed in the right order.
-            target_ic (Satellite): Target initial state.
+            chaser_ic (OscKepOrbElem): Chaser initial state.
+            target_ic (OscKepOrbElem): Target initial state.
+            chaser_mass (float64): Chaser initial mass.
+            target_mass (float64): Target initial mass.
             date (timedelta): Time at which the simulation start.
             approach_ellipsoid (np.array): Axis of the approach ellipsoid around the target [km].
             koz_r (float64): Radius of Keep-Out Zone drawn around the target [km].
@@ -38,13 +44,17 @@ class Scenario(object):
         # Scenario information
         self.name = 'Standard'
         self.overview = ''
+        self.prop_type = ''
+        self.ic_name = ''
 
         # Checkpoint list
         self.checkpoints = []
 
         # Satellite initial states
-        self.chaser_ic = Chaser()
-        self.target_ic = Satellite()
+        self.chaser_ic = OscKepOrbElem()
+        self.target_ic = OscKepOrbElem()
+        self.chaser_mass = 0.0
+        self.target_mass = 0.0
 
         # Target Keep-Out Zones
         self.approach_ellipsoid = np.array([0.0, 0.0, 0.0])
@@ -73,9 +83,13 @@ class Scenario(object):
                 self.name = obj['scenario_name']
                 self.overview = obj['scenario_overview']
                 self.checkpoints = obj['checkpoints']
-                self.target_ic.set_from_satellite(obj['target_ic'])
-                self.chaser_ic.set_from_satellite(obj['chaser_ic'])
+                self.target_ic = obj['target_ic']
+                self.chaser_ic = obj['chaser_ic']
+                self.ic_name = obj['ic_name']
+                self.target_mass = obj['target_mass']
+                self.chaser_mass = obj['chaser_mass']
                 self.date = obj['scenario_epoch']
+                self.prop_type = obj['prop_type']
 
                 return obj['manoeuvre_plan']
         except IOError:
@@ -98,17 +112,17 @@ class Scenario(object):
 
         with open(pickle_path, 'wb') as file:
 
-            # Delete propagator to be able to dump satellite in pickle file
-            del self.target_ic.prop
-            del self.chaser_ic.prop
-
             obj = {'scenario_name': self.name,
                    'scenario_overview': self.overview,
                    'checkpoints': self.checkpoints,
                    'manoeuvre_plan': manoeuvre_plan,
                    'target_ic': self.target_ic,
                    'chaser_ic': self.chaser_ic,
-                   'scenario_epoch': self.date}
+                   'ic_name': self.ic_name,
+                   'target_mass': self.target_mass,
+                   'chaser_mass': self.chaser_mass,
+                   'scenario_epoch': self.date,
+                   'prop_type': self.prop_type}
 
             pickle.dump(obj, file, protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -149,12 +163,12 @@ class Scenario(object):
         else:
             raise IOError('Missing "overview" key in yaml file!')
 
-        # Initialize satellites
-        self.target_ic.initialize_satellite(ic_name, 'target', scenario['prop_type'])
-        self.chaser_ic.initialize_satellite(ic_name, 'chaser', scenario['prop_type'], self.target_ic)
+        # Set propagator type and initial conditions name
+        self.ic_name = ic_name
+        self.prop_type = scenario['prop_type']
 
-        # Initialize date from satellites
-        self.date = self.target_ic.prop.date
+        self.target_ic, self.target_mass, self.date = Satellite.export_initial_condition('target', ic_name)
+        self.chaser_ic, self.chaser_mass, date_tmp = Satellite.export_initial_condition('chaser', ic_name)
 
         # Extract CheckPoints
         for i in xrange(0, len(checkpoints)):
