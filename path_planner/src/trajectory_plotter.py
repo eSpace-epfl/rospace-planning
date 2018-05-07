@@ -16,7 +16,6 @@ import argparse
 from scenario import Scenario
 from state import Chaser, Satellite
 from datetime import timedelta
-from rospace_lib.misc import QuickPropagator
 
 
 def print_state(kep):
@@ -44,17 +43,10 @@ def plot_result(manoeuvre_plan, scenario, save_path, extra_dt=0.0):
     chaser = Chaser()
     target = Satellite()
 
-    chaser.set_from_satellite(scenario.chaser_ic)
-    target.set_from_satellite(scenario.target_ic)
+    target.initialize_satellite('target', scenario.ic_name, scenario.prop_type)
+    chaser.initialize_satellite('chaser', scenario.ic_name, scenario.prop_type, target)
 
     epoch = scenario.date
-
-    # Create and initialize propagators
-    chaser.prop = QuickPropagator(epoch)
-    target.prop = QuickPropagator(epoch)
-    chaser.prop.initialize_propagator('chaser', chaser.get_osc_oe(), '2-body')
-    target.prop.initialize_propagator('target', target.get_osc_oe(), '2-body')
-
 
     if extra_dt > 0.0:
         chaser_extra = Chaser()
