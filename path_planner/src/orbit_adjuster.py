@@ -148,6 +148,7 @@ class OrbitAdjuster(object):
 
         return v
 
+
 class HohmannTransfer(OrbitAdjuster):
     """
         Subclass holding the function to evaluate a Hohmann Transfer.
@@ -543,10 +544,6 @@ class Drift(OrbitAdjuster):
             man (Manoeuvre)
         """
 
-        # Creating old chaser and target objects to store their temporary value
-        chaser_old = Chaser()
-        target_old = Satellite()
-
         # Define a function F for the angle calculation
         F = lambda dv_req, dv, n: int((dv - dv_req) / n > 0.0) * np.sign(n)
 
@@ -557,11 +554,15 @@ class Drift(OrbitAdjuster):
             target_mean = target.get_mean_oe()
 
             # Assign information to the new chaser and target objects
-            chaser_old.set_from_satellite(chaser)
-            target_old.set_from_satellite(target)
+            chaser_old = deepcopy(chaser.abs_state)
+            target_old = deepcopy(target.abs_state)
 
             # Store initial epoch
             epoch_old = chaser.prop.date
+
+            # Store initial masses
+            chaser_mass_old = chaser.mass
+            target_mass_old = target.mass
 
             # Evaluate relative mean angular velocity. If it's below zero chaser moves slower than target,
             # otherwise faster
@@ -580,9 +581,6 @@ class Drift(OrbitAdjuster):
             # Millisecond tolerance to exit the loop
             tol = 1e-3
 
-            chaser_tmp = Chaser()
-            target_tmp = Satellite()
-
             manoeuvre_plan_old = deepcopy(manoeuvre_plan)
 
             t_est = (2.0 * np.pi * F(dv_req, actual_dv, n_rel) + dv_req - actual_dv) / n_rel
@@ -592,11 +590,13 @@ class Drift(OrbitAdjuster):
             dr_next = 0.0
             while dt > tol:
                 # Store (i-1) chaser and target state
-                chaser_tmp.set_from_satellite(chaser)
-                target_tmp.set_from_satellite(target)
+                chaser_tmp = deepcopy(chaser.abs_state)
+                target_tmp = deepcopy(target.abs_state)
                 epoch_tmp = chaser.prop.date
                 dr_next_tmp = dr_next
                 manoeuvre_plan_tmp = deepcopy(manoeuvre_plan)
+                chaser_mass_tmp = chaser.mass
+                target_mass_tmp = target.mass
 
                 # Update epoch
                 chaser.prop.date += timedelta(seconds=dt)
@@ -633,29 +633,24 @@ class Drift(OrbitAdjuster):
                         checkpoint_abs.abs_state.O = target_mean.O
 
                         orbit_adj = PlaneOrientation()
-                        orbit_adj.evaluate_manoeuvre(chaser, checkpoint_abs, target)
+                        manoeuvre_plan += orbit_adj.evaluate_manoeuvre(chaser, checkpoint_abs, target)
 
                         dr_next = chaser.rel_state.R[1] - checkpoint.rel_state.R[1]
 
                         if dr_next >= 0.0:
                             # Overshoot due to plane adjustment => reduce dt and depropagate
                             dt /= 10.0
-                            chaser.set_from_satellite(chaser_tmp)
-                            target.set_from_satellite(target_tmp)
+                            chaser.abs_state = deepcopy(chaser_tmp)
+                            target.abs_state = deepcopy(target_tmp)
 
                             chaser.prop.date = epoch_tmp
                             target.prop.date = epoch_tmp
 
-                            chaser_cartesian_tmp = CartesianTEME()
-                            chaser_cartesian_tmp.R = chaser.abs_state.R
-                            chaser_cartesian_tmp.V = chaser.abs_state.V
+                            chaser.mass = chaser_mass_tmp
+                            target.mass = target_mass_tmp
 
-                            target_cartesian_tmp = CartesianTEME()
-                            target_cartesian_tmp.R = target.abs_state.R
-                            target_cartesian_tmp.V = target.abs_state.V
-
-                            chaser.prop.change_initial_conditions(chaser_cartesian_tmp, chaser.prop.date, chaser.mass)
-                            target.prop.change_initial_conditions(target_cartesian_tmp, target.prop.date, target.mass)
+                            chaser.prop.change_initial_conditions(chaser.abs_state, chaser.prop.date, chaser.mass)
+                            target.prop.change_initial_conditions(target.abs_state, target.prop.date, target.mass)
 
                             manoeuvre_plan = manoeuvre_plan_tmp
 
@@ -665,7 +660,6 @@ class Drift(OrbitAdjuster):
                             # Target point not overshooted, everything looks good as it is
                             man = RelativeMan()
                             man.deltaV = np.array([0.0, 0.0, 0.0])
-                            # man.set_initial_rel_state(chaser_tmp.rel_state)
                             man.execution_epoch = chaser.prop.date
 
                             manoeuvre_plan.append(man)
@@ -676,7 +670,6 @@ class Drift(OrbitAdjuster):
                         # No plane adjustment needed, add another dt and move forward
                         man = RelativeMan()
                         man.deltaV = np.array([0.0, 0.0, 0.0])
-                        # man.set_initial_rel_state(chaser_tmp.rel_state)
                         man.execution_epoch = chaser.prop.date
 
                         manoeuvre_plan.append(man)
@@ -689,22 +682,17 @@ class Drift(OrbitAdjuster):
 
                 elif (dr_next <= 0.0 and dr_next_old >= 0.0) or (dr_next >= 0.0 and dr_next_old <= 0.0):
                     dt /= 10.0
-                    chaser.set_from_satellite(chaser_tmp)
-                    target.set_from_satellite(target_tmp)
+                    chaser.abs_state = deepcopy(chaser_tmp)
+                    target.abs_state = deepcopy(target_tmp)
 
                     chaser.prop.date = epoch_tmp
                     target.prop.date = epoch_tmp
 
-                    chaser_cart_tmp = CartesianTEME()
-                    target_cart_tmp = CartesianTEME()
+                    chaser.mass = chaser_mass_tmp
+                    target.mass = target_mass_tmp
 
-                    chaser_cart_tmp.R = chaser_tmp.abs_state.R
-                    chaser_cart_tmp.V = chaser_tmp.abs_state.V
-                    target_cart_tmp.R = target_tmp.abs_state.R
-                    target_cart_tmp.V = target_tmp.abs_state.V
-
-                    chaser.prop.change_initial_conditions(chaser_cart_tmp, chaser.prop.date, chaser_tmp.mass)
-                    target.prop.change_initial_conditions(target_cart_tmp, target.prop.date, target_tmp.mass)
+                    chaser.prop.change_initial_conditions(chaser.abs_state, chaser.prop.date, chaser_mass_tmp)
+                    target.prop.change_initial_conditions(target.abs_state, target.prop.date, target_mass_tmp)
                     # dr_next_old should be the same as the one at the beginning
                     dr_next = dr_next_tmp
 
@@ -730,8 +718,8 @@ class Drift(OrbitAdjuster):
                 print "           Correcting altitude automatically...\n"
 
                 # Depropagate to initial conditions before drifting
-                chaser.set_from_satellite(chaser_old)
-                target.set_from_satellite(target_old)
+                chaser.abs_state = deepcopy(chaser_old)
+                target.abs_state = deepcopy(target_old)
 
                 chaser_mean = chaser.get_mean_oe()
                 target_mean = target.get_mean_oe()
@@ -739,8 +727,11 @@ class Drift(OrbitAdjuster):
                 chaser.prop.date = epoch_old
                 target.prop.date = epoch_old
 
-                chaser.prop.change_initial_conditions(chaser_old.abs_state, chaser.prop.date, chaser_old.mass)
-                target.prop.change_initial_conditions(target_old.abs_state, target.prop.date, target_old.mass)
+                chaser.mass = chaser_mass_old
+                target.mass = target_mass_old
+
+                chaser.prop.change_initial_conditions(chaser.abs_state, chaser.prop.date, chaser_mass_old)
+                target.prop.change_initial_conditions(target.abs_state, target.prop.date, target_mass_old)
 
                 manoeuvre_plan = manoeuvre_plan_old
 
@@ -752,6 +743,7 @@ class Drift(OrbitAdjuster):
 
                 orbit_adj = HohmannTransfer()
                 manoeuvre_plan += orbit_adj.evaluate_manoeuvre(chaser, checkpoint_new_abs, target)
+
 
 class MultiLambert(OrbitAdjuster):
     """

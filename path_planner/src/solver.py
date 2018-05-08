@@ -8,14 +8,12 @@
 
 """Class holding the definition of the Solver, which outputs a manoeuvre plan given a scenario."""
 
-import numpy as np
 
 from rospace_lib import Cartesian, KepOrbElem, CartesianLVLH, mu_earth
-from manoeuvre import Manoeuvre
 from state import Satellite, Chaser
 from checkpoint import AbsoluteCP, RelativeCP
 from scenario import Scenario
-from datetime import timedelta, datetime
+from datetime import datetime
 from orbit_adjuster import *
 
 
@@ -35,6 +33,7 @@ class Solver(object):
         chaser (Chaser): Chaser actual state, evolving in time according to the solver.
         target (Satellite): Target actual state, evolving in time according to the solver.
         epoch (datetime): Actual epoch, evolving in time according to the solver.
+        tot_dV (float64): Total amount of delta-V consumed in [km/s].
     """
 
     def __init__(self):
@@ -43,22 +42,20 @@ class Solver(object):
         self.chaser = Chaser()
         self.target = Satellite()
         self.epoch = None
-
         self.tot_dV = 0.0
 
     def initialize_solver(self, scenario):
         """
-            Given the scenario to be solved initialize the solver attributes.
+            Given the scenario to be solved, initialize the solver attributes.
 
         Args:
             scenario (Scenario)
         """
 
         self.scenario = scenario
-        self.epoch = scenario.target_ic.prop.date
-
-        self.chaser.set_from_satellite(scenario.chaser_ic)
-        self.target.set_from_satellite(scenario.target_ic)
+        self.epoch = scenario.date
+        self.target.initialize_satellite('target', scenario.ic_name, scenario.prop_type)
+        self.chaser.initialize_satellite('chaser', scenario.ic_name, scenario.prop_type, self.target)
 
     def solve_scenario(self):
         """
@@ -147,7 +144,6 @@ class Solver(object):
         target_mean = self.target.get_mean_oe()
 
         # Check if plane needs to be corrected again
-        # TODO: Put as tolerance a number slightly bigger than the deviation of the estimation
         # TODO: Remove changes in plane if it is drifting autonomously to the wanted direction
         tol_i = 1.0 / chaser_mean.a
         tol_O = 1.0 / chaser_mean.a
@@ -164,17 +160,20 @@ class Solver(object):
             orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint_abs, self.target)
 
         if checkpoint.manoeuvre_type == 'standard':
-            orbit_adj = HamelDeLafontaine()
-            self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
 
-            # orbit_adj = TschaunerHempel()
-            # self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
+            if self.target.prop.prop_type == 'real-world':
+                orbit_adj = HamelDeLafontaine()
+                self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
+            elif self.target.prop.prop_type == '2-body':
+                # orbit_adj = TschaunerHempel()
+                # self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
+                # orbit_adj = ClohessyWiltshire()
+                # self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
 
-            # orbit_adj = ClohessyWiltshire()
-            # self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
-
-            # orbit_adj = MultiLambert()
-            # self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target, approach_ellipsoid, True)
+                orbit_adj = MultiLambert()
+                self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target, approach_ellipsoid, True)
+            else:
+                raise TypeError('Propagator type not recognized!')
 
         elif checkpoint.manoeuvre_type == 'radial':
             # Manoeuvre type is radial -> deltaT is calculated from CW-equations -> solved with multi-lambert
@@ -183,23 +182,24 @@ class Solver(object):
             checkpoint.t_min = dt
             checkpoint.t_max = dt + 1.0
 
-            orbit_adj = HamelDeLafontaine()
-            self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
+            if self.target.prop.prop_type == 'real-world':
+                orbit_adj = HamelDeLafontaine()
+                self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
+            elif self.target.prop.prop_type == '2-body':
+                # orbit_adj = TschaunerHempel()
+                # self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
+                # orbit_adj = ClohessyWiltshire()
+                # self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
 
-            # orbit_adj = TschaunerHempel()
-            # self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
-
-            # orbit_adj = ClohessyWiltshire()
-            # self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
-
-            # orbit_adj = MultiLambert()
-            # self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target, approach_ellipsoid, True)
+                orbit_adj = MultiLambert()
+                self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target, approach_ellipsoid, True)
+            else:
+                raise TypeError('Propagator type not recognized!')
 
         elif checkpoint.manoeuvre_type == 'drift':
             orbit_adj = Drift()
             new_manoeuvre_plan = orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target, self.manoeuvre_plan)
             self.manoeuvre_plan = new_manoeuvre_plan
-            print len(self.manoeuvre_plan)
 
     def _print_result(self):
         """

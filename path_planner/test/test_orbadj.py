@@ -1,8 +1,6 @@
 import unittest
 import sys
 import os
-from copy import deepcopy
-import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)) + "/../src/")  # hack...
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)) + "/../../../rdv-cap-sim/src/")
@@ -24,10 +22,10 @@ class OrbAdjTest(unittest.TestCase):
         """
 
         target = Satellite()
-        target.initialize_satellite('test_rel', 'target', '2-body')
+        target.initialize_satellite('target', 'test_rel', '2-body')
 
         chaser = Chaser()
-        chaser.initialize_satellite('test_rel', 'chaser', '2-body', target)
+        chaser.initialize_satellite('chaser', 'test_rel', '2-body', target)
 
         checkpoint = RelativeCP()
         checkpoint.rel_state.R = np.array([0.0, 1.0, 0.0])
@@ -50,10 +48,10 @@ class OrbAdjTest(unittest.TestCase):
         """
 
         target = Satellite()
-        target.initialize_satellite('test_rel', 'target', '2-body')
+        target.initialize_satellite('target', 'test_rel', '2-body')
 
         chaser = Chaser()
-        chaser.initialize_satellite('test_rel', 'chaser', '2-body', target)
+        chaser.initialize_satellite('chaser', 'test_rel', '2-body', target)
 
         checkpoint = RelativeCP()
         checkpoint.rel_state.R = np.array([0.0, 1.0, 0.0])
@@ -68,6 +66,6 @@ class OrbAdjTest(unittest.TestCase):
         self.assertLess(abs(chaser.rel_state.R[1] - 1.0), 1e-2)
         self.assertLess(abs(chaser.rel_state.R[2]), 1e-2)
 
+
 if __name__ == '__main__':
     unittest.main()
-

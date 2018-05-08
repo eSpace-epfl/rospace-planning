@@ -35,16 +35,19 @@ class Satellite(object):
         self.name = ''
         self.prop = None
 
-    def initialize_satellite(self, ic_name, name, prop_type, target=None):
+    @staticmethod
+    def export_initial_condition(sat_name, ic_name):
         """
-            Initialize satellite attributes from the configuration files.
+            Function to export some initial conditions from the yaml file, given the name of them.
 
         Args:
-            ic_name (str): Name of the initial conditions that has to be imported.
-            name (str): Name of the satellite, which should be stated as well in initial_conditions.yaml file.
-            prop_type (str): Define the type of propagator to be used (2-body or real-world).
-            target (Satellite): If self is a chaser type satellite, the reference target is needed to define the
-                relative state with respect to it.
+            sat_name (str): Satellite name
+            ic_name (str): Name of the initial conditions that has to be exported.
+
+        Return:
+            state (OscKepOrbElem): State exported from the initial conditions in osculating KepOrbElem.
+            mass (float64): Mass of the satellite.
+            date (float64): Initial propagation date.
         """
 
         # Opening initial conditions file
@@ -53,87 +56,52 @@ class Satellite(object):
         initial_conditions_file = file(initial_conditions_path, 'r')
         initial_conditions = yaml.load(initial_conditions_file)
 
-        # Check if the initial conditions name is stated in the cfg file
-        if ic_name in initial_conditions.keys():
-            initial_conditions = initial_conditions[ic_name]
-        else:
-            raise IOError('Initial condition named ' + ic_name + ' not defined in .yaml file!')
+        # Export initial state
+        state = OscKepOrbElem()
+        state.a = initial_conditions[ic_name][sat_name]['kep']['a']
+        state.e = initial_conditions[ic_name][sat_name]['kep']['e']
+        state.i = initial_conditions[ic_name][sat_name]['kep']['i']
+        state.O = initial_conditions[ic_name][sat_name]['kep']['O']
+        state.w = initial_conditions[ic_name][sat_name]['kep']['w']
+        state.v = initial_conditions[ic_name][sat_name]['kep']['v']
 
-        # Check if the satellite initial date is stated in the cfg file
-        if 'date' in initial_conditions.keys():
-            date = eval(initial_conditions['date'])
-        else:
-            raise IOError('Initial date for satellite ' + name + ' not stated in .yaml file!')
+        # Export mass
+        mass = initial_conditions[ic_name][sat_name]['mass']
 
-        # Check if the satellite initial conditions are stated in the cfg file
-        if name in initial_conditions.keys():
-            initial_conditions = initial_conditions[name]
-        else:
-            raise IOError('Initial conditions for satellite ' + name + ' not stated in .yaml file!')
+        # Export date
+        date = eval(initial_conditions[ic_name]['date'])
 
-        # Check if initial conditions are stated in term on KepOrbElem
-        if 'kep' in initial_conditions.keys():
-            kep_ic = initial_conditions['kep']
-        else:
-            raise IOError('Initial conditions for satellite ' + name + ' not stated as KepOrbElem in .yaml file!')
+        return state, mass, date
 
-        # Create a KepOrbElem to contain the initial conditions
-        sat_ic = KepOrbElem()
-        sat_ic.a = eval(str(kep_ic['a']))
-        sat_ic.e = eval(str(kep_ic['e']))
-        sat_ic.i = eval(str(kep_ic['i']))
-        sat_ic.O = eval(str(kep_ic['O']))
-        sat_ic.w = eval(str(kep_ic['w']))
+    def initialize_satellite(self, name, ic_name, prop_type, target=None):
+        """
+            Initialize the satellite taking as input the initial conditions name, and the propagator informations.
 
-        if 'v' in kep_ic.keys():
-            sat_ic.v = eval(str(kep_ic['v']))
-        elif 'm' in kep_ic.keys():
-            sat_ic.m = eval(str(kep_ic['m']))
-        elif 'E' in kep_ic.keys():
-            sat_ic.E = eval(str(kep_ic['E']))
-        else:
-            raise AttributeError('Anomaly initial condition for satellite ' + name + ' not defined properly!')
+        Args:
+            name (str): Satellite name (has to match the name of the propagator's settings).
+            ic_name (str): Initial condition name state in the yaml file.
+            prop_type (str): Propagator type.
+            target (Satellite): If the initialized satellite is of type Chaser it needs a reference spacecraft,
+                the target.
+        """
 
-        # Assign absolute state
-        self.abs_state.from_keporb(sat_ic)
 
-        # Assign relative state
+        state, mass, date = self.export_initial_condition(name, ic_name)
+
+        self.abs_state.from_keporb(state)
+        self.mass = mass
+        self.name = name
+
+        # Set relative state in case self is Chaser
         if type(self) == Chaser:
             if target is not None:
                 self.rel_state.from_cartesian_pair(self.abs_state, target.abs_state)
             else:
-                raise IOError('Missing target input to initialize chaser!')
-
-        # Assign mass
-        self.mass = initial_conditions['mass']
+                raise IOError('Missing target input to initialize relative state!')
 
         # Create and initialize propagator
         self.prop = QuickPropagator(date)
-        self.prop.initialize_propagator(name, sat_ic, prop_type)
-
-    def set_from_satellite(self, satellite):
-        """
-            Set attributes of the satellite using as reference another satellite.
-
-        Args:
-            satellite (Satellite or Chaser)
-        """
-
-        if type(self) != type(satellite):
-            raise TypeError()
-
-        self.abs_state.R = satellite.abs_state.R
-        self.abs_state.V = satellite.abs_state.V
-        self.mass = satellite.mass
-
-        if hasattr(satellite, 'prop'):
-            self.prop = satellite.prop
-        else:
-            print '[WARNING]: Propagator not setted!!'
-
-        if hasattr(self, 'rel_state'):
-            self.rel_state.R = satellite.rel_state.R
-            self.rel_state.V = satellite.rel_state.V
+        self.prop.initialize_propagator(name, state, prop_type)
 
     def set_abs_state_from_cartesian(self, cartesian):
         """
