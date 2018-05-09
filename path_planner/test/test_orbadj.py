@@ -36,9 +36,9 @@ class OrbAdjTest(unittest.TestCase):
         orb_adj = MultiLambert()
         orb_adj.evaluate_manoeuvre(chaser, checkpoint, target, [0.0, 0.0, 0.0], True)
 
-        self.assertLess(abs(chaser.rel_state.R[0]), 1e-2)
-        self.assertLess(abs(chaser.rel_state.R[1] - 1.0), 1e-2)
-        self.assertLess(abs(chaser.rel_state.R[2]), 1e-2)
+        self.assertLess(abs(chaser.rel_state.R[0] - checkpoint.rel_state.R[0]), 1e-2)
+        self.assertLess(abs(chaser.rel_state.R[1] - checkpoint.rel_state.R[1]), 1e-2)
+        self.assertLess(abs(chaser.rel_state.R[2] - checkpoint.rel_state.R[2]), 1e-2)
 
     def test_clohessy_wiltshire(self):
         """
@@ -62,9 +62,34 @@ class OrbAdjTest(unittest.TestCase):
         orb_adj = ClohessyWiltshire()
         orb_adj.evaluate_manoeuvre(chaser, checkpoint, target)
 
-        self.assertLess(abs(chaser.rel_state.R[0]), 1e-2)
-        self.assertLess(abs(chaser.rel_state.R[1] - 1.0), 1e-2)
-        self.assertLess(abs(chaser.rel_state.R[2]), 1e-2)
+        self.assertLess(abs(chaser.rel_state.R[0] - checkpoint.rel_state.R[0]), 1e-2)
+        self.assertLess(abs(chaser.rel_state.R[1] - checkpoint.rel_state.R[1]), 1e-2)
+        self.assertLess(abs(chaser.rel_state.R[2] - checkpoint.rel_state.R[2]), 1e-2)
+
+    def test_drift(self):
+        """
+            Test drifting algorithm.
+            Given initial conditions , check if the drifting algorithm perfom a correct manoeuvre in case of 2-body
+            propagation.
+        """
+
+        target = Satellite()
+        target.initialize_satellite('target', 'test_drift', '2-body')
+
+        chaser = Chaser()
+        chaser.initialize_satellite('chaser', 'test_drift', '2-body', target)
+
+        checkpoint = RelativeCP()
+        checkpoint.rel_state.R = np.array([-4.0, 8.0, 0.0])
+        checkpoint.rel_state.V = np.array([0.0, 0.0, 0.0])
+        checkpoint.error_ellipsoid = np.array([0.2, 0.5, 0.2])
+
+        orb_adj = Drift()
+        orb_adj.evaluate_manoeuvre(chaser, checkpoint, target, [])
+
+        self.assertLess(abs(chaser.rel_state.R[0] - checkpoint.rel_state.R[0]), 1e-2)
+        self.assertLess(abs(chaser.rel_state.R[1] - checkpoint.rel_state.R[1]), 1e-2)
+        self.assertLess(abs(chaser.rel_state.R[2] - checkpoint.rel_state.R[2]), 1e-2)
 
 
 if __name__ == '__main__':

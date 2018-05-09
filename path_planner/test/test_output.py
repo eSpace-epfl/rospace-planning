@@ -38,16 +38,16 @@ class OutputTest(unittest.TestCase):
             Note that this test is performed using 2-body propagator.
 
             Check if the total deltav and the final position match the following:
-                Total DeltaV: 0.0237461153674 km/s
-                Final position: [5499.44427723  1634.96012488  4117.15057769] km
+                Total DeltaV: 0.0258773258976 km/s
+                Final position: [6278.97682309 2253.29179791 2316.52864192] km
         """
 
         dvtot, ch_final = offline_path_planner.main('scenario_sample_relative')
 
-        self.assertAlmostEqual(dvtot, 0.0237461153674, 5)
-        self.assertAlmostEqual(ch_final.R[0], 5499.44427723, 2)
-        self.assertAlmostEqual(ch_final.R[1], 1634.96012488, 2)
-        self.assertAlmostEqual(ch_final.R[2], 4117.15057769, 2)
+        self.assertAlmostEqual(dvtot, 0.0258773258976, 5)
+        self.assertAlmostEqual(ch_final.R[0], 6278.97682309, 2)
+        self.assertAlmostEqual(ch_final.R[1], 2253.29179791, 2)
+        self.assertAlmostEqual(ch_final.R[2], 2316.52864192, 2)
 
 
 if __name__ == '__main__':
