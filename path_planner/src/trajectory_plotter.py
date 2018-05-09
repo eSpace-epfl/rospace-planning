@@ -193,9 +193,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.extra_dt:
-        extra_dt = args.extra_dt
+        extra_dt = eval(args.extra_dt)
     else:
-        extra_dt = 20000
+        extra_dt = 0.0
 
     if args.save_path:
         save_path = args.save_path
