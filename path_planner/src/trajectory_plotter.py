@@ -187,13 +187,15 @@ if __name__ == "__main__":
     parser.add_argument('filename',
                         help='Name of the scenario pickle file which should be uploaded.')
     parser.add_argument('--extra_dt',
-                        help='State how many seconds of extra propagation are needed (standard 20000 seconds).')
+                        help='State how many seconds of extra propagation are needed (standard 20000 seconds).',
+                        type=float)
     parser.add_argument('--save_path',
                         help='Specify a path where the manoeuvres should be saved.')
     args = parser.parse_args()
 
     if args.extra_dt:
-        extra_dt = eval(args.extra_dt)
+        print "TYPE: " + str(type(args.extra_dt))
+        extra_dt = args.extra_dt
     else:
         extra_dt = 0.0
 
