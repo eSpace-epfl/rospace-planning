@@ -106,8 +106,8 @@ class Solver(object):
 
         self.tot_dV, tot_dt = self._print_result()
 
-        print "\n\n-----------------> Manoeuvre elaborated <--------------------\n"
-        print "---> Manoeuvre duration:    " + str(tot_dt) + " seconds"
+        print "\n\n-----------------> Scenario elaborated <--------------------\n"
+        print "---> Scenario duration:     " + str(tot_dt) + " seconds"
         print "---> Total deltaV:          " + str(self.tot_dV) + " km/s"
 
     def absolute_solver(self, checkpoint):
@@ -119,15 +119,15 @@ class Solver(object):
         """
 
         orbit_adj = PlaneOrientation()
-        if orbit_adj.is_necessary(self.chaser, checkpoint):
+        if orbit_adj.is_necessary(self.chaser, checkpoint.abs_state):
             self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
 
         orbit_adj = ArgumentOfPerigee()
-        if orbit_adj.is_necessary(self.chaser, checkpoint):
+        if orbit_adj.is_necessary(self.chaser, checkpoint.abs_state):
             self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
 
         orbit_adj = HohmannTransfer()
-        if orbit_adj.is_necessary(self.chaser, checkpoint):
+        if orbit_adj.is_necessary(self.chaser, checkpoint.abs_state):
             self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
 
     def relative_solver(self, checkpoint, approach_ellipsoid):
@@ -201,6 +201,22 @@ class Solver(object):
             new_manoeuvre_plan = orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target, self.manoeuvre_plan)
             self.manoeuvre_plan = new_manoeuvre_plan
 
+        elif checkpoint.manoeuvre_type == 'fly-around':
+            # Check if the checkpoint.rel_state.R[2] is zero:
+            # -> Yes: Fly-Around on plane, risky
+            #           -> Radial manoeuvre
+            #           -> Reinitialize propagator & "remove" last deltaV
+            #           -> Let the spacecraft drift for a certain deltaT or until it reaches a certain position
+            # -> No: Diagonal fly-around, safe
+            #           -> Radial manoeuvre 1/4 T
+            #           -> Reinitialize propagator & "remove" last deltaV
+            #           -> Out-of-plane manoeuvre to inclinate the relative orbit
+            #           -> Reinitialize propagator & "remove" last deltaV
+            #           -> Let the spacecraft drift for a certain deltaT or until it reaches a certain position
+
+            raise NotImplementedError()
+
+
     def _print_result(self):
         """
             Print out results of the simulation and all the manoeuvres.
@@ -226,36 +242,36 @@ class Solver(object):
         """
 
         print " >> Cartesian: "
-        print "      R :      " + str(satellite.abs_state.R) + "   [km]"
-        print "      V :      " + str(satellite.abs_state.V) + "   [km/s]"
+        print "      R: " + str(satellite.abs_state.R) + "   [km]"
+        print "      V: " + str(satellite.abs_state.V) + "   [km/s]"
         print ""
 
         kep_osc = satellite.get_osc_oe()
 
         print " >> Osculating orbital elements: "
-        print "      a :      " + str(kep_osc.a)
-        print "      e :      " + str(kep_osc.e)
-        print "      i :      " + str(kep_osc.i)
-        print "      O :      " + str(kep_osc.O)
-        print "      w :      " + str(kep_osc.w)
-        print "      v :      " + str(kep_osc.v)
+        print "      a: " + str(kep_osc.a)
+        print "      e: " + str(kep_osc.e)
+        print "      i: " + str(kep_osc.i)
+        print "      O: " + str(kep_osc.O)
+        print "      w: " + str(kep_osc.w)
+        print "      v: " + str(kep_osc.v)
         print ""
 
         kep_mean = satellite.get_mean_oe()
 
         print " >> Mean orbital elements: "
-        print "      a :      " + str(kep_mean.a)
-        print "      e :      " + str(kep_mean.e)
-        print "      i :      " + str(kep_mean.i)
-        print "      O :      " + str(kep_mean.O)
-        print "      w :      " + str(kep_mean.w)
-        print "      v :      " + str(kep_mean.v)
+        print "      a: " + str(kep_mean.a)
+        print "      e: " + str(kep_mean.e)
+        print "      i: " + str(kep_mean.i)
+        print "      O: " + str(kep_mean.O)
+        print "      w: " + str(kep_mean.w)
+        print "      v: " + str(kep_mean.v)
 
         if hasattr(satellite, 'rel_state'):
             print ""
             print " >> Cartesian LVLH: "
-            print "      R :      " + str(satellite.rel_state.R) + "   [km]"
-            print "      V :      " + str(satellite.rel_state.V) + "   [km/s]"
+            print "      R: " + str(satellite.rel_state.R) + "   [km]"
+            print "      V: " + str(satellite.rel_state.V) + "   [km/s]"
 
     @staticmethod
     def _print_checkpoint(checkpoint):

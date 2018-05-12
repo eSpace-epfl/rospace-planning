@@ -157,18 +157,22 @@ class HohmannTransfer(OrbitAdjuster):
         Can be used to do corrections during absolute navigation.
     """
 
-    def is_necessary(self, chaser, checkpoint):
-        """
-            Function to test if this type of orbit adjuster is needed.
-            Checking if there are differences in semi-major axis and eccentricity between the actual state and the
-            future checkpoint. This difference are compared then to some manually defined tolerances.
+    def is_necessary(self, chaser, abs_state):
+        """Function to test if this type of orbit adjuster is needed.
+
+        Checking if there are differences in semi-major axis and eccentricity between the actual state and another
+        absolute state. This difference are compared then to some manually defined tolerances.
+
+        Args:
+            chaser (Chaser, Satellite)
+            abs_state (KepOrbElem): Mean orbital elements.
 
         """
 
         mean_oe = chaser.get_mean_oe()
 
-        da = checkpoint.abs_state.a - mean_oe.a
-        de = checkpoint.abs_state.e - mean_oe.e
+        da = abs_state.a - mean_oe.a
+        de = abs_state.e - mean_oe.e
 
         # Tolerances, evaluated manually to ensure a precision of at least 100 meter
         # Difference as to be above 100 meter to call the orbit adjuster, and is calculated as follow (for
@@ -248,8 +252,6 @@ class HohmannTransfer(OrbitAdjuster):
         # Apply second deltaV and give some amount of time (at least 10 seconds) to react
         mean_oe = chaser.get_mean_oe()
         dt = self.travel_time(mean_oe, mean_oe.v, theta_2)
-        if dt < 10.0:
-            dt += self.travel_time(mean_oe, 0.0, 2.0*np.pi)
 
         man2 = self.create_and_apply_manoeuvre(chaser, target, deltaV_C_2, dt)
 
@@ -262,16 +264,21 @@ class ArgumentOfPerigee(OrbitAdjuster):
         Can be used to do corrections during absolute navigation.
     """
 
-    def is_necessary(self, chaser, checkpoint):
-        """
-            Function to test if this type of orbit adjuster is needed.
-            Check the difference between argument of perigee of actual state and of checkpoint, if it's above a certain
-            manually defined tolerance, perform the manoeuvre.
+    def is_necessary(self, chaser, abs_state):
+        """Function to test if this type of orbit adjuster is needed.
+
+        Check the difference between argument of perigee of actual state and of another absolute state, if it's above a
+        certain manually defined tolerance, perform the manoeuvre.
+
+        Args:
+            chaser (Chaser, Satellite)
+            abs_state (KepOrbElem): Mean orbital elements
+
         """
 
         mean_oe = chaser.get_mean_oe()
 
-        dw = checkpoint.abs_state.w - mean_oe.w
+        dw = abs_state.w - mean_oe.w
 
         # Tolerance, evaluated manually to ensure a precision of at least 100 meter
         # Assuming an almost circular orbit, a deviation of tol_w in the argument of perigee should give maximum a 100
@@ -352,17 +359,22 @@ class PlaneOrientation(OrbitAdjuster):
         Can be used to do corrections during absolute navigation.
     """
 
-    def is_necessary(self, chaser, checkpoint):
-        """
-            Function to test if this type of orbit adjuster is needed.
-            Check if the difference in inclination and RAAN between actual state and checkpoint are above a certain
-            manually calculated tolerance.
+    def is_necessary(self, chaser, abs_state):
+        """Function to test if this type of orbit adjuster is needed.
+
+        Check if the difference in inclination and RAAN between actual state and another absolute state are above a
+        certain manually calculated tolerance.
+
+        Args:
+            chaser (Chaser, Satellite)
+            abs_state (KepOrbElem): Mean orbital elements.
+
         """
 
         mean_oe = chaser.get_mean_oe()
 
-        di = checkpoint.abs_state.i - mean_oe.i
-        dO = checkpoint.abs_state.O - mean_oe.O
+        di = abs_state.i - mean_oe.i
+        dO = abs_state.O - mean_oe.O
 
         # Tolerances, evaluated manually to ensure a precision of at least 100 meter
         # Assuming an almost circular orbit, a deviation of tol_i in the inclination or of tol_O in RAAN should give
@@ -574,8 +586,7 @@ class Drift(OrbitAdjuster):
 
         ellipsoid_flag = False
 
-        dt = min(10**np.floor(np.log10(t_est)), 10000.0) if t_est / (10**np.floor(np.log10(t_est))) >= 2.0 else min(10**np.floor(np.log10(t_est) - 1.0), 10000.0)
-
+        dt = 10**np.floor(np.log10(t_est)) if t_est / (10**np.floor(np.log10(t_est))) >= 2.0 else 10**np.floor(np.log10(t_est) - 1.0)
         dr_next_old = chaser.rel_state.R[1] - checkpoint.rel_state.R[1]
         dr_next = 0.0
         while dt > tol:
@@ -589,7 +600,6 @@ class Drift(OrbitAdjuster):
             target_mass_tmp = target.mass
             dr_next_tmp = dr_next
 
-            # Propagate
             for j in xrange(0, int(dt), 100):
                 # Update epoch
                 chaser.prop.date += timedelta(seconds=100)
@@ -610,6 +620,12 @@ class Drift(OrbitAdjuster):
             chaser.rel_state.from_cartesian_pair(chaser_prop[0], target_prop[0])
 
             dr_next = chaser.rel_state.R[1] - checkpoint.rel_state.R[1]
+
+            # Check if plane needs to be readjusted
+            target_mean = target.get_mean_oe()
+            plane_change = PlaneOrientation()
+            if plane_change.is_necessary(chaser, target_mean):
+                print "To be implemented"
 
             if n_rel > 0.0:
                 if dr_next > 0.0 and dr_next_old <= 0.0:
@@ -757,8 +773,8 @@ class MultiLambert(OrbitAdjuster):
         best_dV = 1e12
         best_dt = 0.0
 
-        # Minimum deltaV deliverable -> 5 mm/s
-        dV_min = 5e-6
+        # Minimum deltaV deliverable -> 0.7 mm/s
+        dV_min = 7e-7
 
         # Check all the possible transfers time from tmin to tmax (seconds)
         t_min = int(checkpoint.t_min)
