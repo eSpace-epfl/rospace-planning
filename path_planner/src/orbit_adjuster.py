@@ -22,25 +22,26 @@ from copy import deepcopy
 
 
 class OrbitAdjuster(object):
-    """
-        Base class of an orbit adjuster.
+    """Base class of an orbit adjuster.
+
     """
 
-    def travel_time(self, abs_state, theta0, theta1):
-        """
-            Evaluate the travel time of a satellite from a starting true anomaly theta0 to an end anomaly theta1.
+    @staticmethod
+    def travel_time(abs_state, theta0, theta1):
+        """Evaluate the travel time of a satellite from a starting true anomaly theta0 to an end anomaly theta1.
 
         Reference:
             Exercise of Nicollier's Lecture.
             David A. Vallado, Fundamentals of Astrodynamics and Applications, Second Edition, Algorithm 11 (p. 133)
 
         Args:
-            abs_state (KepOrbElem): Satellite state in keplerian orbital elements.
+            abs_state (KepOrbElem): Satellite state in mean keplerian orbital elements.
             theta0 (rad): Starting true anomaly.
             theta1 (rad): Ending true anomaly.
 
         Return:
             Travel time (seconds)
+
         """
 
         a = abs_state.a
@@ -63,12 +64,14 @@ class OrbitAdjuster(object):
 
         return dt
 
-    def create_and_apply_manoeuvre(self, chaser, target, deltaV, dt):
-        """
-            Take the amount of deltaV needed and the waiting time up to when the manoeuvre should be executed, create
-            the manoeuvre and apply it, propagating chaser and target.
+    @staticmethod
+    def create_and_apply_manoeuvre(chaser, target, deltaV, dt):
+        """Create and apply a manoeuvre to chaser given deltaV and waiting time.
 
-            The target and chaser absolute and relative state are automatically upgraded in this function!
+        Take the amount of deltaV needed and the waiting time up to when the manoeuvre should be executed, create
+        the manoeuvre and apply it, propagating chaser and target.
+
+        The target and chaser absolute and relative state are automatically upgraded in this function!
 
         Args:
             chaser (Chaser)
@@ -100,7 +103,7 @@ class OrbitAdjuster(object):
         target.set_abs_state_from_cartesian(target_prop[0])
         chaser.rel_state.from_cartesian_pair(chaser.abs_state, target.abs_state)
 
-        # Reset propagators initial conditions
+        # Reset propagators initial conditions to apply deltaV
         chaser.prop.change_initial_conditions(chaser_prop[0], new_epoch, chaser.mass)
         target.prop.change_initial_conditions(target_prop[0], new_epoch, target.mass)
 
@@ -115,7 +118,8 @@ class OrbitAdjuster(object):
 
         return man
 
-    def calc_E_from_m(self, m, e):
+    @staticmethod
+    def calc_E_from_m(m, e):
         if m < np.pi:
             E = m + e / 2.0
         else:
@@ -140,9 +144,9 @@ class OrbitAdjuster(object):
 
         return E
 
-    def calc_v_from_E(self, E, e):
-        v = 2.0 * np.arctan2(np.sqrt(1.0 + e) * np.sin(E / 2.0),
-                                   np.sqrt(1.0 - e) * np.cos(E / 2.0))
+    @staticmethod
+    def calc_v_from_E(E, e):
+        v = 2.0 * np.arctan2(np.sqrt(1.0 + e) * np.sin(E / 2.0), np.sqrt(1.0 - e) * np.cos(E / 2.0))
 
         if v < 0:
             v = v + np.pi * 2.0
@@ -353,10 +357,11 @@ class ArgumentOfPerigee(OrbitAdjuster):
 
 
 class PlaneOrientation(OrbitAdjuster):
-    """
-        Subclass holding the function to evaluate the deltaV needed to change in plane orientation.
-        A single delta-V manoeuvre will be evaluated to correct both inclination and RAAN at the same time.
-        Can be used to do corrections during absolute navigation.
+    """Subclass holding the function to evaluate the deltaV needed to change in plane orientation.
+
+    A single delta-V manoeuvre will be evaluated to correct both inclination and RAAN at the same time.
+    Can be used to do corrections during absolute navigation.
+
     """
 
     def is_necessary(self, chaser, abs_state):
@@ -391,13 +396,16 @@ class PlaneOrientation(OrbitAdjuster):
             return False
 
     def evaluate_manoeuvre(self, chaser, checkpoint, target):
-        """
-            Correct plane inclination and RAAN with a single manoeuvre at the node between the two orbital planes.
+        """Correct plane inclination and RAAN with a single manoeuvre at the node between the two orbital planes.
+
+        Calculate the intersection axis of two orbital planes when only RAAN and inclination are changed, then evaluates
+        the velocity vector at that point and calculate the deltaV needed to change plane.
 
         References:
             Howard Curtis, Orbital Mechanics for Engineering Students, Chapter 6
             David A. Vallado, Fundamentals of Astrodynamics and Applications, Second Edition, Chapter 6
         """
+
         # Mean orbital elements
         mean_oe = chaser.get_mean_oe()
 
@@ -454,21 +462,20 @@ class PlaneOrientation(OrbitAdjuster):
         else:
             dv2 = theta_2 - mean_oe.v
 
-        if dv1 > dv2:
-            theta_i = theta_2
-        else:
-            theta_i = theta_1
-
         # Define vector c in Earth-Inertial frame of reference
         cx = np.cos(psi) * np.cos(phi)
         cy = np.cos(psi) * np.sin(phi)
         cz = np.sin(psi)
 
-        # TODO: check this, for some cases it seems to be wrong
         if i_i > i_f:
             cx *= -1.0
             cy *= -1.0
             cz *= -1.0
+
+        if dv1 > dv2:
+            theta_i = theta_2
+        else:
+            theta_i = theta_1
 
         # Define rotation of alpha radiants around vector c following right-hand rule
         k1 = 1.0 - np.cos(alpha)
@@ -493,7 +500,7 @@ class PlaneOrientation(OrbitAdjuster):
         deltaV_C = V_TEM_f - V_TEM_i
 
         # Apply first deltaV
-        dt = self.travel_time(mean_oe, mean_oe.v, theta_1)
+        dt = self.travel_time(mean_oe, mean_oe.v, theta_i)
 
         man = self.create_and_apply_manoeuvre(chaser, target, deltaV_C, dt)
 
@@ -582,7 +589,16 @@ class Drift(OrbitAdjuster):
         # Millisecond tolerance to exit the loop
         tol = 1e-3
 
+        # Estimated drifting time
         t_est = (2.0 * np.pi * F(dv_req, actual_dv, n_rel) + dv_req - actual_dv) / n_rel
+        print "[INFO]: Time estimated for drifting: " + str(t_est) + " seconds."
+        if t_est > checkpoint.t_max:
+            print "[WARNING]: Estimated time exceeds t_max = " + str(checkpoint.t_max) + " seconds, suggested solutions:"
+            print "           - Change t_max"
+            print "           - Change injection mean anomaly"
+            print "           - Perform anomaly synchronisation manoeuvre"
+            print "           Note that an extremely high drifting may increase a lot the deltaV consumption, due to "
+            print "           the increased amount of plane change manoeuvre needed!\n"
 
         ellipsoid_flag = False
 
@@ -625,7 +641,18 @@ class Drift(OrbitAdjuster):
             target_mean = target.get_mean_oe()
             plane_change = PlaneOrientation()
             if plane_change.is_necessary(chaser, target_mean):
-                print "To be implemented"
+                if (target.get_mean_oe().O - chaser.get_mean_oe().O > 0.0 and n_rel > 0.0) or \
+                        (target.get_mean_oe().O - chaser.get_mean_oe().O < 0.0 and n_rel < 0.0):
+                    print "[INFO]: Plane precession can be used to drift to the right plane!"
+
+                # Create next checkpoint to change plane
+                checkpoint_plane = AbsoluteCP()
+                checkpoint_plane.set_abs_state(target_mean)
+
+                manoeuvre_plan += plane_change.evaluate_manoeuvre(chaser, checkpoint_plane, target)
+
+                # Update dr_next
+                dr_next = chaser.rel_state.R[1] - checkpoint.rel_state.R[1]
 
             if n_rel > 0.0:
                 if dr_next > 0.0 and dr_next_old <= 0.0:
@@ -653,6 +680,8 @@ class Drift(OrbitAdjuster):
 
                     chaser.prop.change_initial_conditions(chaser.abs_state, chaser.prop.date, chaser_mass_tmp)
                     target.prop.change_initial_conditions(target.abs_state, target.prop.date, target_mass_tmp)
+
+                    manoeuvre_plan = deepcopy(manoeuvre_plan_tmp)
 
                     dr_next = dr_next_tmp
                 else:
@@ -689,6 +718,8 @@ class Drift(OrbitAdjuster):
 
                     chaser.prop.change_initial_conditions(chaser.abs_state, chaser.prop.date, chaser_mass_tmp)
                     target.prop.change_initial_conditions(target.abs_state, target.prop.date, target_mass_tmp)
+
+                    manoeuvre_plan = deepcopy(manoeuvre_plan_tmp)
 
                     dr_next = dr_next_tmp
                 else:
