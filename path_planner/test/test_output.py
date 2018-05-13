@@ -16,13 +16,12 @@ class OutputTest(unittest.TestCase):
     """
 
     def test_sample_absolute(self):
-        """
-            Test output using scenario_sample_absolute.yaml and using standard initial condition (std_ic).
-            Note that this test is performed using 2-body propagator.
+        """Test output using scenario_sample_absolute.yaml and using standard initial condition (std_ic).
 
-            Check if the total deltav and the final position match the following:
-                Total DeltaV: 0.018327823164056397 km/s
-                Final position: [-5820.23998662 -1859.35110161 -3559.27141534] km
+        Note that this test is performed using 2-body propagator.
+        Check if the total deltav and the final position match the following:
+            Total DeltaV: 0.018327823164056397 km/s
+            Final position: [-5820.23998662 -1859.35110161 -3559.27141534] km
         """
 
         dvtot, ch_final = offline_path_planner.main('scenario_sample_absolute')
@@ -33,13 +32,12 @@ class OutputTest(unittest.TestCase):
         self.assertAlmostEqual(ch_final.R[2], -3559.27141534, 2)
 
     def test_sample_relative(self):
-        """
-            Test output using scenario_sample_relative.yaml and using standard initial condition (std_ic).
-            Note that this test is performed using 2-body propagator.
+        """Test output using scenario_sample_relative.yaml and using standard initial condition (std_ic).
 
-            Check if the total deltav and the final position match the following:
-                Total DeltaV: 0.0258773258976 km/s
-                Final position: [6278.97682309 2253.29179791 2316.52864192] km
+        Note that this test is performed using 2-body propagator.
+        Check if the total deltav and the final position match the following:
+            Total DeltaV: 0.0258773258976 km/s
+            Final position: [6278.97682309 2253.29179791 2316.52864192] km
         """
 
         dvtot, ch_final = offline_path_planner.main('scenario_sample_relative')

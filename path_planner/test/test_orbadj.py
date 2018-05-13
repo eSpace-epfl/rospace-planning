@@ -14,11 +14,90 @@ class OrbAdjTest(unittest.TestCase):
         Test orbit adjusters
     """
 
-    def test_multi_lambert(self):
+    def test_plane_adjustment(self):
+        """Test plane change orbit adjuster.
+
+        Given initial conditions 'test_abs', check if the plane adjustment perform a correct manoeuvre in case of
+        2-body propagation.
+
         """
-            Test multi-lambert orbit adjuster.
-            Given initial conditions 'test_rel', check if the multi-lambert perform a correct manoeuvre in case of
-            2-body propagation.
+
+        target = Satellite()
+        target.initialize_satellite('target', 'test_abs', '2-body')
+
+        chaser = Chaser()
+        chaser.initialize_satellite('chaser', 'test_abs', '2-body', target)
+
+        orb_adj = PlaneOrientation()
+
+        # Test 1 - Increase both inclination and RAAN
+        checkpoint1 = AbsoluteCP()
+        checkpoint1.set_abs_state(chaser.get_mean_oe())
+        checkpoint1.abs_state.i += 0.1
+        checkpoint1.abs_state.O += 0.1
+
+        orb_adj.evaluate_manoeuvre(chaser, checkpoint1, target)
+
+        chaser_mean = chaser.get_mean_oe()
+
+        self.assertAlmostEqual(checkpoint1.abs_state.a, chaser_mean.a, 4)
+        self.assertAlmostEqual(checkpoint1.abs_state.e, chaser_mean.e, 4)
+        self.assertAlmostEqual(checkpoint1.abs_state.i, chaser_mean.i, 4)
+        self.assertAlmostEqual(checkpoint1.abs_state.O, chaser_mean.O, 4)
+
+        # Test 2 - Decrease both inclination and RAAN
+        checkpoint2 = AbsoluteCP()
+        checkpoint2.set_abs_state(chaser.get_mean_oe())
+        checkpoint2.abs_state.i -= 0.1
+        checkpoint2.abs_state.O -= 0.1
+
+        orb_adj.evaluate_manoeuvre(chaser, checkpoint2, target)
+
+        chaser_mean = chaser.get_mean_oe()
+
+        self.assertAlmostEqual(checkpoint2.abs_state.a, chaser_mean.a, 4)
+        self.assertAlmostEqual(checkpoint2.abs_state.e, chaser_mean.e, 4)
+        self.assertAlmostEqual(checkpoint2.abs_state.i, chaser_mean.i, 4)
+        self.assertAlmostEqual(checkpoint2.abs_state.O, chaser_mean.O, 4)
+
+        # Test 3 - Increase inclination and decrease RAAN
+        checkpoint3 = AbsoluteCP()
+        checkpoint3.set_abs_state(chaser.get_mean_oe())
+        checkpoint3.abs_state.i += 0.1
+        checkpoint3.abs_state.O -= 0.1
+
+        orb_adj.evaluate_manoeuvre(chaser, checkpoint3, target)
+
+        chaser_mean = chaser.get_mean_oe()
+
+        self.assertAlmostEqual(checkpoint3.abs_state.a, chaser_mean.a, 4)
+        self.assertAlmostEqual(checkpoint3.abs_state.e, chaser_mean.e, 4)
+        self.assertAlmostEqual(checkpoint3.abs_state.i, chaser_mean.i, 4)
+        self.assertAlmostEqual(checkpoint3.abs_state.O, chaser_mean.O, 4)
+
+        # Test 4 - Decrease inclination and increase RAAN
+        checkpoint4 = AbsoluteCP()
+        checkpoint4.set_abs_state(chaser.get_mean_oe())
+        checkpoint4.abs_state.i -= 0.1
+        checkpoint4.abs_state.O += 0.1
+
+        orb_adj.evaluate_manoeuvre(chaser, checkpoint4, target)
+
+        chaser_mean = chaser.get_mean_oe()
+
+        self.assertAlmostEqual(checkpoint4.abs_state.a, chaser_mean.a, 4)
+        self.assertAlmostEqual(checkpoint4.abs_state.e, chaser_mean.e, 4)
+        self.assertAlmostEqual(checkpoint4.abs_state.i, chaser_mean.i, 4)
+        self.assertAlmostEqual(checkpoint4.abs_state.O, chaser_mean.O, 4)
+
+
+
+    def test_multi_lambert(self):
+        """Test multi-lambert orbit adjuster.
+
+        Given initial conditions 'test_rel', check if the multi-lambert perform a correct manoeuvre in case of
+        2-body propagation.
+
         """
 
         target = Satellite()
@@ -41,10 +120,11 @@ class OrbAdjTest(unittest.TestCase):
         self.assertLess(abs(chaser.rel_state.R[2] - checkpoint.rel_state.R[2]), 1e-2)
 
     def test_clohessy_wiltshire(self):
-        """
-            Test clohessy-wiltshire orbit adjuster.
-            Given initial conditions 'test_rel', check if the clohessy-wiltshire perform a correct manoeuvre in case of
-            2-body propagation.
+        """Test clohessy-wiltshire orbit adjuster.
+
+        Given initial conditions 'test_rel', check if the clohessy-wiltshire perform a correct manoeuvre in case of
+        2-body propagation.
+
         """
 
         target = Satellite()
@@ -67,10 +147,11 @@ class OrbAdjTest(unittest.TestCase):
         self.assertLess(abs(chaser.rel_state.R[2] - checkpoint.rel_state.R[2]), 1e-2)
 
     def test_drift(self):
-        """
-            Test drifting algorithm.
-            Given initial conditions , check if the drifting algorithm perfom a correct manoeuvre in case of 2-body
-            propagation.
+        """Test drifting algorithm.
+
+        Given initial conditions , check if the drifting algorithm perfom a correct manoeuvre in case of 2-body
+        propagation.
+
         """
 
         target = Satellite()
