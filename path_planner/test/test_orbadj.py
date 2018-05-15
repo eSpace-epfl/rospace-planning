@@ -14,6 +14,50 @@ class OrbAdjTest(unittest.TestCase):
         Test orbit adjusters
     """
 
+    def test_arg_of_perigee(self):
+        """Test argument of perigee orbit adjuster.
+
+        Given initial conditions 'test_abs', add a disturbance to the argument of perigee and try to correct it, to see
+        if the manoeuvre perform correctly with 2-body propagator.
+
+        """
+
+        target = Satellite()
+        target.initialize_satellite('target', 'test_abs', '2-body')
+
+        chaser = Chaser()
+        chaser.initialize_satellite('chaser', 'test_abs', '2-body', target)
+
+        orb_adj = ArgumentOfPerigee()
+
+        # Test 1 - Increase argument of perigee
+        checkpoint1 = AbsoluteCP()
+        checkpoint1.set_abs_state(chaser.get_mean_oe())
+        checkpoint1.abs_state.w += 0.1
+
+        orb_adj.evaluate_manoeuvre(chaser, checkpoint1, target)
+
+        chaser_mean = chaser.get_mean_oe()
+
+        self.assertAlmostEqual(checkpoint1.abs_state.a, chaser_mean.a, 4)
+        self.assertAlmostEqual(checkpoint1.abs_state.e, chaser_mean.e, 4)
+        self.assertAlmostEqual(checkpoint1.abs_state.i, chaser_mean.i, 4)
+        self.assertAlmostEqual(checkpoint1.abs_state.O, chaser_mean.O, 4)
+
+        # Test 2 - Decrease argument of perigee
+        checkpoint2 = AbsoluteCP()
+        checkpoint2.set_abs_state(chaser.get_mean_oe())
+        checkpoint2.abs_state.w -= 0.1
+
+        orb_adj.evaluate_manoeuvre(chaser, checkpoint2, target)
+
+        chaser_mean = chaser.get_mean_oe()
+
+        self.assertAlmostEqual(checkpoint2.abs_state.a, chaser_mean.a, 4)
+        self.assertAlmostEqual(checkpoint2.abs_state.e, chaser_mean.e, 4)
+        self.assertAlmostEqual(checkpoint2.abs_state.i, chaser_mean.i, 4)
+        self.assertAlmostEqual(checkpoint2.abs_state.O, chaser_mean.O, 4)
+
     def test_plane_adjustment(self):
         """Test plane change orbit adjuster.
 
