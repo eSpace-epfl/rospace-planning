@@ -160,6 +160,7 @@ class Solver(object):
             orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint_abs, self.target)
 
         if checkpoint.manoeuvre_type == 'standard':
+            print "Standard relative manoeuvre..."
 
             if self.target.prop.prop_type == 'real-world':
                 orbit_adj = HamelDeLafontaine()
@@ -176,6 +177,7 @@ class Solver(object):
                 raise TypeError('Propagator type not recognized!')
 
         elif checkpoint.manoeuvre_type == 'radial':
+            print "Radial manoeuvre..."
             # Manoeuvre type is radial -> deltaT is calculated from CW-equations -> solved with multi-lambert
             dt = np.pi / np.sqrt(mu_earth / target_mean.a ** 3.0)
 
@@ -200,6 +202,7 @@ class Solver(object):
             orbit_adj = Drift()
             new_manoeuvre_plan = orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target, self.manoeuvre_plan)
             self.manoeuvre_plan = new_manoeuvre_plan
+            print "Drifting manoeuvre"
 
         elif checkpoint.manoeuvre_type == 'fly-around':
             # Check if the checkpoint.rel_state.R[2] is zero:

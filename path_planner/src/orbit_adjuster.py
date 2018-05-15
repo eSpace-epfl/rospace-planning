@@ -259,6 +259,8 @@ class HohmannTransfer(OrbitAdjuster):
 
         man2 = self.create_and_apply_manoeuvre(chaser, target, deltaV_C_2, dt)
 
+        print "Hohmann Transfer with manoeuvre..."
+
         return [man1, man2]
 
 
@@ -303,6 +305,7 @@ class ArgumentOfPerigee(OrbitAdjuster):
             Howard Curtis, Orbital Mechanics for Engineering Students, Chapter 6
             David A. Vallado, Fundamentals of Astrodynamics and Applications, Second Edition, Chapter 6
         """
+
         # Mean orbital elements
         mean_oe = chaser.get_mean_oe()
 
@@ -352,6 +355,8 @@ class ArgumentOfPerigee(OrbitAdjuster):
         dt = self.travel_time(mean_oe, mean_oe.v, theta_i)
 
         man = self.create_and_apply_manoeuvre(chaser, target, deltaV_C, dt)
+
+        print "Argument of Perigee correction"
 
         return [man]
 
@@ -504,6 +509,8 @@ class PlaneOrientation(OrbitAdjuster):
 
         man = self.create_and_apply_manoeuvre(chaser, target, deltaV_C, dt)
 
+        print "Plane correction manoeuvre..."
+
         return [man]
 
 
@@ -546,8 +553,7 @@ class Drift(OrbitAdjuster):
                     else:
                         ex_epoch = manoeuvre_plan[j].execution_epoch
                         del manoeuvre_plan[j]
-
-            manoeuvre_plan[i].execution_epoch = ex_epoch
+                        manoeuvre_plan[i].execution_epoch = ex_epoch
             i += 1
 
     def evaluate_manoeuvre(self, chaser, checkpoint, target, manoeuvre_plan):
@@ -593,7 +599,7 @@ class Drift(OrbitAdjuster):
         t_est = (2.0 * np.pi * F(dv_req, actual_dv, n_rel) + dv_req - actual_dv) / n_rel
         print "[INFO]: Time estimated for drifting: " + str(t_est) + " seconds."
         if t_est > checkpoint.t_max:
-            print "[WARNING]: Estimated time exceeds t_max = " + str(checkpoint.t_max) + " seconds, suggested solutions:"
+            print "[WARNING]: Drift time exceeds t_max = " + str(checkpoint.t_max) + " seconds, suggested solutions:"
             print "           - Change t_max"
             print "           - Change injection mean anomaly"
             print "           - Perform anomaly synchronisation manoeuvre"
@@ -602,7 +608,8 @@ class Drift(OrbitAdjuster):
 
         ellipsoid_flag = False
 
-        dt = 10**np.floor(np.log10(t_est)) if t_est / (10**np.floor(np.log10(t_est))) >= 2.0 else 10**np.floor(np.log10(t_est) - 1.0)
+        dt = 10**np.floor(np.log10(t_est)) \
+            if t_est / (10**np.floor(np.log10(t_est))) >= 2.0 else 10**np.floor(np.log10(t_est) - 1.0)
         dr_next_old = chaser.rel_state.R[1] - checkpoint.rel_state.R[1]
         dr_next = 0.0
         while dt > tol:
@@ -616,7 +623,7 @@ class Drift(OrbitAdjuster):
             target_mass_tmp = target.mass
             dr_next_tmp = dr_next
 
-            for j in xrange(0, int(dt), 100):
+            for _ in xrange(0, int(dt), 100):
                 # Update epoch
                 chaser.prop.date += timedelta(seconds=100)
                 target.prop.date += timedelta(seconds=100)
