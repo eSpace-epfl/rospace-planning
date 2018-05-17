@@ -15,14 +15,22 @@ from solver import Solver
 
 
 def main(scenario_name, ic_name='std_ic', save=False):
-    """
-        Run the offline path planner.
-        This function import automatically the scenario stated in:
-            cfg/scenario.yaml
-        and import initial conditions in:
-            cfg/initial_conditions.yaml
+    """Run the offline path planner.
 
-        After importing, it solves it and finally saves it in a .pickle file in the example/ folder.
+    This function import the scenario named 'scenario_name' from the folder /cfg/ and takes the initial conditions
+    named 'ic_name' from the yaml file /cfg/initial_conditions.yaml.
+
+    After importing, it solves it and saves it (if save flag is true) in a .pickle file in the /example/ folder.
+
+    Args:
+        scenario_name (str): The name of the scenario which should be solved.
+        ic_name (str): The initial condition name which should be used.
+        save (bool): Boolean flag to save and store the result.
+
+    Return:
+        tot_dV (float): Total amount of deltaV consumed in km/s.
+        chaser (Chaser): Chaser state after the mission (used for testing).
+
     """
 
     # Import scenario and initial conditions
@@ -38,7 +46,8 @@ def main(scenario_name, ic_name='std_ic', save=False):
     if save:
         scenario.export_solved_scenario(solver.manoeuvre_plan)
 
-    return solver.tot_dV, solver.chaser.abs_state
+    return solver.tot_dV, solver.chaser
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -53,12 +62,12 @@ if __name__ == "__main__":
     if args.ic_name:
         ic_name = args.ic_name
     else:
-        ic_name = 'std_ic'
+        ic_name = 'camille_homing'
 
     if args.scenario_name:
         scenario_name = args.scenario_name
     else:
-        scenario_name = 'scenario_sample_relative'
+        scenario_name = 'scenario_camille_homing'
 
     if args.save:
         save = True

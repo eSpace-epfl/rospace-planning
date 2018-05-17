@@ -166,9 +166,9 @@ class Solver(object):
                 orbit_adj = HamelDeLafontaine()
                 self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
             elif self.target.prop.prop_type == '2-body':
-                # orbit_adj = TschaunerHempel()
-                # self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
                 # orbit_adj = ClohessyWiltshire()
+                # self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
+                # orbit_adj = TschaunerHempel()
                 # self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
 
                 orbit_adj = MultiLambert()
@@ -178,8 +178,10 @@ class Solver(object):
 
         elif checkpoint.manoeuvre_type == 'radial':
             print "Radial manoeuvre..."
-            # Manoeuvre type is radial -> deltaT is calculated from CW-equations -> solved with multi-lambert
-            dt = np.pi / np.sqrt(mu_earth / target_mean.a ** 3.0)
+            # Manoeuvre type is radial
+            #  -> Transfer time is known to be half orbital period.
+            #  -> Depending on the number of rotations wanted, transfer time is extended.
+            dt = np.pi * np.sqrt(target_mean.a ** 3.0 / mu_earth)
 
             checkpoint.t_min = dt
             checkpoint.t_max = dt + 1.0
@@ -188,9 +190,9 @@ class Solver(object):
                 orbit_adj = HamelDeLafontaine()
                 self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
             elif self.target.prop.prop_type == '2-body':
-                # orbit_adj = TschaunerHempel()
-                # self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
                 # orbit_adj = ClohessyWiltshire()
+                # self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
+                # orbit_adj = TschaunerHempel()
                 # self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
 
                 orbit_adj = MultiLambert()
@@ -218,7 +220,6 @@ class Solver(object):
             #           -> Let the spacecraft drift for a certain deltaT or until it reaches a certain position
 
             raise NotImplementedError()
-
 
     def _print_result(self):
         """
