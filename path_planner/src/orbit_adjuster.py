@@ -377,7 +377,7 @@ class PlaneOrientation(OrbitAdjuster):
 
         Args:
             chaser (Chaser, Satellite)
-            abs_state (KepOrbElem): Mean orbital elements.
+            abs_state (KepOrbElem): Mean orbital elements, usually of the next checkpoint.
 
         """
 
@@ -385,6 +385,8 @@ class PlaneOrientation(OrbitAdjuster):
 
         di = abs_state.i - mean_oe.i
         dO = abs_state.O - mean_oe.O
+
+
 
         # Tolerances, evaluated manually to ensure a precision of at least 100 meter
         # Assuming an almost circular orbit, a deviation of tol_i in the inclination or of tol_O in RAAN should give
@@ -793,19 +795,12 @@ class MultiLambert(OrbitAdjuster):
         if mean_oe.i > np.pi / 2.0:
             retrograde = True
 
-        # Absolute position of chaser at t = t0
-        R_C_i = chaser.abs_state.R
-        V_C_i = chaser.abs_state.V
-
-        # Absolute position of the target at t = t0
-        R_T_i = target.abs_state.R
-        V_T_i = target.abs_state.V
+        # Create final wanted position of chaser
+        chaser_final = CartesianTEME()
 
         # Create temporary target that will keep the initial conditions
-        target_ic = CartesianTEME()
-        chaser_ic = CartesianTEME()
-        target_ic.R = R_T_i
-        target_ic.V = V_T_i
+        target_ic = deepcopy(target.abs_state)
+        chaser_ic = deepcopy(chaser.abs_state)
 
         # Initialize best dV and dt
         best_dV = 1e12
@@ -814,33 +809,31 @@ class MultiLambert(OrbitAdjuster):
         # Minimum deltaV deliverable -> 0.7 mm/s
         dV_min = 7e-7
 
+        # Solution list
+        sol_list = []
+
         # Check all the possible transfers time from tmin to tmax (seconds)
-        t_min = int(checkpoint.t_min)
-        t_max = int(checkpoint.t_max)
-        for dt in xrange(t_min, t_max):
-            # r_T, v_T = pk.propagate_lagrangian(R_T_i, V_T_i, dt, mu_earth)
+        t_min = checkpoint.t_min
+        t_max = checkpoint.t_max
+        T = np.arange(t_min, t_max, 0.1)        # Tenth of second precision
 
+        for dt in T:
+            # Propagate target
             target_prop = target.prop.orekit_prop.propagate(chaser.prop.date + timedelta(seconds=dt))
-
             target.set_abs_state_from_cartesian(target_prop[0])
 
-            # Transformation matrix from TEME to LVLH at time t1
-            B_LVLH_TEME_f = target.abs_state.get_lof()
-
-            # Evaluate final wanted absolute position of the chaser
-            R_C_f = np.array(target.abs_state.R) + np.linalg.inv(B_LVLH_TEME_f).dot(checkpoint.rel_state.R)
-            O_T_f = np.cross(target.abs_state.R, target.abs_state.V) / np.linalg.norm(target.abs_state.R) ** 2
-            V_C_f = np.array(target.abs_state.V) + np.linalg.inv(B_LVLH_TEME_f).dot(checkpoint.rel_state.V) + \
-                    np.cross(O_T_f, np.linalg.inv(B_LVLH_TEME_f).dot(checkpoint.rel_state.R))
+            chaser_final.from_lvlh_frame(target.abs_state, checkpoint.rel_state)
 
             # Solve lambert in dt starting from the chaser position at t0 going to t1
-            sol = pk.lambert_problem(R_C_i, R_C_f, dt, mu_earth, retrograde, 10)
+            sol = pk.lambert_problem(chaser.abs_state.R, chaser_final.R, dt, mu_earth, retrograde, 10)
 
             # Check for the best solution for this dt
             for i in xrange(0, len(sol.get_v1())):
-                dV_1 = np.array(sol.get_v1()[i]) - V_C_i
-                dV_2 = V_C_f - np.array(sol.get_v2()[i])
+                dV_1 = np.array(sol.get_v1()[i]) - chaser.abs_state.V
+                dV_2 = chaser_final.V - np.array(sol.get_v2()[i])
                 dV_tot = np.linalg.norm(dV_1) + np.linalg.norm(dV_2)
+
+                sol_list.append((dV_tot, dV_1, dV_2, dt))
 
                 # Check if the deltaV is above the minimum deliverable by thrusters
                 if np.linalg.norm(dV_1) > dV_min and np.linalg.norm(dV_2) > dV_min:
@@ -851,15 +844,29 @@ class MultiLambert(OrbitAdjuster):
                         best_dV_1 = dV_1
                         best_dV_2 = dV_2
                         best_dt = dt
+
                     elif dV_tot < best_dV and not safety_flag:
                         # Check if the trajectory is safe
-                        chaser_ic.R = R_C_i
+                        chaser_ic.R = chaser.abs_state.R
                         chaser_ic.V = np.array(sol.get_v1()[i])
                         if self.is_trajectory_safe(dt, approach_ellipsoid):
                             best_dV = dV_tot
                             best_dV_1 = dV_1
                             best_dV_2 = dV_2
                             best_dt = dt
+
+        # Re-initialize target
+        target.prop.change_initial_conditions(target_ic, chaser.prop.date, target.mass)
+
+        sort_sol_list = sorted(sol_list, key=lambda dvtot: dvtot[0])
+
+        # for sol in sort_sol_list:
+        #     deltaV1 = sol[1]
+        #     deltaV2 = sol[2]
+        #     dt = sol[3]
+        #
+        #     man1 = self.create_and_apply_manoeuvre(chaser, target, deltaV1, 1e-3)
+        #     man2 = self.create_and_apply_manoeuvre(chaser, target, deltaV2, dt)
 
         man1 = self.create_and_apply_manoeuvre(chaser, target, best_dV_1, 1e-3)
         man2 = self.create_and_apply_manoeuvre(chaser, target, best_dV_2, best_dt)
@@ -1117,7 +1124,6 @@ class HamelDeLafontaine(OrbitAdjuster):
 
         Can be used to do corrections during relative navigation
     """
-
 
     def _refine_result(self, chaser, checkpoint, target, deltaV, dt):
         """
