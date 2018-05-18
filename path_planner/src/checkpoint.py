@@ -15,15 +15,15 @@ from copy import deepcopy
 
 
 class CheckPoint(object):
-    """
-        Base class that contains the definition of a checkpoint.
+    """Base class that contains the definition of a checkpoint.
 
-        Attributes:
-            id (int): ID number which identify the checkpoint.
-            manoeuvre_type (str): Force a specific manoeuvre type, can be either "standard" - uses only the basic
-                functions, "radial" - doing a radial manoeuvre with a specific flight time or "drift" - where the
-                spacecraft tries to drift to the checkpoint and if it cannot it apply a apogee/perigee change manoeuvre
-                to be able to drift to the wanted position.
+    Attributes:
+        id (int): ID number which identify the checkpoint.
+        manoeuvre_type (str): Force a specific manoeuvre type, can be either "standard" - uses only the basic functions,
+            "radial" - doing a radial manoeuvre with a specific flight time or "drift" - where the spacecraft tries to
+            drift to the checkpoint and if it cannot it apply a apogee/perigee change manoeuvre to be able to drift to
+            the wanted position.
+
     """
 
     def __init__(self, id=0):
@@ -57,17 +57,17 @@ class CheckPoint(object):
 
 
 class RelativeCP(CheckPoint):
-    """
-        Relative checkpoint class, based on Checkpoint.
-        Holds the information for relative navigation.
+    """Relative checkpoint class, based on Checkpoint.
 
-        Attributes:
-            rel_state (CartesianLVLH): Holds the relative coordinates with respect to a satellite.
-            error_ellipsoid (array): Define an imaginary ellipsoid around the checkpoint, in which the manoeuvre is
-                still performable. Measures are in km and goes according to the LVLH frame, i.e:
-                [error(R-bar), error(V-bar), error(H-bar)]
-            t_min (float64): Minimum time allowed to execute the manoeuvre [s], standard is 1.0 second.
-            t_max (float64): Maximum time allowed to execute the manoeuvre [s], standard is 10 hours.
+    Holds the information for relative navigation.
+
+    Attributes:
+        rel_state (CartesianLVLH): Holds the relative coordinates with respect to a satellite.
+        error_ellipsoid (array): Define an imaginary ellipsoid around the checkpoint, in which the manoeuvre is still
+        performable. Measures are in km and goes according to the LVLH frame, i.e:
+            [error(R-bar), error(V-bar), error(H-bar)]
+        t_min (float): Minimum time allowed to execute the manoeuvre [s], standard is 1.0 second.
+        t_max (float): Maximum time allowed to execute the manoeuvre [s], standard is 10 hours.
     """
 
     def __init__(self):

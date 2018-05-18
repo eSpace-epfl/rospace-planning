@@ -10,6 +10,7 @@
 
 import numpy as np
 import pykep as pk
+import sys
 
 from state import Satellite, Chaser
 from rospace_lib import mu_earth, J_2, R_earth
@@ -21,25 +22,26 @@ from copy import deepcopy
 
 
 class OrbitAdjuster(object):
-    """
-        Base class of an orbit adjuster.
+    """Base class of an orbit adjuster.
+
     """
 
-    def travel_time(self, abs_state, theta0, theta1):
-        """
-            Evaluate the travel time of a satellite from a starting true anomaly theta0 to an end anomaly theta1.
+    @staticmethod
+    def travel_time(abs_state, theta0, theta1):
+        """Evaluate the travel time of a satellite from a starting true anomaly theta0 to an end anomaly theta1.
 
         Reference:
             Exercise of Nicollier's Lecture.
             David A. Vallado, Fundamentals of Astrodynamics and Applications, Second Edition, Algorithm 11 (p. 133)
 
         Args:
-            abs_state (KepOrbElem): Satellite state in keplerian orbital elements.
+            abs_state (KepOrbElem): Satellite state in mean keplerian orbital elements.
             theta0 (rad): Starting true anomaly.
             theta1 (rad): Ending true anomaly.
 
         Return:
             Travel time (seconds)
+
         """
 
         a = abs_state.a
@@ -62,12 +64,14 @@ class OrbitAdjuster(object):
 
         return dt
 
-    def create_and_apply_manoeuvre(self, chaser, target, deltaV, dt):
-        """
-            Take the amount of deltaV needed and the waiting time up to when the manoeuvre should be executed, create
-            the manoeuvre and apply it, propagating chaser and target.
+    @staticmethod
+    def create_and_apply_manoeuvre(chaser, target, deltaV, dt):
+        """Create and apply a manoeuvre to chaser given deltaV and waiting time.
 
-            The target and chaser absolute and relative state are automatically upgraded in this function!
+        Take the amount of deltaV needed and the waiting time up to when the manoeuvre should be executed, create
+        the manoeuvre and apply it, propagating chaser and target.
+
+        The target and chaser absolute and relative state are automatically upgraded in this function!
 
         Args:
             chaser (Chaser)
@@ -99,7 +103,7 @@ class OrbitAdjuster(object):
         target.set_abs_state_from_cartesian(target_prop[0])
         chaser.rel_state.from_cartesian_pair(chaser.abs_state, target.abs_state)
 
-        # Reset propagators initial conditions
+        # Reset propagators initial conditions to apply deltaV
         chaser.prop.change_initial_conditions(chaser_prop[0], new_epoch, chaser.mass)
         target.prop.change_initial_conditions(target_prop[0], new_epoch, target.mass)
 
@@ -114,7 +118,8 @@ class OrbitAdjuster(object):
 
         return man
 
-    def calc_E_from_m(self, m, e):
+    @staticmethod
+    def calc_E_from_m(m, e):
         if m < np.pi:
             E = m + e / 2.0
         else:
@@ -139,9 +144,9 @@ class OrbitAdjuster(object):
 
         return E
 
-    def calc_v_from_E(self, E, e):
-        v = 2.0 * np.arctan2(np.sqrt(1.0 + e) * np.sin(E / 2.0),
-                                   np.sqrt(1.0 - e) * np.cos(E / 2.0))
+    @staticmethod
+    def calc_v_from_E(E, e):
+        v = 2.0 * np.arctan2(np.sqrt(1.0 + e) * np.sin(E / 2.0), np.sqrt(1.0 - e) * np.cos(E / 2.0))
 
         if v < 0:
             v = v + np.pi * 2.0
@@ -156,18 +161,22 @@ class HohmannTransfer(OrbitAdjuster):
         Can be used to do corrections during absolute navigation.
     """
 
-    def is_necessary(self, chaser, checkpoint):
-        """
-            Function to test if this type of orbit adjuster is needed.
-            Checking if there are differences in semi-major axis and eccentricity between the actual state and the
-            future checkpoint. This difference are compared then to some manually defined tolerances.
+    def is_necessary(self, chaser, abs_state):
+        """Function to test if this type of orbit adjuster is needed.
+
+        Checking if there are differences in semi-major axis and eccentricity between the actual state and another
+        absolute state. This difference are compared then to some manually defined tolerances.
+
+        Args:
+            chaser (Chaser, Satellite)
+            abs_state (KepOrbElem): Mean orbital elements.
 
         """
 
         mean_oe = chaser.get_mean_oe()
 
-        da = checkpoint.abs_state.a - mean_oe.a
-        de = checkpoint.abs_state.e - mean_oe.e
+        da = abs_state.a - mean_oe.a
+        de = abs_state.e - mean_oe.e
 
         # Tolerances, evaluated manually to ensure a precision of at least 100 meter
         # Difference as to be above 100 meter to call the orbit adjuster, and is calculated as follow (for
@@ -247,10 +256,10 @@ class HohmannTransfer(OrbitAdjuster):
         # Apply second deltaV and give some amount of time (at least 10 seconds) to react
         mean_oe = chaser.get_mean_oe()
         dt = self.travel_time(mean_oe, mean_oe.v, theta_2)
-        if dt < 10.0:
-            dt += self.travel_time(mean_oe, 0.0, 2.0*np.pi)
 
         man2 = self.create_and_apply_manoeuvre(chaser, target, deltaV_C_2, dt)
+
+        print "Hohmann Transfer with manoeuvre..."
 
         return [man1, man2]
 
@@ -261,16 +270,21 @@ class ArgumentOfPerigee(OrbitAdjuster):
         Can be used to do corrections during absolute navigation.
     """
 
-    def is_necessary(self, chaser, checkpoint):
-        """
-            Function to test if this type of orbit adjuster is needed.
-            Check the difference between argument of perigee of actual state and of checkpoint, if it's above a certain
-            manually defined tolerance, perform the manoeuvre.
+    def is_necessary(self, chaser, abs_state):
+        """Function to test if this type of orbit adjuster is needed.
+
+        Check the difference between argument of perigee of actual state and of another absolute state, if it's above a
+        certain manually defined tolerance, perform the manoeuvre.
+
+        Args:
+            chaser (Chaser, Satellite)
+            abs_state (KepOrbElem): Mean orbital elements
+
         """
 
         mean_oe = chaser.get_mean_oe()
 
-        dw = checkpoint.abs_state.w - mean_oe.w
+        dw = abs_state.w - mean_oe.w
 
         # Tolerance, evaluated manually to ensure a precision of at least 100 meter
         # Assuming an almost circular orbit, a deviation of tol_w in the argument of perigee should give maximum a 100
@@ -291,6 +305,7 @@ class ArgumentOfPerigee(OrbitAdjuster):
             Howard Curtis, Orbital Mechanics for Engineering Students, Chapter 6
             David A. Vallado, Fundamentals of Astrodynamics and Applications, Second Edition, Chapter 6
         """
+
         # Mean orbital elements
         mean_oe = chaser.get_mean_oe()
 
@@ -341,27 +356,37 @@ class ArgumentOfPerigee(OrbitAdjuster):
 
         man = self.create_and_apply_manoeuvre(chaser, target, deltaV_C, dt)
 
+        print "Argument of Perigee correction"
+
         return [man]
 
 
 class PlaneOrientation(OrbitAdjuster):
-    """
-        Subclass holding the function to evaluate the deltaV needed to change in plane orientation.
-        A single delta-V manoeuvre will be evaluated to correct both inclination and RAAN at the same time.
-        Can be used to do corrections during absolute navigation.
+    """Subclass holding the function to evaluate the deltaV needed to change in plane orientation.
+
+    A single delta-V manoeuvre will be evaluated to correct both inclination and RAAN at the same time.
+    Can be used to do corrections during absolute navigation.
+
     """
 
-    def is_necessary(self, chaser, checkpoint):
-        """
-            Function to test if this type of orbit adjuster is needed.
-            Check if the difference in inclination and RAAN between actual state and checkpoint are above a certain
-            manually calculated tolerance.
+    def is_necessary(self, chaser, abs_state):
+        """Function to test if this type of orbit adjuster is needed.
+
+        Check if the difference in inclination and RAAN between actual state and another absolute state are above a
+        certain manually calculated tolerance.
+
+        Args:
+            chaser (Chaser, Satellite)
+            abs_state (KepOrbElem): Mean orbital elements, usually of the next checkpoint.
+
         """
 
         mean_oe = chaser.get_mean_oe()
 
-        di = checkpoint.abs_state.i - mean_oe.i
-        dO = checkpoint.abs_state.O - mean_oe.O
+        di = abs_state.i - mean_oe.i
+        dO = abs_state.O - mean_oe.O
+
+
 
         # Tolerances, evaluated manually to ensure a precision of at least 100 meter
         # Assuming an almost circular orbit, a deviation of tol_i in the inclination or of tol_O in RAAN should give
@@ -378,13 +403,16 @@ class PlaneOrientation(OrbitAdjuster):
             return False
 
     def evaluate_manoeuvre(self, chaser, checkpoint, target):
-        """
-            Correct plane inclination and RAAN with a single manoeuvre at the node between the two orbital planes.
+        """Correct plane inclination and RAAN with a single manoeuvre at the node between the two orbital planes.
+
+        Calculate the intersection axis of two orbital planes when only RAAN and inclination are changed, then evaluates
+        the velocity vector at that point and calculate the deltaV needed to change plane.
 
         References:
             Howard Curtis, Orbital Mechanics for Engineering Students, Chapter 6
             David A. Vallado, Fundamentals of Astrodynamics and Applications, Second Edition, Chapter 6
         """
+
         # Mean orbital elements
         mean_oe = chaser.get_mean_oe()
 
@@ -441,21 +469,20 @@ class PlaneOrientation(OrbitAdjuster):
         else:
             dv2 = theta_2 - mean_oe.v
 
-        if dv1 > dv2:
-            theta_i = theta_2
-        else:
-            theta_i = theta_1
-
         # Define vector c in Earth-Inertial frame of reference
         cx = np.cos(psi) * np.cos(phi)
         cy = np.cos(psi) * np.sin(phi)
         cz = np.sin(psi)
 
-        # TODO: check this, for some cases it seems to be wrong
         if i_i > i_f:
             cx *= -1.0
             cy *= -1.0
             cz *= -1.0
+
+        if dv1 > dv2:
+            theta_i = theta_2
+        else:
+            theta_i = theta_1
 
         # Define rotation of alpha radiants around vector c following right-hand rule
         k1 = 1.0 - np.cos(alpha)
@@ -480,9 +507,11 @@ class PlaneOrientation(OrbitAdjuster):
         deltaV_C = V_TEM_f - V_TEM_i
 
         # Apply first deltaV
-        dt = self.travel_time(mean_oe, mean_oe.v, theta_1)
+        dt = self.travel_time(mean_oe, mean_oe.v, theta_i)
 
         man = self.create_and_apply_manoeuvre(chaser, target, deltaV_C, dt)
+
+        print "Plane correction manoeuvre..."
 
         return [man]
 
@@ -526,10 +555,8 @@ class Drift(OrbitAdjuster):
                     else:
                         ex_epoch = manoeuvre_plan[j].execution_epoch
                         del manoeuvre_plan[j]
-
-            manoeuvre_plan[i].execution_epoch = ex_epoch
+                        manoeuvre_plan[i].execution_epoch = ex_epoch
             i += 1
-
 
     def evaluate_manoeuvre(self, chaser, checkpoint, target, manoeuvre_plan):
         """
@@ -537,153 +564,122 @@ class Drift(OrbitAdjuster):
 
         Args:
             chaser (Chaser)
-            checkpoint (RelativeCP): Next checkpoint.
+            checkpoint (RelativeCP)
             target (Satellite)
+            manoeuvre_plan (list): Old manoeuvre plan, before drifting starts.
 
         Return:
-            man (Manoeuvre)
+            manoeuvre_plan (list): Return the new updated manoeuvre plan with drifting manoeuvre.
         """
+
+        # Copy old manoeuvre plan
+        manoeuvre_plan_old = deepcopy(manoeuvre_plan)
 
         # Define a function F for the angle calculation
         F = lambda dv_req, dv, n: int((dv - dv_req) / n > 0.0) * np.sign(n)
 
-        # Correct altitude at every loop until drifting is possible
-        while 1:
-            # Assign mean values from osculating
-            chaser_mean = chaser.get_mean_oe()
-            target_mean = target.get_mean_oe()
+        # Assign mean values from osculating
+        chaser_mean = chaser.get_mean_oe()
+        target_mean = target.get_mean_oe()
 
-            # Assign information to the new chaser and target objects
-            chaser_old = deepcopy(chaser.abs_state)
-            target_old = deepcopy(target.abs_state)
+        # Evaluate relative mean angular velocity. If it's below zero chaser moves slower than target,
+        # otherwise faster
+        n_c = np.sqrt(mu_earth / chaser_mean.a ** 3)
+        n_t = np.sqrt(mu_earth / target_mean.a ** 3)
+        n_rel = n_c - n_t
 
-            # Store initial epoch
-            epoch_old = chaser.prop.date
+        # Required true anomaly difference at the end of the manoeuvre, estimation assuming circular orbit
+        dv_req = checkpoint.rel_state.R[1] / np.linalg.norm(chaser.abs_state.R)
 
-            # Store initial masses
-            chaser_mass_old = chaser.mass
-            target_mass_old = target.mass
+        # Evaluate the actual true anomaly difference
+        actual_dv = (chaser_mean.v + chaser_mean.w) % (2.0 * np.pi) - (target_mean.v + target_mean.w) % (2.0 * np.pi)
 
-            # Evaluate relative mean angular velocity. If it's below zero chaser moves slower than target,
-            # otherwise faster
-            n_c = np.sqrt(mu_earth / chaser_mean.a ** 3)
-            n_t = np.sqrt(mu_earth / target_mean.a ** 3)
-            n_rel = n_c - n_t
+        # Millisecond tolerance to exit the loop
+        tol = 1e-3
 
-            # Required true anomaly difference at the end of the manoeuvre, estimation assuming circular
-            # orbit
-            dv_req = checkpoint.rel_state.R[1] / np.linalg.norm(chaser.abs_state.R)
+        # Estimated drifting time
+        t_est = (2.0 * np.pi * F(dv_req, actual_dv, n_rel) + dv_req - actual_dv) / n_rel
+        print "[INFO]: Time estimated for drifting: " + str(t_est) + " seconds."
+        if t_est > checkpoint.t_max:
+            print "[WARNING]: Drift time exceeds t_max = " + str(checkpoint.t_max) + " seconds, suggested solutions:"
+            print "           - Change t_max"
+            print "           - Change injection mean anomaly"
+            print "           - Perform anomaly synchronisation manoeuvre"
+            print "           Note that an extremely high drifting may increase a lot the deltaV consumption, due to "
+            print "           the increased amount of plane change manoeuvre needed!\n"
 
-            # Evaluate the actual true anomaly difference
-            actual_dv = (chaser_mean.v + chaser_mean.w) % (2.0 * np.pi) - (target_mean.v + target_mean.w) % (
-            2.0 * np.pi)
+        ellipsoid_flag = False
 
-            # Millisecond tolerance to exit the loop
-            tol = 1e-3
+        dt = 10**np.floor(np.log10(t_est)) \
+            if t_est / (10**np.floor(np.log10(t_est))) >= 2.0 else 10**np.floor(np.log10(t_est) - 1.0)
+        dr_next_old = chaser.rel_state.R[1] - checkpoint.rel_state.R[1]
+        dr_next = 0.0
+        while dt > tol:
+            # Store (i-1) chaser and target state
+            chaser_tmp = deepcopy(chaser.abs_state)
+            target_tmp = deepcopy(target.abs_state)
 
-            manoeuvre_plan_old = deepcopy(manoeuvre_plan)
+            epoch_tmp = chaser.prop.date
+            manoeuvre_plan_tmp = deepcopy(manoeuvre_plan)
+            chaser_mass_tmp = chaser.mass
+            target_mass_tmp = target.mass
+            dr_next_tmp = dr_next
 
-            t_est = (2.0 * np.pi * F(dv_req, actual_dv, n_rel) + dv_req - actual_dv) / n_rel
-            ellipsoid_flag = False
-            dt = 10**np.floor(np.log10(t_est)) if t_est / (10**np.floor(np.log10(t_est))) >= 2.0 else 10**np.floor(np.log10(t_est) - 1.0)
-            dr_next_old = 0.0
-            dr_next = 0.0
-            while dt > tol:
-                # Store (i-1) chaser and target state
-                chaser_tmp = deepcopy(chaser.abs_state)
-                target_tmp = deepcopy(target.abs_state)
-                epoch_tmp = chaser.prop.date
-                dr_next_tmp = dr_next
-                manoeuvre_plan_tmp = deepcopy(manoeuvre_plan)
-                chaser_mass_tmp = chaser.mass
-                target_mass_tmp = target.mass
-
+            for _ in xrange(0, int(dt), 100):
                 # Update epoch
-                chaser.prop.date += timedelta(seconds=dt)
-                target.prop.date += timedelta(seconds=dt)
+                chaser.prop.date += timedelta(seconds=100)
+                target.prop.date += timedelta(seconds=100)
 
                 # Propagate
-                chaser_prop = chaser.prop.orekit_prop.propagate(chaser.prop.date)
-                target_prop = target.prop.orekit_prop.propagate(target.prop.date)
+                chaser.prop.orekit_prop.propagate(chaser.prop.date)
+                target.prop.orekit_prop.propagate(target.prop.date)
 
-                chaser.set_abs_state_from_cartesian(chaser_prop[0])
-                target.set_abs_state_from_cartesian(target_prop[0])
-                chaser.rel_state.from_cartesian_pair(chaser_prop[0], target_prop[0])
+            chaser.prop.date = epoch_tmp + timedelta(seconds=dt)
+            target.prop.date = epoch_tmp + timedelta(seconds=dt)
 
-                # Re-initialize propagators
-                chaser.prop.change_initial_conditions(chaser_prop[0], chaser.prop.date, chaser.mass)
-                target.prop.change_initial_conditions(target_prop[0], target.prop.date, target.mass)
+            chaser_prop = chaser.prop.orekit_prop.propagate(chaser.prop.date)
+            target_prop = target.prop.orekit_prop.propagate(target.prop.date)
 
+            chaser.set_abs_state_from_cartesian(chaser_prop[0])
+            target.set_abs_state_from_cartesian(target_prop[0])
+            chaser.rel_state.from_cartesian_pair(chaser_prop[0], target_prop[0])
+
+            dr_next = chaser.rel_state.R[1] - checkpoint.rel_state.R[1]
+
+            # Check if plane needs to be readjusted
+            target_mean = target.get_mean_oe()
+            plane_change = PlaneOrientation()
+            if plane_change.is_necessary(chaser, target_mean):
+                if (target.get_mean_oe().O - chaser.get_mean_oe().O > 0.0 and n_rel > 0.0) or \
+                        (target.get_mean_oe().O - chaser.get_mean_oe().O < 0.0 and n_rel < 0.0):
+                    print "[INFO]: Plane precession can be used to drift to the right plane!"
+
+                # Create next checkpoint to change plane
+                checkpoint_plane = AbsoluteCP()
+                checkpoint_plane.set_abs_state(target_mean)
+
+                manoeuvre_plan += plane_change.evaluate_manoeuvre(chaser, checkpoint_plane, target)
+
+                # Update dr_next
                 dr_next = chaser.rel_state.R[1] - checkpoint.rel_state.R[1]
 
-                if dr_next <= 0.0 and dr_next_old <= 0.0:
-                    # Correct plane in the middle of the drifting
-                    tol_i = 0.5 / chaser_mean.a
-                    tol_O = 0.5 / chaser_mean.a
-
-                    chaser_mean = chaser.get_mean_oe()
-                    target_mean = target.get_mean_oe()
-
-                    # At this point, inclination and raan should match the one of the target
-                    di = target_mean.i - chaser_mean.i
-                    dO = target_mean.O - chaser_mean.O
-                    if abs(di) > tol_i or abs(dO) > tol_O:
-                        checkpoint_abs = AbsoluteCP()
-                        checkpoint_abs.abs_state.i = target_mean.i
-                        checkpoint_abs.abs_state.O = target_mean.O
-
-                        orbit_adj = PlaneOrientation()
-                        manoeuvre_plan += orbit_adj.evaluate_manoeuvre(chaser, checkpoint_abs, target)
-
-                        dr_next = chaser.rel_state.R[1] - checkpoint.rel_state.R[1]
-
-                        if dr_next >= 0.0:
-                            # Overshoot due to plane adjustment => reduce dt and depropagate
-                            dt /= 10.0
-                            chaser.abs_state = deepcopy(chaser_tmp)
-                            target.abs_state = deepcopy(target_tmp)
-
-                            chaser.prop.date = epoch_tmp
-                            target.prop.date = epoch_tmp
-
-                            chaser.mass = chaser_mass_tmp
-                            target.mass = target_mass_tmp
-
-                            chaser.prop.change_initial_conditions(chaser.abs_state, chaser.prop.date, chaser.mass)
-                            target.prop.change_initial_conditions(target.abs_state, target.prop.date, target.mass)
-
-                            manoeuvre_plan = manoeuvre_plan_tmp
-
-                            # dr_next_old should be the same as the one at the beginning
-                            dr_next = dr_next_tmp
-                        else:
-                            # Target point not overshooted, everything looks good as it is
-                            man = RelativeMan()
-                            man.deltaV = np.array([0.0, 0.0, 0.0])
-                            man.execution_epoch = chaser.prop.date
-
-                            manoeuvre_plan.append(man)
-
-                            dr_next_old = dr_next
-
-                    else:
-                        # No plane adjustment needed, add another dt and move forward
-                        man = RelativeMan()
-                        man.deltaV = np.array([0.0, 0.0, 0.0])
-                        man.execution_epoch = chaser.prop.date
-
-                        manoeuvre_plan.append(man)
-
-                        dr_next_old = dr_next
-
-                elif dr_next >= 0.0 and dr_next_old >= 0.0:
-                    # Only useful for the case when chaser is on a higher orbit
-                    pass
-
-                elif (dr_next <= 0.0 and dr_next_old >= 0.0) or (dr_next >= 0.0 and dr_next_old <= 0.0):
+            if n_rel > 0.0:
+                if dr_next > 0.0 and dr_next_old <= 0.0:
                     dt /= 10.0
+
+                    if abs(checkpoint.rel_state.R[1] - chaser.rel_state.R[1]) <= checkpoint.error_ellipsoid[1]:
+                        # Almost in line with the checkpoint
+                        if abs(checkpoint.rel_state.R[0] - chaser.rel_state.R[0]) <= checkpoint.error_ellipsoid[0]:
+                            # Inside the tolerance, the point may be reached by drifting
+                            ellipsoid_flag = True
+                        elif abs(checkpoint.rel_state.R[1] - chaser.rel_state.R[1]) <= 0.1 and \
+                                abs(checkpoint.rel_state.R[0] - chaser.rel_state.R[0]) > checkpoint.error_ellipsoid[0]:
+                            # Outside tolerance, point may not be reached!
+                            break
+
                     chaser.abs_state = deepcopy(chaser_tmp)
                     target.abs_state = deepcopy(target_tmp)
+                    chaser.rel_state.from_cartesian_pair(chaser.abs_state, target.abs_state)
 
                     chaser.prop.date = epoch_tmp
                     target.prop.date = epoch_tmp
@@ -693,56 +689,82 @@ class Drift(OrbitAdjuster):
 
                     chaser.prop.change_initial_conditions(chaser.abs_state, chaser.prop.date, chaser_mass_tmp)
                     target.prop.change_initial_conditions(target.abs_state, target.prop.date, target_mass_tmp)
-                    # dr_next_old should be the same as the one at the beginning
+
+                    manoeuvre_plan = deepcopy(manoeuvre_plan_tmp)
+
                     dr_next = dr_next_tmp
+                else:
+                    man = RelativeMan()
+                    man.deltaV = np.array([0.0, 0.0, 0.0])
+                    man.execution_epoch = chaser.prop.date
+                    manoeuvre_plan.append(man)
 
-                if abs(checkpoint.rel_state.R[1] - chaser.rel_state.R[1]) <= checkpoint.error_ellipsoid[1]:
-                    # Almost in line with the checkpoint
-                    if abs(checkpoint.rel_state.R[0] - chaser.rel_state.R[0]) <= checkpoint.error_ellipsoid[0]:
-                        # Inside the tolerance, the point may be reached by drifting
-                        ellipsoid_flag = True
-                    elif abs(checkpoint.rel_state.R[1] - chaser.rel_state.R[1]) <= 0.1 and \
-                        abs(checkpoint.rel_state.R[0] - chaser.rel_state.R[0]) > checkpoint.error_ellipsoid[0]:
-                        # Outside tolerance, point may not be reached!
-                        break
+                    dr_next_old = dr_next
 
-            if ellipsoid_flag:
-                # It is possible to drift
-                # Fuse manoeuvres together and quit algorithm
-                self._fuse_manoeuvres(manoeuvre_plan, manoeuvre_plan_old)
-                return manoeuvre_plan
+            elif n_rel < 0.0:
+                if dr_next < 0.0 and dr_next_old >= 0.0:
+                    dt /= 10.0
+
+                    if abs(checkpoint.rel_state.R[1] - chaser.rel_state.R[1]) <= checkpoint.error_ellipsoid[1]:
+                        # Almost in line with the checkpoint
+                        if abs(checkpoint.rel_state.R[0] - chaser.rel_state.R[0]) <= checkpoint.error_ellipsoid[0]:
+                            # Inside the tolerance, the point may be reached by drifting
+                            ellipsoid_flag = True
+                        elif abs(checkpoint.rel_state.R[1] - chaser.rel_state.R[1]) <= 0.1 and \
+                                abs(checkpoint.rel_state.R[0] - chaser.rel_state.R[0]) > checkpoint.error_ellipsoid[0]:
+                            # Outside tolerance, point may not be reached!
+                            break
+
+                    chaser.abs_state = deepcopy(chaser_tmp)
+                    target.abs_state = deepcopy(target_tmp)
+                    chaser.rel_state.from_cartesian_pair(chaser.abs_state, target.abs_state)
+
+                    chaser.prop.date = epoch_tmp
+                    target.prop.date = epoch_tmp
+
+                    chaser.mass = chaser_mass_tmp
+                    target.mass = target_mass_tmp
+
+                    chaser.prop.change_initial_conditions(chaser.abs_state, chaser.prop.date, chaser_mass_tmp)
+                    target.prop.change_initial_conditions(target.abs_state, target.prop.date, target_mass_tmp)
+
+                    manoeuvre_plan = deepcopy(manoeuvre_plan_tmp)
+
+                    dr_next = dr_next_tmp
+                else:
+                    man = RelativeMan()
+                    man.deltaV = np.array([0.0, 0.0, 0.0])
+                    man.execution_epoch = chaser.prop.date
+                    manoeuvre_plan.append(man)
+
+                    dr_next_old = dr_next
+
             else:
-                # Drift is not possible, drop a warning and correct altitude!
-                print "\n[WARNING]: Drifting to checkpoint nr. " + str(checkpoint.id) + " not possible!"
-                print "           Arrive in: " + str(chaser.rel_state.R)
-                print "           Correcting altitude automatically...\n"
+                raise ValueError('Relative velocity between Spacecrafts is zero, impossible to drift!')
 
-                # Depropagate to initial conditions before drifting
-                chaser.abs_state = deepcopy(chaser_old)
-                target.abs_state = deepcopy(target_old)
+        if ellipsoid_flag:
+            # It is possible to drift, fuse manoeuvres together and quit algorithm
+            self._fuse_manoeuvres(manoeuvre_plan, manoeuvre_plan_old)
+            return manoeuvre_plan
+        else:
+            # Drift is not possible, drop a warning and quit the program, suggesting a new checkpoint to be added before
+            # drifting!
+            print "\n[WARNING]: Drifting to checkpoint nr. " + str(checkpoint.id) + " impossible!"
+            print "           Closest arrival in: " + str(chaser.rel_state.R)
 
-                chaser_mean = chaser.get_mean_oe()
-                target_mean = target.get_mean_oe()
+            print "\n[INFO]: Change the altitude of checkpoint nr. " + str(checkpoint.id - 1) + " by ca. " + \
+                  str(checkpoint.rel_state.R[0] - chaser.rel_state.R[0])
+            print "        And be sure to mantain coelliptical orbits: a * e = " + str(target_mean.a * target_mean.e)
 
-                chaser.prop.date = epoch_old
-                target.prop.date = epoch_old
+            print "\n[INFO]: Suggested absolute checkpoint to be added after checkpoint nr. " + str(checkpoint.id - 1)
+            print "        a: " + str(target_mean.a + checkpoint.rel_state.R[0])
+            print "        e: " + str(target_mean.a * target_mean.e / (target_mean.a + checkpoint.rel_state.R[0]))
+            print "        i: " + str(target_mean.i)
+            print "        O: " + str(target_mean.O)
+            print "        w: " + str(target_mean.w)
+            print "        Note: This checkpoint may need to be adjusted due to oscillations!"
 
-                chaser.mass = chaser_mass_old
-                target.mass = target_mass_old
-
-                chaser.prop.change_initial_conditions(chaser.abs_state, chaser.prop.date, chaser_mass_old)
-                target.prop.change_initial_conditions(target.abs_state, target.prop.date, target_mass_old)
-
-                manoeuvre_plan = manoeuvre_plan_old
-
-                # Create new checkpoint
-                checkpoint_new_abs = AbsoluteCP()
-                checkpoint_new_abs.set_abs_state(chaser_mean)
-                checkpoint_new_abs.abs_state.a = target_mean.a + checkpoint.rel_state.R[0]
-                checkpoint_new_abs.abs_state.e = target_mean.a * target_mean.e / checkpoint_new_abs.abs_state.a
-
-                orbit_adj = HohmannTransfer()
-                manoeuvre_plan += orbit_adj.evaluate_manoeuvre(chaser, checkpoint_new_abs, target)
+            sys.exit('Exiting...')
 
 
 class MultiLambert(OrbitAdjuster):
@@ -773,54 +795,45 @@ class MultiLambert(OrbitAdjuster):
         if mean_oe.i > np.pi / 2.0:
             retrograde = True
 
-        # Absolute position of chaser at t = t0
-        R_C_i = chaser.abs_state.R
-        V_C_i = chaser.abs_state.V
-
-        # Absolute position of the target at t = t0
-        R_T_i = target.abs_state.R
-        V_T_i = target.abs_state.V
+        # Create final wanted position of chaser
+        chaser_final = CartesianTEME()
 
         # Create temporary target that will keep the initial conditions
-        target_ic = CartesianTEME()
-        chaser_ic = CartesianTEME()
-        target_ic.R = R_T_i
-        target_ic.V = V_T_i
+        target_ic = deepcopy(target.abs_state)
+        chaser_ic = deepcopy(chaser.abs_state)
 
         # Initialize best dV and dt
         best_dV = 1e12
         best_dt = 0.0
 
-        # Minimum deltaV deliverable -> 5 mm/s
-        dV_min = 5e-6
+        # Minimum deltaV deliverable -> 0.7 mm/s
+        dV_min = 7e-7
+
+        # Solution list
+        sol_list = []
 
         # Check all the possible transfers time from tmin to tmax (seconds)
-        t_min = int(checkpoint.t_min)
-        t_max = int(checkpoint.t_max)
-        for dt in xrange(t_min, t_max):
-            # r_T, v_T = pk.propagate_lagrangian(R_T_i, V_T_i, dt, mu_earth)
+        t_min = checkpoint.t_min
+        t_max = checkpoint.t_max
+        T = np.arange(t_min, t_max, 0.1)        # Tenth of second precision
 
+        for dt in T:
+            # Propagate target
             target_prop = target.prop.orekit_prop.propagate(chaser.prop.date + timedelta(seconds=dt))
-
             target.set_abs_state_from_cartesian(target_prop[0])
 
-            # Transformation matrix from TEME to LVLH at time t1
-            B_LVLH_TEME_f = target.abs_state.get_lof()
-
-            # Evaluate final wanted absolute position of the chaser
-            R_C_f = np.array(target.abs_state.R) + np.linalg.inv(B_LVLH_TEME_f).dot(checkpoint.rel_state.R)
-            O_T_f = np.cross(target.abs_state.R, target.abs_state.V) / np.linalg.norm(target.abs_state.R) ** 2
-            V_C_f = np.array(target.abs_state.V) + np.linalg.inv(B_LVLH_TEME_f).dot(checkpoint.rel_state.V) + \
-                    np.cross(O_T_f, np.linalg.inv(B_LVLH_TEME_f).dot(checkpoint.rel_state.R))
+            chaser_final.from_lvlh_frame(target.abs_state, checkpoint.rel_state)
 
             # Solve lambert in dt starting from the chaser position at t0 going to t1
-            sol = pk.lambert_problem(R_C_i, R_C_f, dt, mu_earth, retrograde, 10)
+            sol = pk.lambert_problem(chaser.abs_state.R, chaser_final.R, dt, mu_earth, retrograde, 10)
 
             # Check for the best solution for this dt
             for i in xrange(0, len(sol.get_v1())):
-                dV_1 = np.array(sol.get_v1()[i]) - V_C_i
-                dV_2 = V_C_f - np.array(sol.get_v2()[i])
+                dV_1 = np.array(sol.get_v1()[i]) - chaser.abs_state.V
+                dV_2 = chaser_final.V - np.array(sol.get_v2()[i])
                 dV_tot = np.linalg.norm(dV_1) + np.linalg.norm(dV_2)
+
+                sol_list.append((dV_tot, dV_1, dV_2, dt))
 
                 # Check if the deltaV is above the minimum deliverable by thrusters
                 if np.linalg.norm(dV_1) > dV_min and np.linalg.norm(dV_2) > dV_min:
@@ -831,15 +844,29 @@ class MultiLambert(OrbitAdjuster):
                         best_dV_1 = dV_1
                         best_dV_2 = dV_2
                         best_dt = dt
+
                     elif dV_tot < best_dV and not safety_flag:
                         # Check if the trajectory is safe
-                        chaser_ic.R = R_C_i
+                        chaser_ic.R = chaser.abs_state.R
                         chaser_ic.V = np.array(sol.get_v1()[i])
                         if self.is_trajectory_safe(dt, approach_ellipsoid):
                             best_dV = dV_tot
                             best_dV_1 = dV_1
                             best_dV_2 = dV_2
                             best_dt = dt
+
+        # Re-initialize target
+        target.prop.change_initial_conditions(target_ic, chaser.prop.date, target.mass)
+
+        sort_sol_list = sorted(sol_list, key=lambda dvtot: dvtot[0])
+
+        # for sol in sort_sol_list:
+        #     deltaV1 = sol[1]
+        #     deltaV2 = sol[2]
+        #     dt = sol[3]
+        #
+        #     man1 = self.create_and_apply_manoeuvre(chaser, target, deltaV1, 1e-3)
+        #     man2 = self.create_and_apply_manoeuvre(chaser, target, deltaV2, dt)
 
         man1 = self.create_and_apply_manoeuvre(chaser, target, best_dV_1, 1e-3)
         man2 = self.create_and_apply_manoeuvre(chaser, target, best_dV_2, best_dt)
@@ -1097,7 +1124,6 @@ class HamelDeLafontaine(OrbitAdjuster):
 
         Can be used to do corrections during relative navigation
     """
-
 
     def _refine_result(self, chaser, checkpoint, target, deltaV, dt):
         """

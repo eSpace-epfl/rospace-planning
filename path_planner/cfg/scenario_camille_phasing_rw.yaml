@@ -1,5 +1,5 @@
 scenario:
-  name: 'Scenario Camille - Phasing'
+  name: 'Scenario Camille - Phasing - Real World'
 
   overview:  " 0. Starting from -35km below the target do ARM1.\n
               1. Do ARM2 and CAM2.\n
@@ -10,7 +10,7 @@ scenario:
 
   approach_ellipsoid: [0.5, 1.5, 0.5]
 
-  prop_type: 2-body
+  prop_type: real-world
 
   checkpoints:
     S0:
@@ -19,9 +19,9 @@ scenario:
         kep:
           a: 7062.4863
           e: 0.001838196965
-          i: 1.71740398396
-          O: 5.40353936417
-          w: 5.11730536685
+          i: 1.71725963131
+          O: 5.40362766987
+          w: 4.68893537987
           v: 0.0
 
     S1:
@@ -30,9 +30,9 @@ scenario:
         kep:
           a: 7074.73485418
           e: 0.001095898676272074
-          i: 1.71740398396
-          O: 5.40353936417
-          w: 5.11730536685
+          i: 1.71725963131
+          O: 5.40362766987
+          w: 4.68893537987
           v: 0.0
 
     S2:
@@ -41,9 +41,9 @@ scenario:
         kep:
           a: 7078.98485418
           e: 0.0016956093011816686
-          i: 1.71740398396
-          O: 5.40353936417
-          w: 5.11730536685
+          i: 1.71725963131
+          O: 5.40362766987
+          w: 4.68893537987
           v: 0.0
 
     S3:
@@ -51,10 +51,10 @@ scenario:
       state:
         kep:
           a: 7086.73485418
-          e: 0.0006001625077256966
-          i: 1.71740398396
-          O: 5.40353936417
-          w: 5.117305366851517382135
+          e: 0.0005972858709650108
+          i: 1.7174626641
+          O: 5.409057708
+          w: 5.09944375026
           v: 0.0
 
     S4:
@@ -65,3 +65,4 @@ scenario:
           V: [0.0, 0.0, 0.0]
       error_ellipsoid: [0.3, 0.8, 0.3]
       manoeuvre: drift
+      t_max: 3000000    # 3e6 seconds correspond approximately to one month

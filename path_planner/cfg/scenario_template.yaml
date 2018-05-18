@@ -67,3 +67,8 @@ scenario:
       # position to another we may end up in a slightly different place. However, if we are still inside this error
       # ellipsoid, the position will be considered valid anyway.
       error_ellipsoid: [#####, #####, #####] (km)
+      # Manoeuvre holds the forced manoeuvre type that has to be performed between two checkpoint. It can be:
+      # - Standard: perform the normal multi-lambert in case of 2-body.
+      # - Radial: perform a standard manoeuvre with transfer time of half a period.
+      # - Drift: drift on a different orbit trying to reach that checkpoint if possible.
+      manoeuvre: #### (str)
