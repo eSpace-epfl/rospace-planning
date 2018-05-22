@@ -16,6 +16,8 @@ import argparse
 from scenario import Scenario
 from state import Chaser, Satellite
 from datetime import timedelta
+from rospace_lib import QNSRelOrbElements
+from copy import deepcopy
 
 
 def print_state(kep):
@@ -134,6 +136,24 @@ def plot_result(manoeuvre_plan, scenario, save_path, extra_dt=0.0):
 
         chaser.prop.change_initial_conditions(chaser_prop[0], epoch, chaser.mass)
         target.prop.change_initial_conditions(target_prop[0], epoch, target.mass)
+
+        chaser.abs_state = deepcopy(chaser_prop[0])
+        target.abs_state = deepcopy(target_prop[0])
+
+        print "[INFO]: Relative orbital elements of spiral drifting."
+        qnsrel = QNSRelOrbElements()
+        qnsrel.from_keporb(target.get_osc_oe(), chaser.get_osc_oe())
+        print qnsrel
+        print ""
+        qnsrel_scaled = qnsrel.as_scaled(chaser.get_osc_oe().a)
+        print "[INFO]: Relative orbital elements scaled."
+        print qnsrel_scaled
+        print ""
+        print "[INFO]: Cartesian components of chaser and target"
+        print chaser.abs_state.R
+        print chaser.abs_state.V
+        print target.abs_state.R
+        print target.abs_state.V
 
         # EXTRA PROPAGATION TO CHECK TRAJECTORY SAFETY AFTER LAST MANOEUVRE
         if extra_dt > 0.0 and i == L - 1:

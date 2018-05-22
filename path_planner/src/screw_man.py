@@ -83,7 +83,7 @@ man = []
 man += man0
 man += man1
 man += [man2[0]]
-# man += [man3]
+man += [man3]
 
 scenario.export_solved_scenario(man)
 
