@@ -1,0 +1,49 @@
+scenario:
+  name: 'Scenario B. W. Barbee'
+
+  overview:  "Scenario took from paper 'A Guidance and Navigation Strategy for Rendezvous
+            and Proximity Operations with a Noncooperative Spacecraft in Geosynchronous Orbit'."
+
+  prop_type: 2-body
+
+  checkpoints:
+    S0:
+      id: 0
+      state:
+        kep:
+          a: 42159.0
+          e: 0.000050006
+          i: 0.002
+          O: 0.396507390127
+          w: 0.533974758001
+          v: 0.0
+
+    S1:
+      id: 1
+      state:
+        kep:
+          a: 42163.0
+          e: 0.000050001
+          i: 0.002
+          O: 0.396507390127
+          w: 0.533974758001
+          v: 0.0
+
+    S2:
+      id: 2
+      state:
+        lvlh:
+          R: [-1.0, 0.0, 0.0]
+          V: [0.0, 0.0, 0.0]
+      error_ellipsoid: [0.2, 0.5, 0.2]
+      manoeuvre: drift
+
+#    S3:
+#      id: 3
+#      state:
+#        lvlh:
+#          R: [0.0, -0.1, 0.0]
+#          V: [0.0, 0.0, 0.0]
+#      error_ellipsoid: [0.2, 0.5, 0.2]
+#      t_min: 2000
+#      t_max: 2500
