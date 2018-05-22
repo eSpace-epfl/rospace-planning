@@ -100,4 +100,8 @@ ENV/
 .mypy_cache/
 
 # Misc generated files
-.pickle
+*.pickle
+path_planner/example
+*.mat
+*.bag
+.idea
