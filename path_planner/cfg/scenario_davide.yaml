@@ -1,25 +1,21 @@
 scenario:
   name: 'Scenario Davide'
 
-  overview:  " 0. Starting from -35km below the target do ARM1.\n
-              1. Do ARM2 and CAM2.\n
-              2. Do ARM3 to go 4km below the target.\n
-              3. Drift to S0.\n
-              4. Do ARM1 to move on target's orbit.\n"
+  overview:  "Review of Camille's plan. Case with 2-body propagator. \n"
 
   keep_out_zone: [0.2, 0.2, 0.2]
 
   approach_ellipsoid: [0.5, 1.5, 0.5]
 
-  prop_type: real-world
+  prop_type: 2-body
 
   checkpoints:
     S0:
       id: 0
       state:
         kep:
-          a: 7058.25405822
-          e: 0.0012396833448931055
+          a: 7062.4863
+          e: 0.001838196965
           i: 1.71740398396
           O: 5.40353936417
           w: 5.11730536685
@@ -29,8 +25,8 @@ scenario:
       id: 1
       state:
         kep:
-          a: 7061.75405822
-          e: 0.0017346964931099773
+          a: 7074.73485418
+          e: 0.001095898676272074
           i: 1.71740398396
           O: 5.40353936417
           w: 5.11730536685
@@ -40,8 +36,8 @@ scenario:
       id: 2
       state:
         kep:
-          a: 7070.50405822
-          e: 0.0004950142127322366
+          a: 7077.98485
+          e: 0.0015545626018
           i: 1.71740398396
           O: 5.40353936417
           w: 5.11730536685
@@ -51,8 +47,8 @@ scenario:
       id: 3
       state:
         kep:
-          a: 7084.7573
-          e: 0.0006001675519493238
+          a: 7084.73485418
+          e: 0.000600331931651
           i: 1.71740398396
           O: 5.40353936417
           w: 5.117305366851517382135
@@ -64,7 +60,7 @@ scenario:
         lvlh:
           R: [-4.0, -10.0, 0.0]
           V: [0.0, 0.0, 0.0]
-      error_ellipsoid: [0.2, 0.5, 0.2]
+      error_ellipsoid: [0.3, 0.8, 0.3]
       manoeuvre: drift
 
     S5:
@@ -80,72 +76,40 @@ scenario:
       id: 6
       state:
         lvlh:
-          R: [0.0, 18.0, 0.0]
+          R: [0.0, 22.0, 0.0]
           V: [0.0, 0.0, 0.0]
       error_ellipsoid: [0.2, 1.0, 0.2]
-      t_min: 3000
-      t_max: 3100
+      t_min: 3046
+      t_max: 3047
 
     S7:
       id: 7
       state:
         lvlh:
-          R: [0.0, -2.0, 0.0]
-          V: [0.0, 0.0, 0.0]
+          R: [3.7, 14.0, 0.0]
+          V: [-3.44058417e-04, -8.02079140e-03, -7.69783542e-16]
       error_ellipsoid: [0.1, 0.3, 0.1]
-      t_min: 29000
-      t_max: 29010
+      t_min: 1485.3735
+      t_max: 1486.3735
 
     S8:
       id: 8
       state:
         lvlh:
-          R: [0.0, -1.0, 0.0]
+          R: [0.0, 7.0, -2.5]
           V: [0.0, 0.0, 0.0]
       error_ellipsoid: [0.005, 0.015, 0.005]
-      manoeuvre: radial
+      manoeuvre: helix
+      t_min: 50000
+      t_max: 50001
 
     S9:
       id: 9
       state:
         lvlh:
-          R: [0.0, -0.2, 0.0]
+          R: [0.0, -2.0, 0.0]
           V: [0.0, 0.0, 0.0]
       error_ellipsoid: [0.001, 0.005, 0.001]
-      manoeuvre: radial
+      t_min: 17945
+      t_max: 17496
 
-    S10:
-      id: 10
-      state:
-        lvlh:
-          R: [0.0, -0.05, 0.0]
-          V: [0.0, 0.0, 0.0]
-      error_ellipsoid: [0.0005, 0.002, 0.0005]
-      manoeuvre: radial
-
-    S11:
-      id: 11
-      state:
-        lvlh:
-          R: [0.0, -0.025, 0.0]
-          V: [0.0, 0.0, 0.0]
-      error_ellipsoid: [0.0001, 0.001, 0.0001]
-      manoeuvre: radial
-
-    S12:
-      id: 12
-      state:
-        lvlh:
-          R: [0.0, -0.01, 0.0]
-          V: [0.0, 0.0, 0.0]
-      error_ellipsoid: [0.0001, 0.0005, 0.0001]
-      manoeuvre: radial
-
-#    S13:
-#      id: 13
-#      state:
-#        lvlh:
-#          R: [0.0, -0.05, 0.0]
-#          V: [0.0, 0.0, 0.0]
-#      error_ellipsoid: [0.0005, 0.002, 0.0005]
-#      manoeuvre: fly-around
