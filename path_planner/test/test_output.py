@@ -41,19 +41,19 @@ class OutputTest(unittest.TestCase):
         Note that this test is performed using 2-body propagator.
         Check if the total deltav and the final position match the following:
             Total DeltaV: 0.0258773258976 km/s
-            Final absolute position: [6279.54516554 2253.87085778 2314.42489077] km
-            Final relative position: [1.02732401e-04 1.79997101e+01 7.23865412e-13] km
+            Final absolute position: [6278.97682309 2253.29179791 2316.52864192]  km
+            Final relative position: [1.02732275e-04 1.79997100e+01 -3.73034936e-14] km
         """
 
         dvtot, ch_final = offline_path_planner.main('scenario_sample_relative')
 
         self.assertAlmostEqual(dvtot, 0.0258773258976, 5)
-        self.assertAlmostEqual(ch_final.abs_state.R[0], 6279.54516554, 2)
-        self.assertAlmostEqual(ch_final.abs_state.R[1], 2253.87085778, 2)
-        self.assertAlmostEqual(ch_final.abs_state.R[2], 2314.42489077, 2)
-        self.assertAlmostEqual(ch_final.rel_state.R[0], 1.02732401e-04, 2)
-        self.assertAlmostEqual(ch_final.rel_state.R[1], 1.79997101e+01, 2)
-        self.assertAlmostEqual(ch_final.rel_state.R[2], 7.23865412e-13, 2)
+        self.assertAlmostEqual(ch_final.abs_state.R[0], 6278.97682309, 2)
+        self.assertAlmostEqual(ch_final.abs_state.R[1], 2253.29179791, 2)
+        self.assertAlmostEqual(ch_final.abs_state.R[2], 2316.52864192, 2)
+        self.assertAlmostEqual(ch_final.rel_state.R[0], 1.02732275e-04, 2)
+        self.assertAlmostEqual(ch_final.rel_state.R[1], 1.79997100e+01, 2)
+        self.assertAlmostEqual(ch_final.rel_state.R[2], -3.73034936e-14, 2)
 
 
 if __name__ == '__main__':
