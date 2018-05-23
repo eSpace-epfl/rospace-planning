@@ -140,42 +140,47 @@ def plot_result(manoeuvre_plan, scenario, save_path, extra_dt=0.0):
         chaser.abs_state = deepcopy(chaser_prop[0])
         target.abs_state = deepcopy(target_prop[0])
 
-        print "[INFO]: Relative orbital elements of spiral drifting."
-        qnsrel = QNSRelOrbElements()
-        qnsrel.from_keporb(target.get_osc_oe(), chaser.get_osc_oe())
-        print qnsrel
-        print ""
-        qnsrel_scaled = qnsrel.as_scaled(chaser.get_osc_oe().a)
-        print "[INFO]: Relative orbital elements scaled."
-        print qnsrel_scaled
-        print ""
-        print "[INFO]: Cartesian components of chaser and target"
-        print chaser.abs_state.R
-        print chaser.abs_state.V
-        print target.abs_state.R
-        print target.abs_state.V
+        # --------------------------------------------------------------------------------------------------------------
+        # UNCOMMENT TO HAVE INFORMATIONS ABOUT RELATIVE ORBITAL ELEMENTS
+        # print "[INFO]: Relative orbital elements of spiral drifting."
+        # qnsrel = QNSRelOrbElements()
+        # qnsrel.from_keporb(target.get_osc_oe(), chaser.get_osc_oe())
+        # print qnsrel
+        # print ""
+        # qnsrel_scaled = qnsrel.as_scaled(chaser.get_osc_oe().a)
+        # print "[INFO]: Relative orbital elements scaled."
+        # print qnsrel_scaled
+        # print ""
+        # print "[INFO]: Cartesian components of chaser and target"
+        # print chaser.abs_state.R
+        # print chaser.abs_state.V
+        # print target.abs_state.R
+        # print target.abs_state.V
+        # --------------------------------------------------------------------------------------------------------------
 
-        # EXTRA PROPAGATION TO CHECK TRAJECTORY SAFETY AFTER LAST MANOEUVRE
-        if extra_dt > 0.0 and i == L - 1:
-            chaser_extra.rel_state.from_cartesian_pair(chaser_prop[0], target_prop[0])
-
-            R_chaser_lvlh_extra = [chaser_extra.rel_state.R]
-
-            for j in xrange(0, int(np.floor(extra_dt)), 100):
-                chaser_prop_extra = chaser.prop.orekit_prop.propagate(epoch + timedelta(seconds=j))
-                target_prop_extra = target.prop.orekit_prop.propagate(epoch + timedelta(seconds=j))
-
-                chaser_extra.rel_state.from_cartesian_pair(chaser_prop_extra[0], target_prop_extra[0])
-                R_chaser_lvlh_extra.append(chaser_extra.rel_state.R)
-
-            chaser_prop_extra = chaser.prop.orekit_prop.propagate(epoch + timedelta(seconds=extra_dt))
-            target_prop_extra = target.prop.orekit_prop.propagate(epoch + timedelta(seconds=extra_dt))
-
-            chaser_extra.rel_state.from_cartesian_pair(chaser_prop_extra[0], target_prop_extra[0])
-            R_chaser_lvlh_extra.append(chaser_extra.rel_state.R)
-
-            chaser.prop.change_initial_conditions(chaser_prop[0], epoch, chaser.mass)
-            target.prop.change_initial_conditions(target_prop[0], epoch, target.mass)
+        # --------------------------------------------------------------------------------------------------------------
+        # UNCOMMENT TO DO EXTRA PROPAGATION SAFETY AFTER LAST MANOEUVRE
+        # if extra_dt > 0.0 and i == L - 1:
+        #     chaser_extra.rel_state.from_cartesian_pair(chaser_prop[0], target_prop[0])
+        #
+        #     R_chaser_lvlh_extra = [chaser_extra.rel_state.R]
+        #
+        #     for j in xrange(0, int(np.floor(extra_dt)), 100):
+        #         chaser_prop_extra = chaser.prop.orekit_prop.propagate(epoch + timedelta(seconds=j))
+        #         target_prop_extra = target.prop.orekit_prop.propagate(epoch + timedelta(seconds=j))
+        #
+        #         chaser_extra.rel_state.from_cartesian_pair(chaser_prop_extra[0], target_prop_extra[0])
+        #         R_chaser_lvlh_extra.append(chaser_extra.rel_state.R)
+        #
+        #     chaser_prop_extra = chaser.prop.orekit_prop.propagate(epoch + timedelta(seconds=extra_dt))
+        #     target_prop_extra = target.prop.orekit_prop.propagate(epoch + timedelta(seconds=extra_dt))
+        #
+        #     chaser_extra.rel_state.from_cartesian_pair(chaser_prop_extra[0], target_prop_extra[0])
+        #     R_chaser_lvlh_extra.append(chaser_extra.rel_state.R)
+        #
+        #     chaser.prop.change_initial_conditions(chaser_prop[0], epoch, chaser.mass)
+        #     target.prop.change_initial_conditions(target_prop[0], epoch, target.mass)
+        # --------------------------------------------------------------------------------------------------------------
 
         # Saving in .mat file
         sio.savemat(save_path + '/test_' + str(last + 1) + '/manoeuvre_' + str(i) + '.mat',
