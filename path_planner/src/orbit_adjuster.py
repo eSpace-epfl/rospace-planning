@@ -933,7 +933,7 @@ class ClohessyWiltshire(OrbitAdjuster):
         for t_ in xrange(t_min, t_max):
             rv_t = phi_rv(t_)
             deltaV_1 = np.linalg.inv(rv_t).dot(R_LVLH - phi_rr(t_).dot(R_C_LVLH)) - V_C_LVLH
-            deltaV_2 = np.dot(phi_vr(t_), R_C_LVLH) + np.dot(phi_vv(t_), V_C_LVLH + deltaV_1) - V_LVLH
+            deltaV_2 = V_LVLH - (np.dot(phi_vr(t_), R_C_LVLH) + np.dot(phi_vv(t_), V_C_LVLH + deltaV_1))
 
             deltaV_tot = np.linalg.norm(deltaV_1) + np.linalg.norm(deltaV_2)
 
@@ -944,15 +944,17 @@ class ClohessyWiltshire(OrbitAdjuster):
                 delta_T = t_
 
         # Change frame of reference of deltaV. From LVLH to Earth-Inertial
-        B = target.abs_state.get_lof()
-        deltaV_C_1 = np.linalg.inv(B).dot(best_deltaV_1)
+        T_0 = target.abs_state.get_lof()
+        deltaV_C_1 = np.linalg.inv(T_0).dot(best_deltaV_1)
 
         man1 = self.create_and_apply_manoeuvre(chaser, target, deltaV_C_1, 1e-3)
 
-        R = target.abs_state.get_lof()
-        deltaV_C_2 = np.linalg.inv(R).dot(best_deltaV_2)
+        self.create_and_apply_manoeuvre(chaser, target, np.array([0.0, 0.0, 0.0]), delta_T)
 
-        man2 = self.create_and_apply_manoeuvre(chaser, target, deltaV_C_2, delta_T)
+        T_1 = target.abs_state.get_lof()
+        deltaV_C_2 = np.linalg.inv(T_1).dot(best_deltaV_2)
+
+        man2 = self.create_and_apply_manoeuvre(chaser, target, deltaV_C_2, 1e-3)
 
         return [man1, man2]
 
