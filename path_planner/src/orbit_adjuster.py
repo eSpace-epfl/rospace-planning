@@ -65,7 +65,7 @@ class OrbitAdjuster(object):
         return dt
 
     @staticmethod
-    def create_and_apply_manoeuvre(chaser, target, deltaV, dt):
+    def create_and_apply_manoeuvre(chaser, target, deltaV, dt, dt_prop=100):
         """Create and apply a manoeuvre to chaser given deltaV and waiting time.
 
         Take the amount of deltaV needed and the waiting time up to when the manoeuvre should be executed, create
@@ -78,13 +78,11 @@ class OrbitAdjuster(object):
             target (Satellite)
             deltaV (np.array): Array in TEME reference frame cointaing the deltaV in [km/s]
             dt (float): Waiting time in [s] up to when the burn should be executed.
+            dt_prop (int): Propagation steps in [s]. Standard is 100 seconds.
 
         Return:
             man (Manoeuvre): The manoeuvre to be added to manoeuvre plan
         """
-
-        # Propagation timestep
-        dt_prop = 100
 
         # Define new starting epoch
         new_epoch = chaser.prop.date + timedelta(seconds=dt)
@@ -97,15 +95,29 @@ class OrbitAdjuster(object):
         chaser_prop = chaser.prop.orekit_prop.propagate(new_epoch)
         target_prop = target.prop.orekit_prop.propagate(new_epoch)
 
-        # Apply deltaV to satellite and update absolute and relative states of target and satellite
-        chaser_prop[0].V += deltaV
+        # --------------------------------------------------------------------------------------------------------------
+        # COMMENT IF THE INFORMATION ON RELATIVE STATE ARE NEEDED (for example to set proper checkpoints)
+        # chaser.set_abs_state_from_cartesian(chaser_prop[0])
+        # target.set_abs_state_from_cartesian(target_prop[0])
+        # chaser.rel_state.from_cartesian_pair(chaser.abs_state, target.abs_state)
+        #
+        # print '\nRelative state of chaser before manoeuvre: '
+        # print chaser.rel_state.R
+        # print chaser.rel_state.V
+        # print ''
+        # --------------------------------------------------------------------------------------------------------------
+
+        if deltaV.any() != 0.0:
+            # Apply deltaV to satellite and update absolute and relative states of target and satellite
+            chaser_prop[0].V += deltaV
+
+            # Reset propagators initial conditions to apply deltaV
+            chaser.prop.change_initial_conditions(chaser_prop[0], new_epoch, chaser.mass)
+            target.prop.change_initial_conditions(target_prop[0], new_epoch, target.mass)
+
         chaser.set_abs_state_from_cartesian(chaser_prop[0])
         target.set_abs_state_from_cartesian(target_prop[0])
         chaser.rel_state.from_cartesian_pair(chaser.abs_state, target.abs_state)
-
-        # Reset propagators initial conditions to apply deltaV
-        chaser.prop.change_initial_conditions(chaser_prop[0], new_epoch, chaser.mass)
-        target.prop.change_initial_conditions(target_prop[0], new_epoch, target.mass)
 
         # Reset propagators initial starting date
         chaser.prop.date = new_epoch
@@ -385,8 +397,6 @@ class PlaneOrientation(OrbitAdjuster):
 
         di = abs_state.i - mean_oe.i
         dO = abs_state.O - mean_oe.O
-
-
 
         # Tolerances, evaluated manually to ensure a precision of at least 100 meter
         # Assuming an almost circular orbit, a deviation of tol_i in the inclination or of tol_O in RAAN should give
@@ -777,7 +787,7 @@ class MultiLambert(OrbitAdjuster):
         Can be used to do corrections during relative navigation.
     """
 
-    def evaluate_manoeuvre(self, chaser, checkpoint, target, approach_ellipsoid, safety_flag):
+    def evaluate_manoeuvre(self, chaser, checkpoint, target):
         """
             Solve the Multi-Lambert Problem.
 
@@ -815,7 +825,7 @@ class MultiLambert(OrbitAdjuster):
         # Check all the possible transfers time from tmin to tmax (seconds)
         t_min = checkpoint.t_min
         t_max = checkpoint.t_max
-        T = np.arange(t_min, t_max, 0.1)        # Tenth of second precision
+        T = np.arange(t_min, t_max, 1.0)        # Second precision
 
         for dt in T:
             # Propagate target
@@ -825,7 +835,7 @@ class MultiLambert(OrbitAdjuster):
             chaser_final.from_lvlh_frame(target.abs_state, checkpoint.rel_state)
 
             # Solve lambert in dt starting from the chaser position at t0 going to t1
-            sol = pk.lambert_problem(chaser.abs_state.R, chaser_final.R, dt, mu_earth, retrograde, 10)
+            sol = pk.lambert_problem(chaser.abs_state.R, chaser_final.R, dt, mu_earth, retrograde, 15)
 
             # Check for the best solution for this dt
             for i in xrange(0, len(sol.get_v1())):
@@ -836,37 +846,19 @@ class MultiLambert(OrbitAdjuster):
                 sol_list.append((dV_tot, dV_1, dV_2, dt))
 
                 # Check if the deltaV is above the minimum deliverable by thrusters
-                if np.linalg.norm(dV_1) > dV_min and np.linalg.norm(dV_2) > dV_min:
+                if np.linalg.norm(dV_1) > dV_min or np.linalg.norm(dV_2) > dV_min:
                     # Check if the new deltaV is less than previous
-                    if dV_tot < best_dV and safety_flag:
+                    if dV_tot < best_dV:
                         # Approach ellipsoid can be entered
                         best_dV = dV_tot
                         best_dV_1 = dV_1
                         best_dV_2 = dV_2
                         best_dt = dt
-
-                    elif dV_tot < best_dV and not safety_flag:
-                        # Check if the trajectory is safe
-                        chaser_ic.R = chaser.abs_state.R
-                        chaser_ic.V = np.array(sol.get_v1()[i])
-                        if self.is_trajectory_safe(dt, approach_ellipsoid):
-                            best_dV = dV_tot
-                            best_dV_1 = dV_1
-                            best_dV_2 = dV_2
-                            best_dt = dt
+                else:
+                    print "[WARNING]: The manoeuvre request a delta-v < 7 mm/s !!"
 
         # Re-initialize target
         target.prop.change_initial_conditions(target_ic, chaser.prop.date, target.mass)
-
-        sort_sol_list = sorted(sol_list, key=lambda dvtot: dvtot[0])
-
-        # for sol in sort_sol_list:
-        #     deltaV1 = sol[1]
-        #     deltaV2 = sol[2]
-        #     dt = sol[3]
-        #
-        #     man1 = self.create_and_apply_manoeuvre(chaser, target, deltaV1, 1e-3)
-        #     man2 = self.create_and_apply_manoeuvre(chaser, target, deltaV2, dt)
 
         man1 = self.create_and_apply_manoeuvre(chaser, target, best_dV_1, 1e-3)
         man2 = self.create_and_apply_manoeuvre(chaser, target, best_dV_2, best_dt)
@@ -941,7 +933,7 @@ class ClohessyWiltshire(OrbitAdjuster):
         for t_ in xrange(t_min, t_max):
             rv_t = phi_rv(t_)
             deltaV_1 = np.linalg.inv(rv_t).dot(R_LVLH - phi_rr(t_).dot(R_C_LVLH)) - V_C_LVLH
-            deltaV_2 = np.dot(phi_vr(t_), R_C_LVLH) + np.dot(phi_vv(t_), V_C_LVLH + deltaV_1) - V_LVLH
+            deltaV_2 = V_LVLH - (np.dot(phi_vr(t_), R_C_LVLH) + np.dot(phi_vv(t_), V_C_LVLH + deltaV_1))
 
             deltaV_tot = np.linalg.norm(deltaV_1) + np.linalg.norm(deltaV_2)
 
@@ -952,15 +944,17 @@ class ClohessyWiltshire(OrbitAdjuster):
                 delta_T = t_
 
         # Change frame of reference of deltaV. From LVLH to Earth-Inertial
-        B = target.abs_state.get_lof()
-        deltaV_C_1 = np.linalg.inv(B).dot(best_deltaV_1)
+        T_0 = target.abs_state.get_lof()
+        deltaV_C_1 = np.linalg.inv(T_0).dot(best_deltaV_1)
 
         man1 = self.create_and_apply_manoeuvre(chaser, target, deltaV_C_1, 1e-3)
 
-        R = target.abs_state.get_lof()
-        deltaV_C_2 = np.linalg.inv(R).dot(best_deltaV_2)
+        self.create_and_apply_manoeuvre(chaser, target, np.array([0.0, 0.0, 0.0]), delta_T)
 
-        man2 = self.create_and_apply_manoeuvre(chaser, target, deltaV_C_2, delta_T)
+        T_1 = target.abs_state.get_lof()
+        deltaV_C_2 = np.linalg.inv(T_1).dot(best_deltaV_2)
+
+        man2 = self.create_and_apply_manoeuvre(chaser, target, deltaV_C_2, 1e-3)
 
         return [man1, man2]
 
@@ -1503,3 +1497,100 @@ class HamelDeLafontaine(OrbitAdjuster):
         man2 = self.create_and_apply_manoeuvre(chaser, target, deltaV_2_TEME, 0.0)
 
         return [man1, man2]
+
+
+class Helix(OrbitAdjuster):
+
+    def _close_manoeuvre(self, chaser, target):
+        """Closing manoeuvre. After drifting time, try to reach target's orbit.
+
+        Args:
+            chaser (Chaser)
+            target (Satellite)
+        """
+
+        # Do 1.0 seconds propagations until the same plane is reached.
+        self.create_and_apply_manoeuvre(chaser, target, np.array([0.0, 0.0, 0.0]), 1.0, 1)
+
+        while 1:
+            if abs(chaser.rel_state.R[2]) < 5e-3:
+                # Kill out-of-plane velocity
+                dv_oop = np.linalg.inv(target.abs_state.get_lof()).dot(np.array([0.0, 0.0, -chaser.rel_state.V[2]]))
+                man1 = self.create_and_apply_manoeuvre(chaser, target, dv_oop, 1e-3)
+
+                self.create_and_apply_manoeuvre(chaser, target, np.array([0.0, 0.0, 0.0]), 1.0, 1)
+                # Wait until the same orbit is reached
+                while 1:
+                    if abs(chaser.rel_state.R[0]) < 5e-3:
+                        # Kill relative velocity
+                        dv_ip = np.linalg.inv(target.abs_state.get_lof()).dot(-chaser.rel_state.V)
+                        man2 = self.create_and_apply_manoeuvre(chaser, target, dv_ip, 1e-3)
+                        break
+                    else:
+                        self.create_and_apply_manoeuvre(chaser, target, np.array([0.0, 0.0, 0.0]), 1.0, 1)
+                break
+            else:
+                self.create_and_apply_manoeuvre(chaser, target, np.array([0.0, 0.0, 0.0]), 1.0, 1)
+
+        return [man1, man2]
+
+    def evaluate_manoeuvre(self, chaser, checkpoint, target):
+        """Perform a helix manoeuvre if possible.
+
+        Args:
+            chaser (Chaser)
+            checkpoint (RelativeCP)
+            target (Satellite)
+        """
+
+        print "[WARNING]: Helix manoeuvre is quite dangerous and not robust at the moment!"
+        print "[INFO]: If you want to use that, be careful to:"
+        print "        1. Start this manoeuvre at a quarter of a radial manoeuvre (i.e do a radial manoeuvre, but stop"
+        print "           at 1/4 of the period instead of 1/2), for example [*, *, 0.0]."
+        print "        2. Specify as next checkpoint the FIRST point to have a coordinate of 0.0 in radial direction, "
+        print "           and to be greater than 0.0 in out-of-plane direction, for example [*, 0.0, *]. As before it's"
+        print "           the point reached after 1/4 of orbit."
+        print "        3. Specify as t_min the MINIMUM amount of time needed for this observation, after that time"
+        print "           the chaser will correct the plane as soon as possible, and go back to target's orbit."
+        print "        Note that: "
+        print "         - The checkpoint specified for this manoeuver WILL NOT BE the one reached at the end!"
+        print "         - Final reached position will have to be checked by running the simulation. It can be adjusted"
+        print "           by changing total time and checkpoint slope."
+
+        # Store the drifting time on the helix
+        dt_helix = checkpoint.t_min
+
+        # The amount of time needed to reach the checkpoint
+        T = 2.0 * np.pi * np.sqrt(target.get_mean_oe().a**3 / mu_earth)
+        dt = T / 4.0
+
+        # Overwrite time
+        checkpoint.t_min = dt
+        checkpoint.t_max = dt + 1.0
+
+        mans = []
+
+        # Do a multi-lambert if 2-body propagation
+        if chaser.prop.prop_type == '2-body':
+            multi_lamb = MultiLambert()
+            mans_ml = multi_lamb.evaluate_manoeuvre(chaser, checkpoint, target)
+            mans.append(mans_ml[0])
+
+            # Revert last manoeuvre, as it has to drift freely (i.e remove deltaV and change propagator initial
+            # conditions)
+            last_man = mans_ml[-1]
+
+            chaser.abs_state.V -= last_man.deltaV
+            chaser.rel_state.from_cartesian_pair(chaser.abs_state, target.abs_state)
+            chaser.prop.change_initial_conditions(chaser.abs_state, chaser.prop.date, chaser.mass)
+
+            # Propagate for dt_helix
+            self.create_and_apply_manoeuvre(chaser, target, np.array([0.0, 0.0, 0.0]), dt_helix)
+
+            # Wait until the same orbit is reached
+            mans += self._close_manoeuvre(chaser, target)
+
+        else:
+            raise NotImplementedError()
+
+        return mans

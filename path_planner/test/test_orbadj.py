@@ -134,8 +134,6 @@ class OrbAdjTest(unittest.TestCase):
         self.assertAlmostEqual(checkpoint4.abs_state.i, chaser_mean.i, 4)
         self.assertAlmostEqual(checkpoint4.abs_state.O, chaser_mean.O, 4)
 
-
-
     def test_multi_lambert(self):
         """Test multi-lambert orbit adjuster.
 
@@ -157,7 +155,7 @@ class OrbAdjTest(unittest.TestCase):
         checkpoint.t_max = 7980
 
         orb_adj = MultiLambert()
-        orb_adj.evaluate_manoeuvre(chaser, checkpoint, target, [0.0, 0.0, 0.0], True)
+        orb_adj.evaluate_manoeuvre(chaser, checkpoint, target)
 
         self.assertLess(abs(chaser.rel_state.R[0] - checkpoint.rel_state.R[0]), 1e-2)
         self.assertLess(abs(chaser.rel_state.R[1] - checkpoint.rel_state.R[1]), 1e-2)

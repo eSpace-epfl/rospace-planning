@@ -91,7 +91,7 @@ class Solver(object):
             if type(checkpoint) == AbsoluteCP:
                 self.absolute_solver(checkpoint)
             elif type(checkpoint) == RelativeCP:
-                self.relative_solver(checkpoint, self.scenario.approach_ellipsoid)
+                self.relative_solver(checkpoint)
             else:
                 raise TypeError()
 
@@ -118,10 +118,6 @@ class Solver(object):
              checkpoint (AbsoluteCP): Absolute checkpoint with the state defined as Mean Orbital Elements.
         """
 
-        orbit_adj = PlaneOrientation()
-        if orbit_adj.is_necessary(self.chaser, checkpoint.abs_state):
-            self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
-
         orbit_adj = ArgumentOfPerigee()
         if orbit_adj.is_necessary(self.chaser, checkpoint.abs_state):
             self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
@@ -130,13 +126,16 @@ class Solver(object):
         if orbit_adj.is_necessary(self.chaser, checkpoint.abs_state):
             self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
 
-    def relative_solver(self, checkpoint, approach_ellipsoid):
+        orbit_adj = PlaneOrientation()
+        if orbit_adj.is_necessary(self.chaser, checkpoint.abs_state):
+            self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
+
+    def relative_solver(self, checkpoint):
         """
             Relative solver. Calculate the manoeuvre needed to go from a relative position to another.
 
         Args:
             checkpoint (RelativeCP)
-            approach_ellipsoid (np.array): Allowed error on a checkpoint.
         """
 
         # Mean orbital elements
@@ -172,7 +171,7 @@ class Solver(object):
                 # self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
 
                 orbit_adj = MultiLambert()
-                self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target, approach_ellipsoid, True)
+                self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
             else:
                 raise TypeError('Propagator type not recognized!')
 
@@ -196,7 +195,7 @@ class Solver(object):
                 # self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
 
                 orbit_adj = MultiLambert()
-                self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target, approach_ellipsoid, True)
+                self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
             else:
                 raise TypeError('Propagator type not recognized!')
 
@@ -221,17 +220,28 @@ class Solver(object):
 
             raise NotImplementedError()
 
+        elif checkpoint.manoeuvre_type == 'helix':
+            # Apply a certain deltaV out-of-plane
+
+            orbit_adj = Helix()
+            self.manoeuvre_plan += orbit_adj.evaluate_manoeuvre(self.chaser, checkpoint, self.target)
+
+
     def _print_result(self):
         """
             Print out results of the simulation and all the manoeuvres.
         """
         tot_dv = 0
+        old_epoch = self.scenario.date
 
         for it, man in enumerate(self.manoeuvre_plan):
-            print '\n Manoeuvre nr. ' + str(it) + ':'
-            print '--> DeltaV:            ' + str(man.deltaV)
-            print '--> Normalized DeltaV: ' + str(np.linalg.norm(man.deltaV))
+            print '\n[INFO]: Manoeuvre nr. ' + str(it) + ':'
+            print '--> DeltaV:            ' + str(man.deltaV) + '  [km/s]'
+            print '--> 2-Norm DeltaV:     ' + str(np.linalg.norm(man.deltaV)) + '  [km/s]'
+            print '--> 1-Norm DeltaV:     ' + str(np.linalg.norm(man.deltaV, 1)) + '  [km/s]'
             print '--> Execution Epoch:   ' + str(man.execution_epoch)
+            print '--> Transfer duration: ' + str((man.execution_epoch - old_epoch).total_seconds()) + '  [s]'
+            old_epoch = man.execution_epoch
             tot_dv += np.linalg.norm(man.deltaV)
 
         return tot_dv, (man.execution_epoch - self.scenario.date).total_seconds()

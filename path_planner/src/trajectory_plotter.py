@@ -16,6 +16,8 @@ import argparse
 from scenario import Scenario
 from state import Chaser, Satellite
 from datetime import timedelta
+from rospace_lib import QNSRelOrbElements
+from copy import deepcopy
 
 
 def print_state(kep):
@@ -27,7 +29,7 @@ def print_state(kep):
     print "      v :     " + str(kep.v)
 
 
-def plot_result(manoeuvre_plan, scenario, save_path, extra_dt=0.0):
+def plot_result(manoeuvre_plan, scenario, save_path, extra_dt=0.0, last_extra=False):
 
     dir_list = os.listdir(save_path)
     last = -1
@@ -135,8 +137,28 @@ def plot_result(manoeuvre_plan, scenario, save_path, extra_dt=0.0):
         chaser.prop.change_initial_conditions(chaser_prop[0], epoch, chaser.mass)
         target.prop.change_initial_conditions(target_prop[0], epoch, target.mass)
 
-        # EXTRA PROPAGATION TO CHECK TRAJECTORY SAFETY AFTER LAST MANOEUVRE
-        if extra_dt > 0.0 and i == L - 1:
+        chaser.abs_state = deepcopy(chaser_prop[0])
+        target.abs_state = deepcopy(target_prop[0])
+
+        # --------------------------------------------------------------------------------------------------------------
+        # UNCOMMENT TO HAVE INFORMATIONS ABOUT RELATIVE ORBITAL ELEMENTS
+        # print "[INFO]: Relative orbital elements of spiral drifting."
+        # qnsrel = QNSRelOrbElements()
+        # qnsrel.from_keporb(target.get_osc_oe(), chaser.get_osc_oe())
+        # print qnsrel
+        # print ""
+        # qnsrel_scaled = qnsrel.as_scaled(chaser.get_osc_oe().a)
+        # print "[INFO]: Relative orbital elements scaled."
+        # print qnsrel_scaled
+        # print ""
+        # print "[INFO]: Cartesian components of chaser and target"
+        # print chaser.abs_state.R
+        # print chaser.abs_state.V
+        # print target.abs_state.R
+        # print target.abs_state.V
+        # --------------------------------------------------------------------------------------------------------------
+
+        if extra_dt > 0.0 and i == L - 1 and last_extra:
             chaser_extra.rel_state.from_cartesian_pair(chaser_prop[0], target_prop[0])
 
             R_chaser_lvlh_extra = [chaser_extra.rel_state.R]
@@ -165,7 +187,8 @@ def plot_result(manoeuvre_plan, scenario, save_path, extra_dt=0.0):
     print "\n[INFO]: Manoeuvres saved in folder nr. " + str(last + 1) + "."
 
 
-def main(manoeuvre_plan=None, scenario=None, filename=None, save_path='/home/dfrey/polybox/manoeuvre', extra_dt=20000):
+def main(manoeuvre_plan=None, scenario=None, filename=None, save_path='/home/dfrey/polybox/manoeuvre', extra_dt=20000,
+         last_extra=False):
 
     if scenario is None and filename is not None:
         # Create scenario
@@ -177,7 +200,7 @@ def main(manoeuvre_plan=None, scenario=None, filename=None, save_path='/home/dfr
         raise IOError('File name needed as input!')
 
     if manoeuvre_plan is not None:
-        plot_result(manoeuvre_plan, scenario, save_path, extra_dt)
+        plot_result(manoeuvre_plan, scenario, save_path, extra_dt, last_extra)
     else:
         raise IOError('Manoeuvre plan needed as input!')
 
@@ -191,6 +214,10 @@ if __name__ == "__main__":
                         type=float)
     parser.add_argument('--save_path',
                         help='Specify a path where the manoeuvres should be saved.')
+    parser.add_argument('--last_extra_prop',
+                        help='Flag to propagate after the last manoeuvre (standard is no).',
+                        type=bool)
+
     args = parser.parse_args()
 
     if args.extra_dt:
@@ -204,4 +231,9 @@ if __name__ == "__main__":
     else:
         save_path = '/home/dfrey/polybox/manoeuvre'
 
-    main(filename=args.filename, extra_dt=extra_dt, save_path=save_path)
+    if args.last_extra_prop:
+        last_extra = args.last_extra_prop
+    else:
+        last_extra = False
+
+    main(filename=args.filename, extra_dt=extra_dt, save_path=save_path, last_extra=last_extra)

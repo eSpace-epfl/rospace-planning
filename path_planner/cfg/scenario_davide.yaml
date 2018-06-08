@@ -1,11 +1,7 @@
 scenario:
-  name: 'Scenario Camille'
+  name: 'Scenario Davide'
 
-  overview:  " 0. Starting from -35km below the target do ARM1.\n
-              1. Do ARM2 and CAM2.\n
-              2. Do ARM3 to go 4km below the target.\n
-              3. Drift to S0.\n
-              4. Do ARM1 to move on target's orbit.\n"
+  overview:  "Review of Camille's plan. Case with 2-body propagator. \n"
 
   keep_out_zone: [0.2, 0.2, 0.2]
 
@@ -71,81 +67,49 @@ scenario:
       id: 5
       state:
         lvlh:
-          R: [-4.0, 8.0, 0.0]
+          R: [-4.0, 12.0, 0.0]
           V: [0.0, 0.0, 0.0]
-      error_ellipsoid: [0.4, 1.5, 0.4]
+      error_ellipsoid: [0.2, 0.5, 0.2]
       manoeuvre: drift
 
     S6:
       id: 6
       state:
         lvlh:
-          R: [0.0, 18.0, 0.0]
+          R: [0.0, 22.0, 0.0]
           V: [0.0, 0.0, 0.0]
       error_ellipsoid: [0.2, 1.0, 0.2]
-      t_min: 3000
-      t_max: 3100
+      t_min: 3046
+      t_max: 3047
 
     S7:
       id: 7
       state:
         lvlh:
-          R: [0.0, -2.0, 0.0]
-          V: [0.0, 0.0, 0.0]
+          R: [3.7, 14.0, 0.0]
+          V: [-3.44058417e-04, -8.02079140e-03, -7.69783542e-16]
       error_ellipsoid: [0.1, 0.3, 0.1]
-      t_min: 29000
-      t_max: 29010
+      t_min: 1485.3735
+      t_max: 1486.3735
 
     S8:
       id: 8
       state:
         lvlh:
-          R: [0.0, -1.0, 0.0]
+          R: [0.0, 7.0, -2.5]
           V: [0.0, 0.0, 0.0]
       error_ellipsoid: [0.005, 0.015, 0.005]
-      manoeuvre: radial
+      manoeuvre: helix
+      t_min: 50000
+      t_max: 50001
 
     S9:
       id: 9
       state:
         lvlh:
-          R: [0.0, -0.2, 0.0]
+          R: [0.0, -2.0, 0.0]
           V: [0.0, 0.0, 0.0]
       error_ellipsoid: [0.001, 0.005, 0.001]
-      manoeuvre: radial
+      t_min: 17945
+      t_max: 17496
 
-    S10:
-      id: 10
-      state:
-        lvlh:
-          R: [0.0, -0.05, 0.0]
-          V: [0.0, 0.0, 0.0]
-      error_ellipsoid: [0.0005, 0.002, 0.0005]
-      manoeuvre: radial
-
-    S11:
-      id: 11
-      state:
-        lvlh:
-          R: [0.0, -0.025, 0.0]
-          V: [0.0, 0.0, 0.0]
-      error_ellipsoid: [0.0001, 0.001, 0.0001]
-      manoeuvre: radial
-
-    S12:
-      id: 12
-      state:
-        lvlh:
-          R: [0.0, -0.01, 0.0]
-          V: [0.0, 0.0, 0.0]
-      error_ellipsoid: [0.0001, 0.0005, 0.0001]
-      manoeuvre: radial
-
-#    S13:
-#      id: 13
-#      state:
-#        lvlh:
-#          R: [0.0, -0.05, 0.0]
-#          V: [0.0, 0.0, 0.0]
-#      error_ellipsoid: [0.0005, 0.002, 0.0005]
-#      manoeuvre: fly-around
