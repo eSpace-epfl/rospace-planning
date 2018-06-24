@@ -63,7 +63,15 @@ class Satellite(object):
         state.i = initial_conditions[ic_name][sat_name]['kep']['i']
         state.O = initial_conditions[ic_name][sat_name]['kep']['O']
         state.w = initial_conditions[ic_name][sat_name]['kep']['w']
-        state.v = initial_conditions[ic_name][sat_name]['kep']['v']
+
+        if 'v' in initial_conditions[ic_name][sat_name]['kep'].keys():
+            state.v = initial_conditions[ic_name][sat_name]['kep']['v']
+        elif 'E' in initial_conditions[ic_name][sat_name]['kep'].keys():
+            state.E = initial_conditions[ic_name][sat_name]['kep']['E']
+        elif 'm' in initial_conditions[ic_name][sat_name]['kep'].keys():
+            state.m = initial_conditions[ic_name][sat_name]['kep']['m']
+        else:
+            raise AttributeError('No anomaly defined!')
 
         # Export mass
         mass = initial_conditions[ic_name][sat_name]['mass']
