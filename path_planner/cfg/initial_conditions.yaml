@@ -21,7 +21,7 @@
 std_ic:
   date: datetime(2000, 1, 1, 12, 0, 0, 0)
 
-  target:
+  planning_target:
     mass: 0.82
     kep:
       a: 7067.4
@@ -31,7 +31,7 @@ std_ic:
       w: 0.533974758001
       v: 5.75130069292
 
-  chaser:
+  planning_chaser:
     mass: 100.0
     kep:
       a: 7032.4
@@ -45,7 +45,7 @@ std_ic:
 ic_davide:
    date: datetime(2000, 1, 1, 12, 0, 0, 0)
 
-   target:
+   planning_target:
      mass: 0.82
      kep:
       a: 7088.73189629
@@ -55,7 +55,7 @@ ic_davide:
       O: 5.40353936452
       v: 2.2641237715
 
-   chaser:
+   planning_chaser:
      mass: 100.0
      kep:
       a: 7084.75433303
@@ -69,7 +69,7 @@ ic_davide:
 ic_barbee:
   date: datetime(2000, 1, 1, 12, 0, 0, 0)
 
-  target:
+  planning_target:
     mass: 100.0
     kep:
       a: 42164.0
@@ -79,7 +79,7 @@ ic_barbee:
       w: 0.533974758001
       v: 5.75130069292
 
-  chaser:
+  planning_chaser:
     mass: 100.0
     kep:
       a: 42134.0
@@ -93,7 +93,7 @@ ic_barbee:
 camille_phasing:
   date: datetime(2014, 7, 16, 6, 58, 50, 646144)
 
-  target:
+  planning_target:
     mass: 0.82
     kep:
       a: 7088.73485418
@@ -103,7 +103,7 @@ camille_phasing:
       w: 5.11734495867
       v: 1.16872938004
 
-  chaser:
+  planning_chaser:
     mass: 100.0
     kep:
       a: 7053.7363
@@ -117,7 +117,7 @@ camille_phasing:
 camille_phasing_rw:
   date: datetime(2014, 7, 16, 6, 58, 50, 646144)
 
-  target:
+  planning_target:
     mass: 0.82
     kep:
       a: 7097.86329
@@ -127,7 +127,7 @@ camille_phasing_rw:
       w: 5.61524690
       v: 0.670825905
 
-  chaser:
+  planning_chaser:
     mass: 100.0
     kep:
       a: 7058.36688
@@ -141,7 +141,7 @@ camille_phasing_rw:
 camille_homing:
   date: datetime(2014, 7, 21, 18, 34, 2, 844936)
 
-  target:
+  planning_target:
     mass: 0.82
     kep:
       a: 7088.73485418
@@ -152,7 +152,7 @@ camille_homing:
       v: 5.90241149087
 
 
-  chaser:
+  planning_chaser:
     mass: 100.0
     kep:
       a: 7084.73485418
@@ -166,7 +166,7 @@ camille_homing:
 camille_homing_rw:
   date: datetime(2014, 7, 16, 6, 58, 50, 646144)
 
-  target:
+  planning_target:
     mass: 0.82
     kep:
       a: 7081.44740707
@@ -176,7 +176,7 @@ camille_homing_rw:
       w: 2.54379715731
       v: 2.4827274793
 
-  chaser:
+  planning_chaser:
     mass: 100.0
     kep:
       a: 7077.42272312
@@ -190,7 +190,7 @@ camille_homing_rw:
 camille_closing:
   date: datetime(2014, 7, 22, 4, 32, 47, 656936)
 
-  target:
+  planning_target:
     mass: 0.82
     kep:
       a: 7088.73461819
@@ -200,7 +200,7 @@ camille_closing:
       w: 5.117379963
       v: 6.20595477267
 
-  chaser:
+  planning_chaser:
     mass: 100.0
     kep:
       a: 7088.73567773
@@ -214,7 +214,7 @@ camille_closing:
 camille_final_approach:
   date: datetime(2014, 7, 22, 7, 1, 14, 659936)
 
-  target:
+  planning_target:
     mass: 0.82
     kep:
       a: 7088.73456026
@@ -224,7 +224,7 @@ camille_final_approach:
       w: 5.11738157924
       v: 3.06186425881
 
-  chaser:
+  planning_chaser:
     mass: 100.0
     kep:
       a: 7088.73457704
@@ -238,7 +238,7 @@ camille_final_approach:
 test_drift:
   date: datetime(2000, 1, 1, 12, 0, 0, 0)
 
-  target:
+  planning_target:
     mass: 0.82
     kep:
       a: 7067.4
@@ -249,7 +249,7 @@ test_drift:
       v: 6.14413781731
 
 
-  chaser:
+  planning_chaser:
     mass: 100.0
     kep:
       a: 7063.4
@@ -263,7 +263,7 @@ test_drift:
 test_abs:
   date: datetime(2000, 1, 1, 12, 0, 0, 0)
 
-  target:
+  planning_target:
     mass: 0.82
     kep:
       a: 7067.4
@@ -273,7 +273,7 @@ test_abs:
       w: 0.533974758001
       v: 5.75130069292
 
-  chaser:
+  planning_chaser:
     mass: 100.0
     kep:
       a: 7032.4
@@ -287,7 +287,7 @@ test_abs:
 test_rel:
   date: datetime(2000, 1, 1, 12, 0, 0, 0)
 
-  target:
+  planning_target:
     mass: 0.82
     kep:
       a: 6678.73023981
@@ -297,7 +297,7 @@ test_rel:
       w: 1.04685758672
       v: 0.000339003072972
 
-  chaser:
+  planning_chaser:
     mass: 30.0
     kep:
       a: 6677.79213211

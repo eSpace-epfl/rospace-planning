@@ -11,7 +11,7 @@
 import yaml
 import os
 
-from rospace_lib import KepOrbElem, CartesianTEME, OscKepOrbElem, CartesianLVLH
+from rospace_lib import KepOrbElem, CartesianTEME, OscKepOrbElem, CartesianLVLH, Cartesian
 from rospace_lib.misc import QuickPropagator
 from copy import deepcopy
 from datetime import datetime
@@ -73,13 +73,16 @@ class Satellite(object):
         else:
             raise AttributeError('No anomaly defined!')
 
+        init_state = Cartesian()
+        init_state.from_keporb(state)
+
         # Export mass
         mass = initial_conditions[ic_name][sat_name]['mass']
 
         # Export date
         date = eval(initial_conditions[ic_name]['date'])
 
-        return state, mass, date
+        return init_state, mass, date
 
     def initialize_satellite(self, name, ic_name, prop_type, target=None):
         """
@@ -96,7 +99,7 @@ class Satellite(object):
 
         state, mass, date = self.export_initial_condition(name, ic_name)
 
-        self.abs_state.from_keporb(state)
+        self.abs_state = state
         self.mass = mass
         self.name = name
 
@@ -108,8 +111,15 @@ class Satellite(object):
                 raise IOError('Missing target input to initialize relative state!')
 
         # Create and initialize propagator
-        self.prop = QuickPropagator(date)
-        self.prop.initialize_propagator(name, state, prop_type)
+        self.prop = QuickPropagator()
+
+        init_state = dict()
+
+        init_state["position"] = state
+        init_state["spin"] = [0.0, 0.0, 0.0]
+        init_state["rotation_acceleration"] = [0.0, 0.0, 0.0]
+        init_state["attitude"] = [0.0, 0.0, 0.0, 1.0]
+        self.prop.initialize_propagator(name, init_state, prop_type)
 
     def set_abs_state_from_cartesian(self, cartesian):
         """

@@ -650,6 +650,7 @@ class Drift(OrbitAdjuster):
             chaser_prop = chaser.prop.orekit_prop.propagate(chaser.prop.date)
             target_prop = target.prop.orekit_prop.propagate(target.prop.date)
 
+            print chaser_prop[0]
             chaser.set_abs_state_from_cartesian(chaser_prop[0])
             target.set_abs_state_from_cartesian(target_prop[0])
             chaser.rel_state.from_cartesian_pair(chaser_prop[0], target_prop[0])

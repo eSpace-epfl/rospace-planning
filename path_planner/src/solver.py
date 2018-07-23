@@ -54,8 +54,8 @@ class Solver(object):
 
         self.scenario = scenario
         self.epoch = scenario.date
-        self.target.initialize_satellite('target', scenario.ic_name, scenario.prop_type)
-        self.chaser.initialize_satellite('chaser', scenario.ic_name, scenario.prop_type, self.target)
+        self.target.initialize_satellite('planning_target', scenario.ic_name, scenario.prop_type)
+        self.chaser.initialize_satellite('planning_chaser', scenario.ic_name, scenario.prop_type, self.target)
 
     def solve_scenario(self):
         """

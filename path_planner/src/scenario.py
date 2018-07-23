@@ -167,8 +167,8 @@ class Scenario(object):
         self.ic_name = ic_name
         self.prop_type = scenario['prop_type']
 
-        self.target_ic, self.target_mass, self.date = Satellite.export_initial_condition('target', ic_name)
-        self.chaser_ic, self.chaser_mass, date_tmp = Satellite.export_initial_condition('chaser', ic_name)
+        # self.target_ic, self.target_mass, self.date = Satellite.export_initial_condition('target', ic_name)
+        # self.chaser_ic, self.chaser_mass, date_tmp = Satellite.export_initial_condition('chaser', ic_name)
 
         # Extract CheckPoints
         for i in xrange(0, len(checkpoints)):
